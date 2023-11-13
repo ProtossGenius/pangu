@@ -1,0 +1,27 @@
+#!python3
+#-*- coding:utf-8 -*-#
+import os
+import threadpool 
+g = os.walk(".")
+
+def do_format(path):
+    os.system("clang-format -style=file -i '%s'" % (file_path))
+
+pool = threadpool.ThreadPool(10)
+
+for path, dir_list, file_list in g:
+    if path.startswith("./build/") or path.startswith("./.git") or path.startswith("./tests"):
+        continue
+    for file_name in file_list:
+        cppfile = False 
+        for ext in [".h", ".cpp", ".cc", ".c", ".hpp", ".cxx", "hxx"]:
+            if file_name.endswith(ext):
+                cppfile = True
+                break
+        if not cppfile:
+           continue 
+        file_path = path+"/"+file_name
+        requests = threadpool.makeRequests(do_format, file_path)
+        [pool.putRequest(req) for req in requests]
+
+pool.wait()
