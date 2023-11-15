@@ -15,3 +15,5 @@ install:
 
 clean:
 
+format:
+	python3 ./format
