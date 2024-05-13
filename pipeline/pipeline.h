@@ -11,14 +11,10 @@ class IPipelineFactory {
     // init area.
   public:
     void init(PSwitcher &&switcher, std::vector<PPipeline> &_pipelines,
-              PPartsDealer &&partsDealer) {
-        _switcher = std::move(switcher);
-        _pipelines.swap(_pipelines);
-        _parts_dealer = std::move(partsDealer);
-    }
+              PPartsDealer &&partsDealer);
 
   public:
-    virtual void read(PData data);
+    virtual void read(PData data) {}
 
   protected:
     PSwitcher                _switcher;
