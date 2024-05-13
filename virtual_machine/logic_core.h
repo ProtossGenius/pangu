@@ -12,8 +12,8 @@ class VirtualMachine;
 class LogicCore {
     friend class VirtualMachine;
 
-  private:
-    virtual void run(char *ptr, size_t start) = 0;
+  public:
+    virtual void run(char *code, size_t start) = 0;
 
   public:
     virtual ~LogicCore() {}

@@ -33,5 +33,6 @@ aux_source_directory(. src_files)
 add_executable(pangu ${src_files})
 
 add_subdirectory(virtual_machine)
-target_link_libraries(pangu virtual_machine)
+add_subdirectory(pipeline)
+target_link_libraries(pangu virtual_machine pipeline)
 
