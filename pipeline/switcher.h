@@ -5,7 +5,7 @@
 namespace pglang {
 class ISwitcher {
   private:
-    virtual IPipeline *onChoice(const PData &data) = 0;
+    virtual IPipeline *onChoice() = 0;
     void               dealCachedDatas();
 
   public:

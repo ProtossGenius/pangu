@@ -8,8 +8,8 @@ void ISwitcher::accept(PData &&data) {
         return;
     }
 
-    auto choisedPipeline = onChoice(data);
     _cached_datas.emplace_back(std::move(data));
+    auto choisedPipeline = onChoice();
     if (choisedPipeline) {
         _current_pipeline = choisedPipeline;
         while (true) {
