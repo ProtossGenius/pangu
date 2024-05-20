@@ -31,6 +31,7 @@ void IPipelineFactory::packProduct() {
     IProductPack *pack = _packer_stack.top();
     _packer_stack.pop();
     pack->accept(std::move(pro));
+    _switcher->afterPack();
 }
 
 void IPipeline::pushProduct(PProduct &&pro, IProductPack *pack) {

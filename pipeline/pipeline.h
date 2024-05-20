@@ -1,5 +1,7 @@
 #pragma once
 #include "pipeline/declare.h"
+#include "pipeline/switcher.h"
+#include <functional>
 #include <memory>
 #include <stack>
 #include <vector>
@@ -50,6 +52,8 @@ class IPipelineFactory {
 class IPipeline {
   public:
     virtual void accept(PData &&data) = 0;
+    // switch to this pipeline will call onSwitch.
+    virtual void onSwitch() = 0;
     virtual ~IPipeline() {}
 
   protected:
@@ -63,4 +67,10 @@ class IPipeline {
   protected:
     IPipelineFactory *_factory;
 };
+
+class Reg {
+  public:
+    Reg(std::function<void()> action) { action(); }
+};
+
 } // namespace pglang

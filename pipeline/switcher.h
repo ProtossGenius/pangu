@@ -4,9 +4,12 @@
 #include <vector>
 namespace pglang {
 class ISwitcher {
+    friend class IPipelineFactory;
+
   private:
     virtual IPipeline *onChoice() = 0;
     void               dealCachedDatas();
+    void               afterPack() { _current_pipeline = nullptr; }
 
   public:
     void accept(PData &&data);
@@ -16,7 +19,6 @@ class ISwitcher {
         _cached_datas.emplace_back(std::move(data));
     }
 
-  protected:
   protected:
     IPipeline         *_current_pipeline;
     IPipelineFactory  *_factory;
