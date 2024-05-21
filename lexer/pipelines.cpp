@@ -13,7 +13,64 @@ namespace lexer {
     DLex        *lex = (DLex *) factory->getTopProduct();                      \
     std::string &str = lex->get()
 
-bool isNumber(const std::string &str, std::string &errMsg) { return true; }
+bool isNumber(const std::string &str, std::string &errMsg) {
+    if (str.size() == 1) {
+        return true;
+    }
+
+    if (str[ 0 ] == '0') {                        // 8 or 16 or 0.x
+        if ('x' == str[ 1 ] || 'X' == str[ 1 ]) { // 16
+            for (size_t i = 2; i < str.size(); ++i) {
+                if (str[ i ] == '_') continue;
+                if (isdigit(str[ i ]) || (str[ i ] >= 'a' && str[ i ] <= 'f') ||
+                    (str[ i ] >= 'A' && str[ i ] <= 'F')) {
+                    continue;
+                }
+                errMsg = "not a 16x number, number is " + str;
+                return false;
+            }
+
+            return true;
+        }
+        if (isdigit(str[ 1 ])) { // 8
+            for (size_t i = 2; i < str.size(); ++i) {
+                if (str[ i ] == '_') continue;
+                if (str[ i ] >= '0' && str[ i ] <= 7) {
+                    continue;
+                }
+                errMsg = "not a 8x number, number is " + str;
+                return false;
+            }
+            return true;
+        }
+
+        if (str[ 1 ] == '.') {
+            for (size_t i = 2; i < str.size(); ++i) {
+                if (isdigit(str[ i ])) {
+                    continue;
+                }
+
+                errMsg = "not a float, number is " + str;
+                return false;
+            }
+            return true;
+        }
+    }
+
+    int pointCnt = 0;
+    for (size_t i = 1; i < str.size(); ++i) {
+        char c = str[ i ];
+        if (isdigit(c) || c == '_') {
+            continue;
+        }
+        if (c == '.') ++pointCnt;
+        if (pointCnt > 1) {
+            errMsg = "more than one point in float, number is " + str;
+        }
+    }
+
+    return true;
+}
 void PipeNumber::accept(IPipelineFactory *factory, PData &&data) {
     GET_CHAR(data);
     if (isdigit(c) || isalpha(c) || '.' == c || '_' == c) {
@@ -51,24 +108,25 @@ void PipeSpace::accept(IPipelineFactory *factory, PData &&data) {
     factory->packProduct();
 }
 
-const std::set<char> getSymbolCharSet() {
-    std::string    str = "!@$%^&*()_+-={}|[]\\:;<>?,./~";
-    std::set<char> s;
-    for (const char c : str) {
-        s.insert(c);
-    }
-    return s;
-}
-
 void PipeSymbol::accept(IPipelineFactory *factory, PData &&data) {
     GET_CHAR(data);
-    const static std::set<char> symbols = getSymbolCharSet();
-    if (symbols.count(c) == 0) {
-        factory->undealData(std::move(data));
-        factory->packProduct();
+    const static std::set<std::string> symbols{
+        "!",  "!=",  "@", "%", "%=", "^",  "^=", "&",  "&=", "&&", "&&=",
+        "*",  "*=",  "(", ")", "-",  "-=", "+",  "+=", "=",  "==", "|",
+        "||", "||=", "[", "]", "{",  "}",  "<-", "<",  "<=", ">",  "->",
+        ">=", ",",   ".", "?", "/",  "/=", "\\", ";",  ":",  "::"};
+    std::string add = str;
+    add.push_back(c);
+    if (symbols.count(add) != 0) {
+        str.push_back(c);
         return;
     }
-    str.push_back(c);
+    if (str.size() == 0) {
+        factory->onFail("not a symbole: " + add);
+    }
+
+    factory->undealData(std::move(data));
+    factory->packProduct();
 }
 
 void PipeComments::accept(IPipelineFactory *factory, PData &&data) {

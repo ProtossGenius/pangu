@@ -5,6 +5,7 @@
 #include <iostream>
 #include <lexer/pipelines.h>
 #include <memory>
+#include <set>
 #include <vector>
 int main(int argc, const char *argv[]) {
     using namespace std;
@@ -16,8 +17,7 @@ int main(int argc, const char *argv[]) {
             return;
         }
         std::cout << "type = <" << lexer::LEX_PIPE_ENUM[ lex->typeId() ]
-                  << "> content = \n"
-                  << lex->get() << std::endl;
+                  << "> content = " << lex->get() << std::endl;
     };
     PPipelineFactory factory = make_unique<IPipelineFactory>(
         std::unique_ptr<lexer::ISwitcher>(new lexer::LexSwitcher()),
