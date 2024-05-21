@@ -1,23 +1,30 @@
-#include "virtual_machine/logic_core.h"
-#include "virtual_machine/machine.h"
+#include "lexer/datas.h"
+#include "lexer/switchers.h"
+#include "pipeline/declare.h"
+#include <fstream>
 #include <iostream>
+#include <lexer/pipelines.h>
 #include <memory>
 #include <vector>
 int main(int argc, const char *argv[]) {
     using namespace std;
     using namespace pangu;
-    auto core      = LogicCore::create();
-    char code[ 5 ] = {0};
-    core->run(code, 0);
-    vector<std::unique_ptr<LogicCore>> list;
-    list.emplace_back(std::move(core));
-    for (auto &it : list) {
-        it->run(code, 0);
+    using namespace pglang;
+    ProductPack packer = [](auto factory, auto pro) {
+        auto lex = ((lexer::DLex *) pro.get());
+        if (lex->typeId() == lexer::ELexPipeline::Space) {
+            return;
+        }
+        std::cout << "type = <" << lexer::LEX_PIPE_ENUM[ lex->typeId() ]
+                  << "> content = \n"
+                  << lex->get() << std::endl;
+    };
+    PPipelineFactory factory = make_unique<IPipelineFactory>(
+        std::unique_ptr<lexer::ISwitcher>(new lexer::LexSwitcher()),
+        lexer::LEX_PIPElINES, packer);
+    fstream fs("../Application.cpp");
+    char    c;
+    while (fs.get(c)) {
+        factory->accept(std::unique_ptr<IData>(new lexer::DInChar(c)));
     }
-
-    std::unique_ptr<int>    a(new int(5));
-    vector<unique_ptr<int>> hello;
-    hello.emplace_back(std::move(a));
-    hello[ 0 ].get();
-    hello[ 0 ].get();
 }

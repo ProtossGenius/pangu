@@ -1,5 +1,5 @@
 #pragma once
-#include <future>
+#include <functional>
 #include <memory>
 namespace pglang {
 #define T(t)                                                                   \
@@ -22,7 +22,7 @@ T(Product);
 // EXAMPLE: class Big{ ...; class Small { ... }; ... }
 // for class Big, when it finish, it will as output give another factory.
 // for class Small, when it finish, it should add into class Big.
-T(ProductPack);
+typedef std::function<void(IPipelineFactory *, PProduct &&)> ProductPack;
 
 // decide the IData should give witch Pipeline.
 T(Switcher);

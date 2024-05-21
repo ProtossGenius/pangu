@@ -8,6 +8,7 @@ class ISwitcher {
 
   private:
     virtual IPipeline *onChoice() = 0;
+    virtual void       readForAnalysis(const PData &data) {}
     void               dealCachedDatas();
     void               afterPack() { _current_pipeline = nullptr; }
 
@@ -18,6 +19,9 @@ class ISwitcher {
     void pushToCache(PData &&data) {
         _cached_datas.emplace_back(std::move(data));
     }
+
+  protected:
+    virtual void onFail(const std::string &errMsg) = 0;
 
   protected:
     IPipeline         *_current_pipeline;

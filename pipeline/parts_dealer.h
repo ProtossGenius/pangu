@@ -5,12 +5,11 @@ namespace pglang {
 
 class IPartsDealer {
   public:
-    virtual void accept(PParts &&parts) = 0;
+    virtual void accept(PParts &&parts){};
 
   public:
     virtual ~IPartsDealer() {}
 
-  protected:
   protected:
     IPipelineFactory *_factory;
 };

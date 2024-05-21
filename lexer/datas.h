@@ -4,7 +4,7 @@
 namespace pangu {
 namespace lexer {
 
-class DInChar : pglang::IData {
+class DInChar : public pglang::IData {
   public:
     DInChar(char c)
         : _c(c) {}
@@ -15,7 +15,7 @@ class DInChar : pglang::IData {
     char _c;
 };
 
-class DLex : pglang::IData {
+class DLex : public pglang::IData {
   public:
     DLex(int tid)
         : _typeId(tid) {}
