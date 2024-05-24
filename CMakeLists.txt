@@ -35,5 +35,6 @@ add_executable(pangu ${src_files})
 add_subdirectory(virtual_machine)
 add_subdirectory(pipeline)
 add_subdirectory(lexer)
+add_subdirectory(grammer)
 target_link_libraries(pangu virtual_machine lexer pipeline)
 
