@@ -2,8 +2,6 @@
 #include "pipeline/declare.h"
 #include "pipeline/parts_dealer.h"
 #include <functional>
-#include <iostream>
-#include <memory>
 #include <stack>
 #include <vector>
 namespace pglang {

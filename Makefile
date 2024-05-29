@@ -8,7 +8,7 @@ debug:
 
 qrun:
 	mkdir -p build
-	cd build && cmake .. && make -j$(nproc) && ./pangu
+	cd build && cmake .. && make -j24 && ./pangu
 test:
 
 install:

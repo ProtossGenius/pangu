@@ -4,8 +4,7 @@
 namespace pglang {
 #define T(t)                                                                   \
     class I##t;                                                                \
-    typedef std::unique_ptr<I##t> P##t;                                        \
-    typedef std::shared_ptr<I##t> S##t;
+    typedef std::unique_ptr<I##t> P##t;
 // a factory, input is IData, output is IProduct.
 // factory have many pipeline, use ISwitcher to decide witch pipeline deal
 // IData.
