@@ -6,8 +6,8 @@ namespace grammer {
 using namespace pglang;
 class GrammerSwitcher : public ISwitcher {
 
-    IPipeline *onChoice() override;
-    void       readForAnalysis(const PData &data) override {}
+    void onChoice() override;
+    void readForAnalysis(const PData &data) override {}
 };
 } // namespace grammer
 } // namespace pangu

@@ -7,10 +7,10 @@ class ISwitcher {
     friend class IPipelineFactory;
 
   private:
-    virtual IPipeline *onChoice() = 0;
-    virtual void       readForAnalysis(const PData &data) {}
-    void               dealCachedDatas();
-    void               afterPack() { _current_pipeline = nullptr; }
+    virtual void onChoice() = 0;
+    virtual void readForAnalysis(const PData &data) {}
+    void         dealCachedDatas();
+    void         afterPack() { _current_pipeline = nullptr; }
 
   public:
     void accept(PData &&data);

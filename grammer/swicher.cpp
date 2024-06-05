@@ -3,8 +3,6 @@
 #include <pipeline/pipeline.h>
 namespace pangu {
 namespace grammer {
-IPipeline *GrammerSwitcher::onChoice() {
-    return nullptr;
-}
+void GrammerSwitcher::onChoice() {}
 } // namespace grammer
 } // namespace pangu

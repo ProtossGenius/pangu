@@ -10,7 +10,8 @@ void ISwitcher::accept(PData &&data) {
     }
 
     _cached_datas.emplace_back(std::move(data));
-    auto choisedPipeline = onChoice();
+    onChoice();
+    auto choisedPipeline = _factory->getPipeline();
     if (nullptr == choisedPipeline) {
         return;
     }

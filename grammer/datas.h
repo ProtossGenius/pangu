@@ -6,37 +6,51 @@
 #include <vector>
 namespace pangu {
 namespace grammer {
+
 class GPackage : public pglang::IData {
   public:
-    int typeId();
+    int typeId() override;
 
   private:
-    std::vector<PPackage>          packages;
-    std::map<std::string, PStruct> structs;
-    std::vector<PFunction>         functions;
-    GPackage                      *parent;
+    std::map<std::string, PPackage> packages;
+    std::map<std::string, PStruct>  structs;
+    std::vector<PFunction>          functions;
+    GPackage                       *parent;
 };
-class GType {
+class GType : public pglang::IData {
+  public:
+    int typeId() override;
+
     PPackage    package;
     std::string type_name;
 };
-class GVariable {
+class GVariable : public pglang::IData {
+  public:
+    int         typeId() override;
     PType       type;
     std::string var_name;
 };
 
-class Gtruct {
+class Gtruct : public pglang::IData {
+  public:
+    int                    typeId() override;
     std::vector<PVariable> variables;
     std::vector<PStruct>   structs;
 };
 
-class GFunction {
+class GFunction : public pglang::IData {
+  public:
+    int typeId() override;
+
     std::vector<PVariable> params;
     std::vector<PVariable> result;
     PCode                  code;
 };
 
-class GCode {
+class GCode : public pglang::IData {
+  public:
+    int typeId() override;
+
     PVariable var;
     PCode     left;
     PCode     right;

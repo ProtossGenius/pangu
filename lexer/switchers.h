@@ -7,8 +7,8 @@ namespace lexer {
 using namespace pglang;
 class LexSwitcher : public ISwitcher {
   private:
-    IPipeline *onChoice() override;
-    void       readForAnalysis(const PData &data) override {
+    void onChoice() override;
+    void readForAnalysis(const PData &data) override {
         ((DInChar &) data).get() == '\n' ? linePos = 0, ++lineNo : ++linePos;
     }
     DInChar &get(size_t i) { return *(DInChar *) _cached_datas[ i ].get(); }

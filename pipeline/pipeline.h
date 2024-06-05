@@ -28,8 +28,9 @@ class IPipelineFactory {
     IPipelineFactory(
         PSwitcher &&switcher, std::vector<PPipeline> &_pipelines,
         /*PPartsDealer &&partsDealer, */ ProductPack finalProductPacker);
-    ISwitcher *getSwitcher() { return _switcher.get(); }
-    IPipeline *getPipeline(size_t index) { return _pipelines[ index ].get(); }
+    ISwitcher    *getSwitcher() { return _switcher.get(); }
+    IPipeline    *getPipeline();
+    void          choicePipeline(size_t index) { _index_stack.push(index); }
     IPartsDealer *getPartsDealer() { return _parts_dealer.get(); }
     void          pushProduct(PProduct &&pro, ProductPack pack);
     void          pushProduct(PProduct &&pro);
@@ -49,6 +50,7 @@ class IPipelineFactory {
     std::stack<PProduct>    _product_stack;
     std::stack<ProductPack> _packer_stack;
     ProductPack             _final_product_packer;
+    std::stack<size_t>      _index_stack;
 };
 
 class IPipeline {

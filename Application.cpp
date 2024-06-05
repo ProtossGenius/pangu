@@ -5,8 +5,6 @@
 #include <iostream>
 #include <lexer/pipelines.h>
 #include <memory>
-#include <set>
-#include <vector>
 int main(int argc, const char *argv[]) {
     using namespace std;
     using namespace pangu;
