@@ -5,8 +5,8 @@
 #include <iostream>
 #include <utility>
 namespace pglang {
-IPipelineFactory::IPipelineFactory(PSwitcher             &&switcher,
-                                   std::vector<PPipeline> &_pipelines,
+IPipelineFactory::IPipelineFactory(PSwitcher               &&switcher,
+                                   std::map<int, PPipeline> &_pipelines,
                                    //  PPartsDealer          &&partsDealer,
                                    ProductPack finalProductPacker)
     : _switcher(std::move(switcher))

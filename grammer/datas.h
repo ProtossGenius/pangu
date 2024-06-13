@@ -1,5 +1,6 @@
 #pragma once
 #include "grammer/declare.h"
+#include "grammer/enums.h"
 #include "pipeline/pipeline.h"
 #include <map>
 #include <string>
@@ -7,47 +8,58 @@
 namespace pangu {
 namespace grammer {
 
-class GPackage : public pglang::IData {
+class GPackage : public pglang::IProduct {
   public:
-    int typeId() override;
+    int typeId() override { return EGrammer::Package; }
+
+  public:
+    void addPackage(const std::string &name, PPackage &&pack);
+    void addStruct(const std::string &name, PStruct &&stru);
+    void addFunction(PFunction &&fun);
+
+  protected:
+    void setParent(GPackage *parent) { _parent = parent; }
 
   private:
-    std::map<std::string, PPackage> packages;
-    std::map<std::string, PStruct>  structs;
-    std::vector<PFunction>          functions;
-    GPackage                       *parent;
+    void mergePackage(PPackage &&pack);
+
+  private:
+    std::map<std::string, PPackage>  _packages;
+    std::map<std::string, PStruct>   _structs;
+    std::map<std::string, PFunction> _functions;
+    GPackage                        *_parent;
 };
-class GType : public pglang::IData {
+class GType : public pglang::IProduct {
   public:
     int typeId() override;
 
     PPackage    package;
     std::string type_name;
 };
-class GVariable : public pglang::IData {
+class GVariable : public pglang::IProduct {
   public:
     int         typeId() override;
     PType       type;
     std::string var_name;
 };
 
-class Gtruct : public pglang::IData {
+class GStruct : public pglang::IProduct {
   public:
     int                    typeId() override;
     std::vector<PVariable> variables;
     std::vector<PStruct>   structs;
 };
 
-class GFunction : public pglang::IData {
+class GFunction : public pglang::IProduct {
   public:
-    int typeId() override;
-
+    int                    typeId() override;
+    std::string            sign();
     std::vector<PVariable> params;
     std::vector<PVariable> result;
     PCode                  code;
 };
 
-class GCode : public pglang::IData {
+class GCode : public pglang::IProduct {
   public:
     int typeId() override;
 

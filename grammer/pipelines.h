@@ -1,31 +1,29 @@
 #pragma once
 
+#include "grammer/enums.h"
 #include "pipeline/pipeline.h"
 #include <functional>
 #include <map>
 #include <string>
-#include <vector>
 namespace pangu {
 namespace grammer {
 using namespace pglang;
-static std::vector<PPipeline>     LEX_PIPElINES;
-static std::map<int, std::string> LEX_PIPE_ENUM;
+static std::map<EGrammer, PPipeline>   LEX_PIPElINES;
+static std::map<EGrammer, std::string> LEX_PIPE_ENUM;
 #define PIPE_CLASS(type)                                                       \
-    class Pipe##name : public IPipeline {                                      \
+    class Pipe##type : public IPipeline {                                      \
       public:                                                                  \
         void onSwitch(IPipelineFactory *_factory) override;                    \
         void accept(IPipelineFactory *factory, PData &&data) override;         \
     };                                                                         \
-    static Reg __reg_pipe_##name([]() {                                        \
-        LEX_PIPElINES.emplace_back(PPipeline((IPipeline *) new Pipe##name())); \
+    static Reg __reg_pipe_##type([]() {                                        \
+        LEX_PIPElINES[ EGrammer::type ] =                                      \
+            PPipeline((IPipeline *) new Pipe##type());                         \
         LEX_PIPE_ENUM[ EGrammer::type ] = #type;                               \
     });
 
-// 注意，这里面定义的顺序和下面Pipeline定义的顺序应该相同
-enum EGrammer {
-    Struct = 0,
-};
-
+// 注意，Pipeline定义的顺序和EGrammer相同
+PIPE_CLASS(Package);
 PIPE_CLASS(Struct);
 } // namespace grammer
 } // namespace pangu

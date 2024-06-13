@@ -2,6 +2,7 @@
 #include "pipeline/declare.h"
 #include "pipeline/parts_dealer.h"
 #include <functional>
+#include <map>
 #include <stack>
 #include <vector>
 namespace pglang {
@@ -26,7 +27,7 @@ class IPipelineFactory {
     // init area.
   public:
     IPipelineFactory(
-        PSwitcher &&switcher, std::vector<PPipeline> &_pipelines,
+        PSwitcher &&switcher, std::map<int, PPipeline> &_pipelines,
         /*PPartsDealer &&partsDealer, */ ProductPack finalProductPacker);
     ISwitcher    *getSwitcher() { return _switcher.get(); }
     IPipeline    *getPipeline();
@@ -44,13 +45,13 @@ class IPipelineFactory {
     virtual ~IPipelineFactory();
 
   protected:
-    PSwitcher               _switcher;
-    std::vector<PPipeline> &_pipelines;
-    PPartsDealer            _parts_dealer;
-    std::stack<PProduct>    _product_stack;
-    std::stack<ProductPack> _packer_stack;
-    ProductPack             _final_product_packer;
-    std::stack<size_t>      _index_stack;
+    PSwitcher                 _switcher;
+    std::map<int, PPipeline> &_pipelines;
+    PPartsDealer              _parts_dealer;
+    std::stack<PProduct>      _product_stack;
+    std::stack<ProductPack>   _packer_stack;
+    ProductPack               _final_product_packer;
+    std::stack<size_t>        _index_stack;
 };
 
 class IPipeline {
