@@ -8,49 +8,63 @@
 namespace pangu {
 namespace grammer {
 
-class GPackage : public pglang::IProduct {
+class GStructContainer {
   public:
-    int typeId() override { return EGrammer::Package; }
-
-  public:
-    void addPackage(const std::string &name, PPackage &&pack);
-    void addStruct(const std::string &name, PStruct &&stru);
-    void addFunction(PFunction &&fun);
+    void addStruct(PStruct &&stru);
+    virtual ~GStructContainer() {}
 
   protected:
-    void setParent(GPackage *parent) { _parent = parent; }
-
-  private:
-    void mergePackage(PPackage &&pack);
-
-  private:
-    std::map<std::string, PPackage>  _packages;
-    std::map<std::string, PStruct>   _structs;
-    std::map<std::string, PFunction> _functions;
-    GPackage                        *_parent;
+    std::map<std::string, PStruct> _structs;
 };
-class GType : public pglang::IProduct {
+class GFunctionContainer {
+  public:
+    void addFunction(PFunction &&fun);
+    virtual ~GFunctionContainer() {}
+
+  protected:
+    std::map<std::string, PFunction> _functions;
+};
+
+class IGrammer : public pglang::IProduct {
+  public:
+    virtual ~IGrammer() {}
+
+  protected:
+    std::string name() { return _name; }
+
+  protected:
+    std::string _name;
+};
+
+class GPackage : public IGrammer,
+                 public virtual GStructContainer,
+                 public virtual GFunctionContainer {
+  public:
+    int typeId() override { return EGrammer::Package; }
+};
+class GType : public IGrammer {
   public:
     int typeId() override;
 
     PPackage    package;
     std::string type_name;
 };
-class GVariable : public pglang::IProduct {
+class GVariable : public IGrammer {
   public:
     int         typeId() override;
     PType       type;
     std::string var_name;
 };
 
-class GStruct : public pglang::IProduct {
+class GStruct : public IGrammer {
   public:
+    std::string            name() { return _name; }
+    std::string            _name;
     int                    typeId() override;
     std::vector<PVariable> variables;
-    std::vector<PStruct>   structs;
 };
 
-class GFunction : public pglang::IProduct {
+class GFunction : public IGrammer {
   public:
     int                    typeId() override;
     std::string            sign();
@@ -59,7 +73,7 @@ class GFunction : public pglang::IProduct {
     PCode                  code;
 };
 
-class GCode : public pglang::IProduct {
+class GCode : public IGrammer {
   public:
     int typeId() override;
 

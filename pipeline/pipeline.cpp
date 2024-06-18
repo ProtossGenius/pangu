@@ -1,5 +1,4 @@
 #include "pipeline/pipeline.h"
-// #include "pipeline/parts_dealer.h"
 #include "pipeline/declare.h"
 #include "pipeline/switcher.h"
 #include <iostream>

@@ -3,7 +3,6 @@
 #include "lexer/pipelines.h"
 #include "pipeline/pipeline.h"
 #include <ctype.h>
-#include <iostream>
 #include <stdexcept>
 #include <string>
 namespace pangu {
