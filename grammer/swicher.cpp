@@ -6,7 +6,15 @@
 namespace pangu {
 namespace grammer {
 void GrammerSwitcher::onChoice() {
-    auto first = get(0);
+    auto first =  get(0);
+    if ("package" == first.get()) {
+        _factory->choicePipeline(EGrammer::Package);
+        return;
+    }
+    if ("import" == first.get()) {
+        _factory->choicePipeline(EGrammer::Import);
+        return;
+    }
     if ("type" == first.get()) {
         if (_cached_datas.size() < 3) {
             return;

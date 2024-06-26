@@ -4,7 +4,6 @@
 #include "pipeline/pipeline.h"
 #include <map>
 #include <string>
-#include <vector>
 namespace pangu {
 namespace grammer {
 
@@ -24,7 +23,13 @@ class GFunctionContainer {
   protected:
     std::map<std::string, PFunction> _functions;
 };
+class GVarContainer {
+  public:
+    void addVariable(PVariable var) {}
 
+  protected:
+    std::map<std::string, PVariable> _vars;
+};
 class IGrammer : public pglang::IProduct {
   public:
     virtual ~IGrammer() {}
@@ -35,12 +40,23 @@ class IGrammer : public pglang::IProduct {
   protected:
     std::string _name;
 };
-
+// package package_name;
 class GPackage : public IGrammer,
                  public virtual GStructContainer,
+                 public virtual GVarContainer,
                  public virtual GFunctionContainer {
   public:
     int typeId() override { return EGrammer::Package; }
+};
+// import "package path" [as alias_name];
+class GImport : public IGrammer {
+  public:
+    int typeId() override { return EGrammer::Import; }
+
+  protected:
+    GPackage   *_package;
+    std::string path;
+    std::string alias;
 };
 class GType : public IGrammer {
   public:
@@ -56,21 +72,20 @@ class GVariable : public IGrammer {
     std::string var_name;
 };
 
-class GStruct : public IGrammer {
+class GStruct : public IGrammer, public virtual GVarContainer {
   public:
-    std::string            name() { return _name; }
-    std::string            _name;
-    int                    typeId() override;
-    std::vector<PVariable> variables;
+    std::string name() { return _name; }
+    std::string _name;
+    int         typeId() override;
 };
 
 class GFunction : public IGrammer {
   public:
-    int                    typeId() override;
-    std::string            sign();
-    std::vector<PVariable> params;
-    std::vector<PVariable> result;
-    PCode                  code;
+    int           typeId() override;
+    std::string   sign();
+    GVarContainer params;
+    GVarContainer result;
+    PCode         code;
 };
 
 class GCode : public IGrammer {

@@ -13,6 +13,9 @@ void LexSwitcher::onFail(const std::string &errMsg) {
 }
 using namespace std;
 void LexSwitcher::onChoice() {
+    if (-1 == get(0).typeId()) {
+        return _factory->choicePipeline(ELexPipeline::Eof);
+    }
     char c = get(0).get();
     if ('#' == c) {
         return _factory->choicePipeline(ELexPipeline::Macro);

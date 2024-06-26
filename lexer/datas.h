@@ -8,11 +8,15 @@ class DInChar : public pglang::IData {
   public:
     DInChar(char c)
         : _c(c) {}
-    int  typeId() override { return 0; }
+    DInChar(char c, int type)
+        : _c(c)
+        , _type(type) {}
+    int  typeId() override { return _type; }
     char get() { return _c; }
 
   private:
     char _c;
+    int  _type;
 };
 
 class DLex : public pglang::IData {

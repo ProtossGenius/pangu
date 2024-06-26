@@ -30,11 +30,13 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 include_directories(.)
 aux_source_directory(. src_files)
 
-add_executable(pangu ${src_files})
+add_executable(pangu Application.cpp)
+add_executable(pangu-lexer pangu_lexer.cpp)
 
 add_subdirectory(virtual_machine)
 add_subdirectory(pipeline)
 add_subdirectory(lexer)
 add_subdirectory(grammer)
 target_link_libraries(pangu virtual_machine lexer pipeline)
+target_link_libraries(pangu-lexer virtual_machine lexer pipeline)
 

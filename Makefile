@@ -8,8 +8,11 @@ debug:
 
 qrun:
 	mkdir -p build
-	cd build && cmake .. && make -j24 && ./pangu
+	cd build && cmake .. && make -j24 && ./pangu ../Application.cpp
 test:
+	mkdir -p build 
+	cd build && cmake .. && make -j24 
+	sh all_test.sh
 
 install:
 

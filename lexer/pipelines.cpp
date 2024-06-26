@@ -9,9 +9,10 @@
 namespace pangu {
 namespace lexer {
 #define GET_CHAR(data)                                                         \
-    const char   c   = ((DInChar *) data.get())->get();                        \
-    DLex        *lex = (DLex *) factory->getTopProduct();                      \
-    std::string &str = lex->get()
+    const char   c     = ((DInChar *) data.get())->get();                      \
+    const char   cType = ((DInChar *) data.get())->typeId();                   \
+    DLex        *lex   = (DLex *) factory->getTopProduct();                    \
+    std::string &str   = lex->get()
 
 bool isNumber(const std::string &str, std::string &errMsg) {
     if (str.size() == 1) {
@@ -131,17 +132,25 @@ void PipeSymbol::accept(IPipelineFactory *factory, PData &&data) {
 
 void PipeComments::accept(IPipelineFactory *factory, PData &&data) {
     GET_CHAR(data);
-    if (str.size() >= 2) {
-        // for comments start with '//'
-        if ('/' == str[ 1 ] && '\n' == c) {
+    if (cType == -1) { // EOF
+        factory->undealData(std::move(data));
+        if ('*' == str[ 1 ]) {
+            factory->onFail("multi-line comment not end with '*/'");
+        }
+        if ('/' == str[ 1 ]) {
             factory->packProduct();
             return;
         }
-        if ('/' == c && '*' == str[ str.size() - 1 ] && '*' == str[ 1 ]) {
-            str.push_back(c);
-            factory->packProduct();
-            return;
-        }
+    }
+    // for comments start with '//'
+    if ('/' == str[ 1 ] && '\n' == c) {
+        factory->packProduct();
+        return;
+    }
+    if ('/' == c && '*' == str[ str.size() - 1 ] && '*' == str[ 1 ]) {
+        str.push_back(c);
+        factory->packProduct();
+        return;
     }
     str.push_back(c);
 }
@@ -159,11 +168,22 @@ void PipeString::accept(IPipelineFactory *factory, PData &&data) {
 }
 void PipeMacro::accept(IPipelineFactory *factory, PData &&data) {
     GET_CHAR(data);
+    if (-1 == cType) {
+        factory->undealData(std::move(data));
+        factory->packProduct();
+        return;
+    }
     if ('\n' == c && str[ str.size() - 1 ] != '\\') {
         factory->packProduct();
         return;
     }
     str.push_back(c);
 }
+void PipeEof::accept(IPipelineFactory *factory, PData &&data) {
+    GET_CHAR(data);
+    str.push_back(c);
+    factory->packProduct();
+}
+
 } // namespace lexer
 } // namespace pangu
