@@ -6,7 +6,7 @@
 namespace pangu {
 namespace grammer {
 void GrammerSwitcher::onChoice() {
-    auto first =  get(0);
+    auto first = get(0);
     if ("package" == first.get()) {
         _factory->choicePipeline(EGrammer::Package);
         return;
@@ -27,7 +27,7 @@ void GrammerSwitcher::onChoice() {
         _factory->onFail("no such type: " + third);
     }
     std::stringstream ss;
-    for (int i = 0; i < _cached_datas.size(); ++i) {
+    for (size_t i = 0; i < _cached_datas.size(); ++i) {
         ss << get(i).get() << " ";
     }
 

@@ -24,6 +24,7 @@ static std::map<EGrammer, std::string> LEX_PIPE_ENUM;
 
 // 注意，Pipeline定义的顺序和EGrammer相同
 PIPE_CLASS(Package);
+PIPE_CLASS(Import);
 PIPE_CLASS(Struct);
 } // namespace grammer
 } // namespace pangu

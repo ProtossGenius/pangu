@@ -40,6 +40,17 @@ class IGrammer : public pglang::IProduct {
   protected:
     std::string _name;
 };
+
+class GStep {
+  public:
+    virtual ~GStep() {}
+    int  getStep() { return _step; }
+    void setStep(int step) { this->_step = step; }
+
+  private:
+    int _step;
+};
+
 // package package_name;
 class GPackage : public IGrammer,
                  public virtual GStructContainer,
@@ -72,11 +83,14 @@ class GVariable : public IGrammer {
     std::string var_name;
 };
 
-class GStruct : public IGrammer, public virtual GVarContainer {
+class GStruct : public IGrammer, public virtual GVarContainer, public GStep {
   public:
     std::string name() { return _name; }
-    std::string _name;
+    void        setName(const std::string &name) { _name = name; }
     int         typeId() override;
+
+  private:
+    std::string _name;
 };
 
 class GFunction : public IGrammer {
