@@ -7,7 +7,7 @@ enum EGrammer {
     Package = 0,
     Import,
     Struct,
-
+    Variable,
 };
 
 }

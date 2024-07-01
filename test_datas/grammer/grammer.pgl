@@ -4,7 +4,7 @@ package mytest;
 import 'fmt' as f;
 
 type Test struct {
-  a int;
+  a int; // a int;
   b int;
   c int `json: 'cat'`;
 }

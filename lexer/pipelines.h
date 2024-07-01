@@ -5,13 +5,13 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <string>
 namespace pangu {
 namespace lexer {
 using namespace pglang;
-
 static std::map<int, PPipeline>   LEX_PIPElINES;
 static std::map<int, std::string> LEX_PIPE_ENUM;
-#define PIPE_CLASS(name, type)                                                 \
+#define LEXER_CLASS(name, type)                                                \
     class name : public IPipeline {                                            \
       public:                                                                  \
         void onSwitch(IPipelineFactory *_factory) override {                   \
@@ -20,11 +20,14 @@ static std::map<int, std::string> LEX_PIPE_ENUM;
         }                                                                      \
         void accept(IPipelineFactory *factory, PData &&data) override;         \
     };                                                                         \
-    static Reg __reg_pipe_##name([]() {                                        \
-        LEX_PIPElINES[ ELexPipeline::type ] =                                  \
-            PPipeline((IPipeline *) new name());                               \
-        LEX_PIPE_ENUM[ ELexPipeline::type ] = #type;                           \
-    });
+    static Reg  __reg_pipe_##name([]() {                                       \
+        LEX_PIPElINES[ ELexPipeline::type ] =                                 \
+            PPipeline((IPipeline *) new name());                              \
+        LEX_PIPE_ENUM[ ELexPipeline::type ] = #type;                          \
+    });                                                                       \
+    inline DLex make##type(const std::string &val) {                           \
+        return DLex(ELexPipeline::type, val);                                  \
+    }
 
 enum ELexPipeline {
     Number = 0,
@@ -37,14 +40,14 @@ enum ELexPipeline {
     Eof
 };
 
-PIPE_CLASS(PipeNumber, Number);
-PIPE_CLASS(PipeIdentifier, Identifier)
-PIPE_CLASS(PipeSpace, Space)
-PIPE_CLASS(PipeSymbol, Symbol)
-PIPE_CLASS(PipeComments, Comments)
-PIPE_CLASS(PipeString, String)
-PIPE_CLASS(PipeMacro, Macro)
-PIPE_CLASS(PipeEof, Eof)
+LEXER_CLASS(PipeNumber, Number);
+LEXER_CLASS(PipeIdentifier, Identifier)
+LEXER_CLASS(PipeSpace, Space)
+LEXER_CLASS(PipeSymbol, Symbol)
+LEXER_CLASS(PipeComments, Comments)
+LEXER_CLASS(PipeString, String)
+LEXER_CLASS(PipeMacro, Macro)
+LEXER_CLASS(PipeEof, Eof)
 
 } // namespace lexer
 } // namespace pangu

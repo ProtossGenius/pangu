@@ -11,5 +11,6 @@ Grm(Function);
 Grm(Type);
 Grm(Code);
 Grm(Variable);
+Grm(Import);
 } // namespace grammer
 } // namespace pangu

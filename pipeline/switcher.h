@@ -14,7 +14,7 @@ class ISwitcher {
 
   public:
     void accept(PData &&data);
-    virtual ~ISwitcher(){};
+    virtual ~ISwitcher() {}
 
     void pushToCache(PData &&data) {
         _cached_datas.emplace_back(std::move(data));

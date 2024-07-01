@@ -1,11 +1,8 @@
 #include "lexer/datas.h"
 #include "pipeline/declare.h"
 #include <cctype>
-#include <iostream>
 #include <lexer/pipelines.h>
-#include <memory>
 #include <set>
-#include <stdexcept>
 namespace pangu {
 namespace lexer {
 #define GET_CHAR(data)                                                         \
@@ -13,8 +10,8 @@ namespace lexer {
     const char   cType = ((DInChar *) data.get())->typeId();                   \
     DLex        *lex   = (DLex *) factory->getTopProduct();                    \
     std::string &str   = lex->get()
-
-bool isNumber(const std::string &str, std::string &errMsg) {
+std::string DLex::to_string() { return LEX_PIPE_ENUM[ _typeId ] + " " + _lex; }
+bool        isNumber(const std::string &str, std::string &errMsg) {
     if (str.size() == 1) {
         return true;
     }
