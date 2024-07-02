@@ -1,12 +1,12 @@
 #include "grammer/pipelines.h"
 #include "grammer/datas.h"
 #include "grammer/declare.h"
-#include "grammer/enum classs.h"
+#include "grammer/enums.h"
 #include "lexer/datas.h"
 #include "lexer/pipelines.h"
 #include "pipeline/declare.h"
 #include "pipeline/pipeline.h"
-#include <functional>
+#include "pipeline/switcher.h"
 #include <string>
 #include <utility>
 
@@ -14,7 +14,6 @@ namespace pangu {
 namespace grammer {
 using lexer::makeIdentifier;
 using lexer::makeSpace;
-using lexer::makeString;
 using lexer::makeSymbol;
 void packStructToContainer(IPipelineFactory *factory, PProduct &&pro) {
     auto top = (GStructContainer *) factory->getTopProduct();
@@ -212,14 +211,17 @@ void PipeImport::accept(IPipelineFactory *factory, PData &&data) {
     if (lexer::ELexPipeline::Space == type) {
         return;
     }
+    std::cout << "PipeImport << " << data->to_string() << std::endl;
     switch (topProduct->getStep()) {
     case (int) ImportStep::START: {
+
+        std::cout << lex->to_string() << std::endl;
         topProduct->setStep((int) ImportStep::READ_PATH);
         return;
     }
     case (int) ImportStep::READ_PATH: {
         if (lexer::ELexPipeline::String != type) {
-            factory->onFail("except package path, bug get " + lex->to_string());
+            factory->onFail("except package path, but get " + lex->to_string());
         }
         if (str.empty()) {
             factory->onFail("package path should not be empty");
@@ -228,6 +230,7 @@ void PipeImport::accept(IPipelineFactory *factory, PData &&data) {
             factory->onFail("package path shouldn't end with '/'");
         }
         topProduct->setPackage(str);
+        topProduct->setStep(int(ImportStep::WAIT_ALAIS));
         return;
     }
     case (int) ImportStep::WAIT_ALAIS: {
@@ -267,7 +270,7 @@ void PipeImport::accept(IPipelineFactory *factory, PData &&data) {
 void PipePackage::onSwitch(IPipelineFactory *factory) {
     if (factory->getTopProduct()) {
         factory->onFail("package can't in another container:" +
-                        ((IGrammer *) factory->getTopProduct())->to_string());
+                        factory->getTopProduct()->to_string());
     }
     auto ptr = new GPackage();
     factory->pushProduct(PProduct(ptr));
@@ -276,6 +279,9 @@ enum class PkgStep { START = 0, READ_PACKAGE, FINISH };
 void PipePackage::accept(IPipelineFactory *factory, PData &&data) {
     GET_LEX(data);
     GET_TOP(factory, GPackage);
+    if (lexer::ELexPipeline::Space == type) {
+        return;
+    }
     switch (topProduct->getStep()) {
     case int(PkgStep::START): {
         topProduct->setStep((int) PkgStep::READ_PACKAGE);
@@ -293,13 +299,20 @@ void PipePackage::accept(IPipelineFactory *factory, PData &&data) {
         if (makeSymbol(";") != *lex) {
             factory->onFail("except ';', but get :" + lex->to_string());
         }
-        
+        factory->getSwitcher()->unchoicePipeline();
         return;
     }
     }
 
     default:
+        factory->onFail("unexcept step code: " +
+                        std::to_string(topProduct->getStep()));
     }
+}
+
+void PipeIgnore::onSwitch(IPipelineFactory *_) {}
+void PipeIgnore::accept(IPipelineFactory *factory, PData &&data) {
+    factory->getSwitcher()->unchoicePipeline();
 }
 
 } // namespace grammer

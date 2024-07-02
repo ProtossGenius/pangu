@@ -10,8 +10,10 @@ namespace lexer {
     const char   cType = ((DInChar *) data.get())->typeId();                   \
     DLex        *lex   = (DLex *) factory->getTopProduct();                    \
     std::string &str   = lex->get()
-std::string DLex::to_string() { return LEX_PIPE_ENUM[ _typeId ] + " " + _lex; }
-bool        isNumber(const std::string &str, std::string &errMsg) {
+std::string DLex::to_string() {
+    return "lexer <" + LEX_PIPE_ENUM[ _typeId ] + "> content = " + _lex;
+}
+bool isNumber(const std::string &str, std::string &errMsg) {
     if (str.size() == 1) {
         return true;
     }

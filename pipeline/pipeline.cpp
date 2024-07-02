@@ -4,11 +4,13 @@
 #include <iostream>
 #include <utility>
 namespace pglang {
-IPipelineFactory::IPipelineFactory(PSwitcher               &&switcher,
+IPipelineFactory::IPipelineFactory(const std::string        &name,
+                                   PSwitcher               &&switcher,
                                    std::map<int, PPipeline> &_pipelines,
                                    //  PPartsDealer          &&partsDealer,
                                    ProductPack finalProductPacker)
-    : _switcher(std::move(switcher))
+    : _name(name)
+    , _switcher(std::move(switcher))
     , _pipelines(_pipelines)
     , _final_product_packer(finalProductPacker) {
     _switcher->_factory = this;

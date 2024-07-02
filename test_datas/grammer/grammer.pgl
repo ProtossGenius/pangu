@@ -1,22 +1,24 @@
 package mytest;
 
 // import fmt;
-import 'fmt' as f;
+import  "fmt" as f;
 
 type Test struct {
   a int; // a int;
   b int;
   c int `json: 'cat'`;
 }
-
+// 还没实现接口
+/*
 type Interface interface {
   Accept(test: Test) (bool, error); 
 }
-
-var t: Test = {a: 4, b: 5, c: 6};
-
-func main() {
+*/
+// 还没实现变量
+// var t: Test = {a: 4, b: 5, c: 6};
+// 还没实现函数
+/* func main() {
   f.print("hello world!");
 }
-
+*/
 

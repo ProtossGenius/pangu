@@ -3,12 +3,14 @@
 #include "lexer/pipelines.h"
 #include "pipeline/declare.h"
 #include "pipeline/pipeline.h"
+#include <cassert>
 #include <sstream>
 namespace pangu {
 namespace grammer {
 void GrammerSwitcher::onChoice() {
-    auto first = get(0);
-    if (lexer::makeIdentifier("package") == first) {
+    auto &first = get(0);
+    auto  pack  = lexer::makeIdentifier("package");
+    if (pack == first) {
         _factory->choicePipeline(EGrammer::Package);
         return;
     }
@@ -31,8 +33,12 @@ void GrammerSwitcher::onChoice() {
     for (size_t i = 0; i < _cached_datas.size(); ++i) {
         ss << get(i).get() << " ";
     }
-
-    _factory->onFail("can't choice pipeline: " + ss.str());
+    if (first.typeId() == lexer::ELexPipeline::Space ||
+        first.typeId() == lexer::ELexPipeline::Comments) {
+        _factory->choicePipeline(EGrammer::Ignore);
+        return;
+    }
+    _factory->onFail("GrammerSwitcher can't choice pipeline: " + ss.str());
 }
 } // namespace grammer
 } // namespace pangu

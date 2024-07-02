@@ -9,7 +9,6 @@ void ISwitcher::accept(PData &&data) {
         dealCachedDatas();
         return;
     }
-
     _cached_datas.emplace_back(std::move(data));
     if (nullptr == _current_pipeline) {
         onChoice();

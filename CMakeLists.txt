@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(moon-engine)
+project(pangu)
 set(CXX_FLAGS
         -g
         # -DVALGRIND
@@ -18,13 +18,13 @@ set(CXX_FLAGS
         -march=native
         # -MMD
         -rdynamic
-		-std=c++2a
+        # -std=c++2a
         )
 
-if (POLICY CMP0072)
-  SET(OpenGL_GL_PREFERENCE LEGACY)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address -fno-omit-frame-pointer")
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=address -fno-omit-frame-pointer -lasan")
 endif()
-
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 include_directories(.)
@@ -37,6 +37,6 @@ add_subdirectory(virtual_machine)
 add_subdirectory(pipeline)
 add_subdirectory(lexer)
 add_subdirectory(grammer)
-target_link_libraries(pangu virtual_machine lexer pipeline)
+target_link_libraries(pangu virtual_machine grammer lexer pipeline)
 target_link_libraries(pangu-lexer virtual_machine lexer pipeline)
 

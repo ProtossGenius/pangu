@@ -10,10 +10,12 @@ class ISwitcher {
     virtual void onChoice() = 0;
     virtual void readForAnalysis(const PData &data) {}
     void         dealCachedDatas();
-    void         afterPack() { _current_pipeline = nullptr; }
+    // TODO: if this function change, see if unchoicePipeline need change.
+    void afterPack() { _current_pipeline = nullptr; }
 
   public:
     void accept(PData &&data);
+    void unchoicePipeline() { _current_pipeline = nullptr; }
     virtual ~ISwitcher() {}
 
     void pushToCache(PData &&data) {

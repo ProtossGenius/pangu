@@ -8,6 +8,7 @@ enum EGrammer {
     Import,
     Struct,
     Variable,
+    Ignore, // ignore input.
 };
 
 }
