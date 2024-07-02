@@ -32,14 +32,14 @@ class DLex : public pglang::IProduct {
     std::string &get() { return _lex; }
     std::string  to_string() override;
     bool         operator==(const DLex &lex) const {
-        return _typeId == lex._typeId && _lex == lex._lex;
+                return _typeId == lex._typeId && _lex == lex._lex;
     }
 
     bool operator!=(const DLex &lex) { return !(*this == lex); }
 
   private:
-    std::string _lex;
     int         _typeId;
+    std::string _lex;
 };
 
 } // namespace lexer

@@ -10,15 +10,13 @@ void ISwitcher::accept(PData &&data) {
         return;
     }
     _cached_datas.emplace_back(std::move(data));
-    if (nullptr == _current_pipeline) {
-        onChoice();
-        auto choisedPipeline = _factory->getPipeline();
-        if (nullptr == choisedPipeline) {
-            return;
-        }
-        _current_pipeline = choisedPipeline;
-        _current_pipeline->onSwitch(_factory);
+    onChoice();
+    auto choisedPipeline = _factory->getPipeline();
+    if (nullptr == choisedPipeline) {
+        return;
     }
+    _current_pipeline = choisedPipeline;
+    _current_pipeline->onSwitch(_factory);
     dealCachedDatas();
     return;
 }

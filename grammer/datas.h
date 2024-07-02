@@ -36,6 +36,8 @@ class GVarContainer {
 class IGrammer : public pglang::IProduct {
   public:
     virtual std::string integrityTest() { return ""; }
+    virtual int         typeId() const override = 0;
+    virtual std::string to_string() override { return ""; }
     virtual ~IGrammer() {}
 
   public:
@@ -82,7 +84,7 @@ class GImport : public IGrammer, public GStep {
     const std::string &getPackage() { return _package; }
     void               setPackage(const std::string &pkg) { _package = pkg; }
     void               setAlias(const std::string &name) { setName(name); }
-    const std::string &alias() { return name(); }
+    std::string        alias() { return name(); }
     std::string        to_string() override;
 
   protected:
@@ -91,19 +93,18 @@ class GImport : public IGrammer, public GStep {
 class GType : public IGrammer {
   public:
     int                typeId() const override;
-    const std::string &getName() { return _name; }
     const std::string &getPackage() { return _package; }
     void               read(std::string &str) {
-        _name.swap(_package);
-        _name.swap(str);
+                      _name.swap(_package);
+                      _name.swap(str);
     }
 
     std::string to_string() override;
 
   private:
     std::string _package;
-    std::string _name;
 };
+
 class GVariable : public IGrammer, public GStep {
   public:
     GVariable()
@@ -122,9 +123,10 @@ class GVariable : public IGrammer, public GStep {
     std::string _detail;
 };
 
-class GStruct : public IGrammer, public virtual GVarContainer, public GStep {
+class GStruct : public IGrammer, public GVarContainer, public GStep {
   public:
-    int typeId() const override { return 0; }
+    int         typeId() const override { return 0; }
+    std::string to_string() override;
 };
 
 class GFunction : public IGrammer {

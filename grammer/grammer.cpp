@@ -10,7 +10,7 @@ pglang::PPipelineFactory create(pglang::ProductPack packer) {
     return std::make_unique<pglang::IPipelineFactory>(
         "GrammerPipelineFactory",
         std::unique_ptr<pglang::ISwitcher>(new GrammerSwitcher()),
-        grammer::GRAMMER_PIPElINES, packer);
+        grammer::GRAMMER_PIPElINES, grammer::GRAMMER_PIPE_ENUM, packer);
 }
 
 const pglang::ProductPack PACK_PRINT = [](auto factory, auto pro) {

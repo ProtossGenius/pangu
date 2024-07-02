@@ -15,7 +15,4 @@ int main(int argc, const char *argv[]) {
         cout << "need file name." << endl;
         return -1;
     }
-
-    grammer::G
-    lexer::analysis(argv[ 1 ], lexer::packNext());
 }

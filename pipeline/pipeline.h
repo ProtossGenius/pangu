@@ -2,6 +2,7 @@
 #include "pipeline/declare.h"
 #include "pipeline/parts_dealer.h"
 #include <functional>
+#include <iostream>
 #include <map>
 #include <stack>
 #include <string>
@@ -27,15 +28,20 @@ class IPipelineFactory {
   public:
     IPipelineFactory(
         const std::string &name, PSwitcher &&switcher,
-        std::map<int, PPipeline>                    &_pipelines,
+        std::map<int, PPipeline>                    &pipelines,
+        std::map<int, std::string>                  &pipeline_name_map,
         /*PPartsDealer &&partsDealer, */ ProductPack finalProductPacker);
-    ISwitcher    *getSwitcher() { return _switcher.get(); }
-    IPipeline    *getPipeline();
-    void          choicePipeline(size_t index) { _index_stack.push(index); }
-    IPartsDealer *getPartsDealer() { return _parts_dealer.get(); }
-    void          pushProduct(PProduct &&pro, ProductPack pack);
-    void          pushProduct(PProduct &&pro);
-    IProduct     *getTopProduct() {
+    //    ISwitcher *getSwitcher() { return _switcher.get(); }
+    IPipeline *getPipeline();
+    void       choicePipeline(size_t index) {
+              std::cout << name() << " choicePipeline(" << _pipeline_name_map[ index ]
+                        << ")" << std::endl;
+              _index_stack.push(index);
+    }
+    void      unchoicePipeline();
+    void      pushProduct(PProduct &&pro, ProductPack pack);
+    void      pushProduct(PProduct &&pro);
+    IProduct *getTopProduct() {
         return _product_stack.empty() ? nullptr : _product_stack.top().get();
     }
     void               packProduct();
@@ -48,14 +54,14 @@ class IPipelineFactory {
     virtual ~IPipelineFactory();
 
   protected:
-    PSwitcher                 _switcher;
-    std::map<int, PPipeline> &_pipelines;
-    PPartsDealer              _parts_dealer;
-    std::stack<PProduct>      _product_stack;
-    std::stack<ProductPack>   _packer_stack;
-    ProductPack               _final_product_packer;
-    std::stack<size_t>        _index_stack;
-    std::string               _name;
+    std::string                 _name;
+    PSwitcher                   _switcher;
+    std::map<int, PPipeline>   &_pipelines;
+    std::map<int, std::string> &_pipeline_name_map;
+    ProductPack                 _final_product_packer;
+    std::stack<PProduct>        _product_stack;
+    std::stack<ProductPack>     _packer_stack;
+    std::stack<size_t>          _index_stack;
 };
 
 class IPipeline {

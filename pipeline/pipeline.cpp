@@ -4,14 +4,16 @@
 #include <iostream>
 #include <utility>
 namespace pglang {
-IPipelineFactory::IPipelineFactory(const std::string        &name,
-                                   PSwitcher               &&switcher,
-                                   std::map<int, PPipeline> &_pipelines,
-                                   //  PPartsDealer          &&partsDealer,
-                                   ProductPack finalProductPacker)
+IPipelineFactory::IPipelineFactory(
+    const std::string &name, PSwitcher &&switcher,
+    std::map<int, PPipeline>   &_pipelines,
+    std::map<int, std::string> &pipeline_name_map,
+    //  PPartsDealer          &&partsDealer,
+    ProductPack finalProductPacker)
     : _name(name)
     , _switcher(std::move(switcher))
     , _pipelines(_pipelines)
+    , _pipeline_name_map(pipeline_name_map)
     , _final_product_packer(finalProductPacker) {
     _switcher->_factory = this;
 }
@@ -30,7 +32,10 @@ void IPipelineFactory::accept(PData &&data) {
 void IPipelineFactory::pushProduct(PProduct &&pro) {
     pushProduct(std::move(pro), _final_product_packer);
 }
-
+void IPipelineFactory::unchoicePipeline() {
+    _index_stack.pop();
+    _switcher->unchoicePipeline();
+}
 void IPipelineFactory::undealData(PData &&data) {
     _switcher->pushToCache(std::move(data));
 }

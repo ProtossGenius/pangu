@@ -12,6 +12,17 @@
 
 namespace pangu {
 namespace grammer {
+
+#define GET_LEX(data)                                                          \
+    lexer::DLex *lex      = (lexer::DLex *) data.get();                        \
+    std::string  str      = lex->get();                                        \
+    int          type     = lex->typeId();                                     \
+    std::string  typeName = lexer::LEX_PIPE_ENUM[ type ];                      \
+    if (lexer::ELexPipeline::Comments == type) {                               \
+        return;                                                                \
+    }
+#define GET_TOP(factory, Type)                                                 \
+    Type *topProduct = (Type *) factory->getTopProduct();
 using lexer::makeIdentifier;
 using lexer::makeSpace;
 using lexer::makeSymbol;
@@ -28,6 +39,7 @@ enum class StructStep {
 };
 
 void PipeStruct::onSwitch(IPipelineFactory *_factory) {
+    std::cout << "switch to PipeStruct" << std::endl;
     if (_factory->getTopProduct()) {
         auto ptr = new GStruct();
         ptr->setStep((int) (int) StructStep::WAIT_TYPE);
@@ -36,17 +48,6 @@ void PipeStruct::onSwitch(IPipelineFactory *_factory) {
     }
     _factory->onFail("no package when create Struct.");
 }
-
-#define GET_LEX(data)                                                          \
-    lexer::DLex *lex      = (lexer::DLex *) data.get();                        \
-    std::string  str      = lex->get();                                        \
-    int          type     = lex->typeId();                                     \
-    std::string  typeName = lexer::LEX_PIPE_ENUM[ type ];                      \
-    if (lexer::ELexPipeline::Comments == type) {                               \
-        return;                                                                \
-    }
-#define GET_TOP(factory, Type)                                                 \
-    Type *topProduct = (Type *) factory->getTopProduct();
 
 void packVarToStruct(IPipelineFactory *factory, PProduct &&pro) {
     auto ptr             = (GVariable *) pro.release();
@@ -186,7 +187,7 @@ void packImport(IPipelineFactory *factory, PProduct &&pro) {
 void PipeImport::onSwitch(IPipelineFactory *factory) {
     if (factory->getTopProduct()) {
         auto ptr = new GImport();
-        factory->pushProduct(PProduct(ptr), packStructToContainer);
+        factory->pushProduct(PProduct(ptr), packImport);
         return;
     }
     factory->onFail("no package when create Struct.");
@@ -211,11 +212,9 @@ void PipeImport::accept(IPipelineFactory *factory, PData &&data) {
     if (lexer::ELexPipeline::Space == type) {
         return;
     }
-    std::cout << "PipeImport << " << data->to_string() << std::endl;
     switch (topProduct->getStep()) {
     case (int) ImportStep::START: {
 
-        std::cout << lex->to_string() << std::endl;
         topProduct->setStep((int) ImportStep::READ_PATH);
         return;
     }
@@ -299,7 +298,7 @@ void PipePackage::accept(IPipelineFactory *factory, PData &&data) {
         if (makeSymbol(";") != *lex) {
             factory->onFail("except ';', but get :" + lex->to_string());
         }
-        factory->getSwitcher()->unchoicePipeline();
+        factory->unchoicePipeline();
         return;
     }
     }
@@ -312,7 +311,7 @@ void PipePackage::accept(IPipelineFactory *factory, PData &&data) {
 
 void PipeIgnore::onSwitch(IPipelineFactory *_) {}
 void PipeIgnore::accept(IPipelineFactory *factory, PData &&data) {
-    factory->getSwitcher()->unchoicePipeline();
+    factory->unchoicePipeline();
 }
 
 } // namespace grammer

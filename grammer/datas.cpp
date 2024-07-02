@@ -1,10 +1,11 @@
 #include "grammer/datas.h"
 #include "grammer/declare.h"
+#include <cassert>
+#include <iostream>
 #include <ostream>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
-
 namespace pangu {
 namespace grammer {
 using std::endl;
@@ -49,6 +50,14 @@ void GVarContainer::write_string(std::ostream      &ss,
     }
 }
 
+std::string GStruct::to_string() {
+    std::stringstream ss;
+    ss << "struct " << name() << endl;
+    write_string(ss, ";\n");
+    ss << endl;
+    return ss.str();
+}
+
 std::string GPackage::to_string() {
     std::stringstream ss;
     ss << "package " << this->_name << endl;
@@ -83,7 +92,7 @@ std::string GVariable::integrityTest() {
     if (_name.empty()) {
         return "need name";
     }
-    if (_type->getName().empty()) {
+    if (_type->name().empty()) {
         return "need type";
     }
     return "";
