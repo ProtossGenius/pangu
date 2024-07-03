@@ -9,6 +9,7 @@ Grm(Struct);
 Grm(Package);
 Grm(Function);
 Grm(Type);
+Grm(TypeDef);
 Grm(Code);
 Grm(Variable);
 Grm(Import);

@@ -20,10 +20,10 @@ class GrammerSwitcher : public ISwitcher {
     void onFail(const std::string &str) override {
         throw std::runtime_error(str);
     }
-    std::string getCached() {
+    std::string getCachedData() {
         std::stringstream ss;
         for (size_t i = 0; i < _cached_datas.size(); ++i) {
-            ss << get(i).get() << " ";
+            ss << get(i).to_string() << " ";
         }
         return ss.str();
     }

@@ -32,10 +32,11 @@ class DLex : public pglang::IProduct {
     std::string &get() { return _lex; }
     std::string  to_string() override;
     bool         operator==(const DLex &lex) const {
-                return _typeId == lex._typeId && _lex == lex._lex;
+        return _typeId == lex._typeId && _lex == lex._lex;
     }
 
     bool operator!=(const DLex &lex) { return !(*this == lex); }
+    ~DLex() {}
 
   private:
     int         _typeId;

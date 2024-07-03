@@ -10,10 +10,12 @@
 namespace pangu {
 namespace lexer {
 pglang::PPipelineFactory create(pglang::ProductPack packer) {
-    return std::make_unique<pglang::IPipelineFactory>(
+    auto ptr = new IPipelineFactory(
         "LexerPipelineFactory",
         std::unique_ptr<pglang::ISwitcher>(new lexer::LexSwitcher()),
         lexer::LEX_PIPElINES, lexer::LEX_PIPE_ENUM, packer);
+    addOnTerminalFuncs([ = ]() { ptr->status(std::cout); });
+    return pglang::PPipelineFactory(ptr);
 }
 
 void analysis(const std::string &file, pglang::ProductPack packer) {
@@ -37,6 +39,7 @@ const pglang::ProductPack PACK_PRINT = [](auto factory, auto pro) {
     if (lex->typeId() == lexer::ELexPipeline::Space) {
         return;
     }
+    std::cout << "type = " << lex->to_string() << std::endl;
 };
 
 pglang::ProductPack packNext(pglang::IPipelineFactory *factory) {

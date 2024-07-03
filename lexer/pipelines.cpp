@@ -176,6 +176,7 @@ void PipeMacro::accept(IPipelineFactory *factory, PData &&data) {
         factory->packProduct();
         return;
     }
+    lex->to_string();
     str.push_back(c);
 }
 void PipeEof::accept(IPipelineFactory *factory, PData &&data) {

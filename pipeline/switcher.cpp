@@ -1,22 +1,33 @@
 #include "pipeline/switcher.h"
 #include "pipeline/pipeline.h"
+#include <iostream>
 #include <vector>
 namespace pglang {
 void ISwitcher::accept(PData &&data) {
     readForAnalysis(data);
-    if (_current_pipeline) {
-        _current_pipeline->accept(_factory, std::move(data));
+    auto choisedPipeline = _factory->getPipeline();
+    if (choisedPipeline && !_factory->needSwitch()) {
+        choisedPipeline->accept(_factory, std::move(data));
         dealCachedDatas();
         return;
     }
     _cached_datas.emplace_back(std::move(data));
-    onChoice();
-    auto choisedPipeline = _factory->getPipeline();
+    // std::cout << "before on choice, pipeline:"
+    //           << (choisedPipeline ? typeid(choisedPipeline).name() : "null")
+    //           << std::endl;
+    if (choisedPipeline == nullptr) {
+        onChoice();
+        choisedPipeline = _factory->getPipeline();
+    }
+
+    // std::cout << "after on choice, pipeline:"
+    //           << (choisedPipeline ? typeid(choisedPipeline).name() : "null")
+    //           << std::endl;
+
     if (nullptr == choisedPipeline) {
         return;
     }
-    _current_pipeline = choisedPipeline;
-    _current_pipeline->onSwitch(_factory);
+    choisedPipeline->onSwitch(_factory);
     dealCachedDatas();
     return;
 }

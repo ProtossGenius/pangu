@@ -25,6 +25,7 @@ static std::map<int, std::string> GRAMMER_PIPE_ENUM;
 // 注意，Pipeline定义的顺序和EGrammer相同
 GRAMMER_CLASS(Package);
 GRAMMER_CLASS(Import);
+GRAMMER_CLASS(TypeDef);
 GRAMMER_CLASS(Struct);
 GRAMMER_CLASS(Variable);
 GRAMMER_CLASS(Ignore);

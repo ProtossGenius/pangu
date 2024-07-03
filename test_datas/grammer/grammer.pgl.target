@@ -1,0 +1,12 @@
+package mytest
+import list(1)
+import "fmt" as f
+struct list (1):
+struct Test
+(var) a int ;
+(var) b int ;
+(var) c int `json: 'cat'`
+
+function list:(0)
+variable list:(0)
+

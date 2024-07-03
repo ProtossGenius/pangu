@@ -33,6 +33,9 @@ void GFunctionContainer::write_string(std::ostream &ss) {
     }
 }
 void GVarContainer::addVariable(PVariable &&var) {
+    if (_vars.count("hello world")) {
+        throw std::runtime_error("hello world!");
+    }
     if (_vars.count(var->name())) {
         throw std::runtime_error("existed varaiable : " + var->name());
     }
@@ -99,7 +102,7 @@ std::string GVariable::integrityTest() {
 }
 
 std::string GVariable::to_string() {
-    return name() + " " + _type->to_string() + " " + _detail;
+    return "(var) " + name() + " " + _type->to_string() + " " + _detail;
 }
 } // namespace grammer
 } // namespace pangu

@@ -2,6 +2,7 @@
 #include "grammer/declare.h"
 #include "grammer/enums.h"
 #include "pipeline/pipeline.h"
+#include "virtual_machine/machine.h"
 #include <map>
 #include <string>
 namespace pangu {
@@ -92,11 +93,11 @@ class GImport : public IGrammer, public GStep {
 };
 class GType : public IGrammer {
   public:
-    int                typeId() const override;
+    int                typeId() const override { return 0; }
     const std::string &getPackage() { return _package; }
     void               read(std::string &str) {
-                      _name.swap(_package);
-                      _name.swap(str);
+        _name.swap(_package);
+        _name.swap(str);
     }
 
     std::string to_string() override;
@@ -109,7 +110,7 @@ class GVariable : public IGrammer, public GStep {
   public:
     GVariable()
         : _type(PType(new GType())) {}
-    int typeId() const override;
+    int typeId() const override { return 0; }
 
   public:
     void setDetail(const std::string &detail) { _detail = detail; }
@@ -122,11 +123,20 @@ class GVariable : public IGrammer, public GStep {
     PType       _type;
     std::string _detail;
 };
-
+class GTypeDef : public IGrammer, public GStep {
+  public:
+    virtual int         typeId() const override { return 0; }
+    virtual std::string to_string() override { return "typedef: " + name(); }
+};
 class GStruct : public IGrammer, public GVarContainer, public GStep {
   public:
     int         typeId() const override { return 0; }
     std::string to_string() override;
+};
+class GIgnore : public IGrammer {
+  public:
+    int         typeId() const override { return 0; }
+    std::string to_string() override { return "GIgnore"; }
 };
 
 class GFunction : public IGrammer {

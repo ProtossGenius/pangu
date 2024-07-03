@@ -7,10 +7,12 @@
 namespace pangu {
 namespace grammer {
 pglang::PPipelineFactory create(pglang::ProductPack packer) {
-    return std::make_unique<pglang::IPipelineFactory>(
+    auto ptr = new IPipelineFactory(
         "GrammerPipelineFactory",
         std::unique_ptr<pglang::ISwitcher>(new GrammerSwitcher()),
         grammer::GRAMMER_PIPElINES, grammer::GRAMMER_PIPE_ENUM, packer);
+    addOnTerminalFuncs([ = ]() { ptr->status(std::cout); });
+    return pglang::PPipelineFactory(ptr);
 }
 
 const pglang::ProductPack PACK_PRINT = [](auto factory, auto pro) {

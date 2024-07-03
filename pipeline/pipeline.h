@@ -4,8 +4,10 @@
 #include <functional>
 #include <iostream>
 #include <map>
+#include <ostream>
 #include <stack>
 #include <string>
+#include <type_traits>
 namespace pglang {
 class IData {
   public:
@@ -34,11 +36,13 @@ class IPipelineFactory {
     //    ISwitcher *getSwitcher() { return _switcher.get(); }
     IPipeline *getPipeline();
     void       choicePipeline(size_t index) {
-              std::cout << name() << " choicePipeline(" << _pipeline_name_map[ index ]
-                        << ")" << std::endl;
-              _index_stack.push(index);
+#ifdef DEBUG_MODE
+        std::cout << name() << " choicePipeline(" << _pipeline_name_map[ index ]
+                  << ")" << std::endl;
+#endif
+        _index_stack.push(index);
     }
-    void      unchoicePipeline();
+    //   void      unchoicePipeline();
     void      pushProduct(PProduct &&pro, ProductPack pack);
     void      pushProduct(PProduct &&pro);
     IProduct *getTopProduct() {
@@ -48,6 +52,8 @@ class IPipelineFactory {
     void               onFail(const std::string &errMsg);
     void               undealData(PData &&data);
     const std::string &name() { return _name; }
+    void               status(std::ostream &ss);
+    bool needSwitch() { return _index_stack.size() > _product_stack.size(); }
 
   public:
     void accept(PData &&data);
@@ -77,4 +83,5 @@ class Reg {
     Reg(std::function<void()> action) { action(); }
 };
 
+const static Reg __REGISTER_TERMINAL_FUNCS([]() { registerTerminalFuncs(); });
 } // namespace pglang
