@@ -3,10 +3,13 @@ import list(1)
 import fmt as f
 struct list (1):
 struct Test
-(var) a int ;
-(var) b int ;
-(var) c int json: 'cat'
+(var) a type(int) ;
+(var) b type(int) ;
+(var) c type(int) json: 'cat'
 
 function list:(0)
+type func list:(2)
+type TestFunc1func([(var) a type(int) ,(var) b type(int) ,(var) c type(string) ])[(var) return type(int) ]
+type TestFunc2func([(var) a type(int) ,(var) b type(string) ,(var) c type(string) ])[(var) d type(int) ,(var) e type(error) ]
 variable list:(0)
 

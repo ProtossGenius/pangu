@@ -22,10 +22,10 @@ void GStructContainer::write_string(std::ostream &ss) {
     }
 }
 void GFunctionContainer::addFunction(PFunction &&fun) {
-    if (_functions.count(fun->sign())) {
-        throw std::runtime_error("existed function:" + fun->sign());
+    if (_functions.count(fun->name())) {
+        throw std::runtime_error("existed function:" + fun->name());
     }
-    _functions[ fun->sign() ] = std::move(fun);
+    _functions[ fun->name() ] = std::move(fun);
 }
 void GFunctionContainer::write_string(std::ostream &ss) {
     for (auto &it : _functions) {
@@ -34,10 +34,10 @@ void GFunctionContainer::write_string(std::ostream &ss) {
 }
 
 void GTypeFunctContainer::addFunction(PFuncDef &&fun) {
-    if (_functions.count(fun->sign())) {
-        throw std::runtime_error("existed function:" + fun->sign());
+    if (_functions.count(fun->name())) {
+        throw std::runtime_error("existed function:" + fun->name());
     }
-    _functions[ fun->sign() ] = std::move(fun);
+    _functions[ fun->name() ] = std::move(fun);
 }
 void GTypeFunctContainer::write_string(std::ostream &ss) {
     for (auto &it : _functions) {
@@ -90,6 +90,8 @@ std::string GPackage::to_string() {
     structs.write_string(ss);
     ss << "function list:(" << functions.size() << ")" << endl;
     functions.write_string(ss);
+    ss << "type func list:(" << function_defs.size() << ")" << endl;
+    function_defs.write_string(ss);
     ss << "variable list:(" << vars.size() << ")" << endl;
     vars.write_string(ss, "\n");
     return ss.str();
@@ -114,7 +116,7 @@ std::string GVariable::integrityTest() {
         return "need name";
     }
     if (_type->name().empty()) {
-        return "need type";
+        return "meeed type";
     }
     return "";
 }
@@ -124,7 +126,7 @@ std::string GVariable::to_string() {
 }
 
 std::string GFuncDef::to_string() {
-    return "func " + name() + "(" + params.to_string() + ")" +
+    return "type " + name() + "func(" + params.to_string() + ")" +
            result.to_string();
 }
 } // namespace grammer

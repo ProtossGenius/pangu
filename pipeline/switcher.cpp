@@ -12,17 +12,10 @@ void ISwitcher::accept(PData &&data) {
         return;
     }
     _cached_datas.emplace_back(std::move(data));
-    // std::cout << "before on choice, pipeline:"
-    //           << (choisedPipeline ? typeid(choisedPipeline).name() : "null")
-    //           << std::endl;
     if (choisedPipeline == nullptr) {
         onChoice();
         choisedPipeline = _factory->getPipeline();
     }
-
-    // std::cout << "after on choice, pipeline:"
-    //           << (choisedPipeline ? typeid(choisedPipeline).name() : "null")
-    //           << std::endl;
 
     if (nullptr == choisedPipeline) {
         return;
