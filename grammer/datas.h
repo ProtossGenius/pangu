@@ -2,8 +2,10 @@
 #include "grammer/declare.h"
 #include "grammer/enums.h"
 #include "pipeline/pipeline.h"
-#include "virtual_machine/machine.h"
+#include <cstddef>
 #include <map>
+#include <set>
+#include <sstream>
 #include <string>
 namespace pangu {
 namespace grammer {
@@ -12,7 +14,8 @@ class GStructContainer {
   public:
     void addStruct(PStruct &&stru);
     virtual ~GStructContainer() {}
-    void write_string(std::ostream &ss);
+    void   write_string(std::ostream &ss);
+    size_t size() const { return _structs.size(); }
 
   protected:
     std::map<std::string, PStruct> _structs;
@@ -21,24 +24,28 @@ class GFunctionContainer {
   public:
     void addFunction(PFunction &&fun);
     virtual ~GFunctionContainer() {}
-    void write_string(std::ostream &ss);
+    void   write_string(std::ostream &ss);
+    size_t size() const { return _functions.size(); }
 
   protected:
     std::map<std::string, PFunction> _functions;
 };
-class GVarContainer {
+
+class GTypeFunctContainer {
   public:
-    void addVariable(PVariable &&var);
-    void write_string(std::ostream &ss, const std::string &splitStr);
+    void addFunction(PFuncDef &&fun);
+    virtual ~GTypeFunctContainer() {}
+    void   write_string(std::ostream &ss);
+    size_t size() const { return _functions.size(); }
 
   protected:
-    std::map<std::string, PVariable> _vars;
+    std::map<std::string, PFuncDef> _functions;
 };
 class IGrammer : public pglang::IProduct {
   public:
     virtual std::string integrityTest() { return ""; }
     virtual int         typeId() const override = 0;
-    virtual std::string to_string() override { return ""; }
+    virtual std::string to_string() override = 0;
     virtual ~IGrammer() {}
 
   public:
@@ -61,12 +68,35 @@ class GStep {
     int _step;
 };
 
+class GVarContainer : public IGrammer, public GStep {
+  public:
+    void addVariable(PVariable &&var);
+    void write_string(std::ostream &ss, const std::string &splitStr);
+    virtual std::string integrityTest() override { return ""; }
+    virtual int         typeId() const override { return 0; }
+    virtual std::string to_string() override {
+        std::stringstream ss;
+        ss << "[" ;
+        write_string(ss, ",");
+        ss << "]" ;
+        return ss.str();
+    }
+    size_t size() const { return _vars.size(); }
+    virtual ~GVarContainer() {}
+    void swap(GVarContainer &rhs) {
+        _vars.swap(rhs._vars);
+        _no_type_vars.swap(rhs._no_type_vars);
+    }
+
+  protected:
+    std::map<std::string, PVariable> _vars;
+
+  private:
+    std::set<std::string> _no_type_vars;
+};
+
 // package package_name;
-class GPackage : public IGrammer,
-                 public GStep,
-                 public virtual GStructContainer,
-                 public virtual GVarContainer,
-                 public virtual GFunctionContainer {
+class GPackage : public IGrammer, public GStep {
   public:
     int      typeId() const override { return EGrammer::Package; }
     void     addImport(PImport &&imp);
@@ -74,6 +104,11 @@ class GPackage : public IGrammer,
         return _imports.count(name) ? _imports[ name ].get() : nullptr;
     }
     std::string to_string() override;
+
+    GFunctionContainer  functions;
+    GTypeFunctContainer function_defs;
+    GStructContainer    structs;
+    GVarContainer       vars;
 
   private:
     std::map<std::string, PImport> _imports;
@@ -99,6 +134,12 @@ class GType : public IGrammer {
         _name.swap(_package);
         _name.swap(str);
     }
+
+    void copyFrom(const GType &rhs) {
+        _name    = rhs._name;
+        _package = rhs._package;
+    }
+    bool empty() { return _name.empty(); }
 
     std::string to_string() override;
 
@@ -128,7 +169,7 @@ class GTypeDef : public IGrammer, public GStep {
     virtual int         typeId() const override { return 0; }
     virtual std::string to_string() override { return "typedef: " + name(); }
 };
-class GStruct : public IGrammer, public GVarContainer, public GStep {
+class GStruct : public GVarContainer {
   public:
     int         typeId() const override { return 0; }
     std::string to_string() override;
@@ -139,15 +180,19 @@ class GIgnore : public IGrammer {
     std::string to_string() override { return "GIgnore"; }
 };
 
-class GFunction : public IGrammer {
+class GFuncDef : public IGrammer, public GStep {
   public:
-    int           typeId() const override { return 4; }
-    std::string   sign() { return ""; }
-    GVarContainer params;
-    GVarContainer result;
-    PCode         code;
+    int                 typeId() const override { return 4; }
+    std::string         sign() { return ""; }
+    virtual std::string to_string() override;
+    GVarContainer       params;
+    GVarContainer       result;
 };
 
+class GFunction : public GFuncDef {
+  protected:
+    PCode code;
+};
 class GCode : public IGrammer {
   public:
     int typeId() const override;

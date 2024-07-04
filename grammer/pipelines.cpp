@@ -2,6 +2,7 @@
 #include "grammer/datas.h"
 #include "grammer/declare.h"
 #include "grammer/enums.h"
+#include "grammer/packer.h"
 #include "lexer/datas.h"
 #include "lexer/pipelines.h"
 #include "pipeline/declare.h"
@@ -14,7 +15,7 @@ namespace pangu {
 namespace grammer {
 
 #define GET_LEX(data)                                                          \
-    lexer::DLex *lex      = (lexer::DLex *) data.get();                        \
+    lexer::DLex *lex      = static_cast<lexer::DLex *>(data.get());            \
     std::string  str      = lex->get();                                        \
     int          type     = lex->typeId();                                     \
     std::string  typeName = lexer::LEX_PIPE_ENUM[ type ];                      \
@@ -22,7 +23,7 @@ namespace grammer {
         return;                                                                \
     }
 #define GET_TOP(factory, Type)                                                 \
-    Type *topProduct = (Type *) factory->getTopProduct();
+    Type *topProduct = static_cast<Type *>(factory->getTopProduct());
 using lexer::makeIdentifier;
 using lexer::makeSpace;
 using lexer::makeSymbol;
@@ -31,11 +32,6 @@ enum class TypeDefStep {
     READ_NAME,
     READ_TYPE,
 };
-
-void packStructToContainer(IPipelineFactory *factory, PProduct &&pro) {
-    auto top = static_cast<GPackage *>(factory->getTopProduct());
-    top->addStruct(PStruct(static_cast<GStruct *>(pro.release())));
-}
 
 void dropType(IPipelineFactory *factory, PProduct &&pro) {}
 void PipeTypeDef::onSwitch(IPipelineFactory *factory) {
@@ -75,11 +71,20 @@ void PipeTypeDef::accept(IPipelineFactory *factory, PData &&data) {
         }
         auto name = topProduct->name();
         factory->packProduct();
-        auto ptr = new GStruct();
-        ptr->setName(name);
-        factory->pushProduct(PProduct(ptr), packStructToContainer);
-        factory->choicePipeline(EGrammer::Struct);
-
+        if (str == "struct") {
+            auto ptr = new GStruct();
+            ptr->setName(name);
+            factory->pushProduct(PProduct(ptr), packStructToContainer);
+            factory->choicePipeline(EGrammer::Struct);
+        } else if (str == "func") {
+            factory->undealData(std::move(data));
+            auto ptr = new GFuncDef();
+            ptr->setName(name);
+            factory->pushProduct(PProduct(ptr), packFuncDefToPackage);
+            factory->choicePipeline(EGrammer::TypeFunc);
+        } else {
+            factory->onFail("unknow type " + str);
+        }
         return;
     }
 
@@ -102,16 +107,6 @@ void PipeStruct::onSwitch(IPipelineFactory *_factory) {
     // }
 }
 
-void packVarToStruct(IPipelineFactory *factory, PProduct &&pro) {
-    auto ptr             = static_cast<GVariable *>(pro.release());
-    auto integrityResult = ptr->integrityTest();
-    if (!integrityResult.empty()) {
-        factory->onFail(integrityResult);
-        return;
-    }
-    auto top = static_cast<GStruct *>(factory->getTopProduct());
-    top->addVariable(PVariable(ptr));
-}
 void PipeStruct::accept(IPipelineFactory *factory, PData &&data) {
     GET_LEX(data);
     GET_TOP(factory, GStruct);
@@ -122,7 +117,7 @@ void PipeStruct::accept(IPipelineFactory *factory, PData &&data) {
     switch (topProduct->getStep()) {
     case (int) StructStep::WAIT_BODY: {
         if (makeSymbol("{") == *lex) {
-            topProduct->setStep((int) (int) StructStep::READING_VAR);
+            topProduct->setStep((int) StructStep::READING_VAR);
             return;
         }
         factory->onFail("need '{");
@@ -138,11 +133,11 @@ void PipeStruct::accept(IPipelineFactory *factory, PData &&data) {
         factory->undealData(std::move(data));
         factory->choicePipeline(EGrammer::Variable);
         auto ptr = new GVariable();
-        factory->pushProduct(PProduct(ptr), packVarToStruct);
+        factory->pushProduct(PProduct(ptr), packVarToContainer);
         break;
     }
     default:
-        factory->onFail("unexcept step code : " +
+        factory->onFail("PipeStruct: product = " + topProduct->to_string() + " unexcept step code : " +
                         std::to_string(topProduct->getStep()));
     }
 }
@@ -204,6 +199,11 @@ void PipeVariable::accept(IPipelineFactory *factory, PData &&data) {
         topProduct->setStep((int) VarStep::WAITING_DETAIL);
         break;
     }
+    case (int) VarStep::WAITING_TYPE:{
+        topProduct->getType()->read(str);
+        topProduct->setStep(int(VarStep::WAITING_DETAIL));
+        return;
+    }
     case (int) VarStep::WAITING_DETAIL: {
         if (lexer::ELexPipeline::String == type) {
             topProduct->setDetail(str);
@@ -234,13 +234,13 @@ void PipeVariable::accept(IPipelineFactory *factory, PData &&data) {
                         lex->to_string());
     }
     default:
-        factory->onFail("unexcept step code : " +
+        factory->onFail("PipeVariable: product = " + topProduct->to_string() + " unexcept step code : " +
                         std::to_string(topProduct->getStep()));
     }
 }
 
 void packImport(IPipelineFactory *factory, PProduct &&pro) {
-    auto top = (GPackage *) factory->getTopProduct();
+    auto top = static_cast<GPackage *>(factory->getTopProduct());
     top->addImport(PImport((GImport *) pro.release()));
 }
 
@@ -319,7 +319,7 @@ void PipeImport::accept(IPipelineFactory *factory, PData &&data) {
         factory->packProduct();
         return;
     default:
-        factory->onFail("unexcept step code : " +
+        factory->onFail("PipeImport: product = " + topProduct->to_string() + " unexcept step code : " +
                         std::to_string(topProduct->getStep()));
     }
     }
@@ -370,7 +370,7 @@ void PipePackage::accept(IPipelineFactory *factory, PData &&data) {
         break;
     }
     default:
-        factory->onFail("unexcept step code: " +
+        factory->onFail("PipePackage: product = " + topProduct->to_string() + " unexcept step code: " +
                         std::to_string(topProduct->getStep()));
     }
     factory->undealData(std::move(data));
@@ -393,6 +393,108 @@ void PipeIgnore::onSwitch(IPipelineFactory *factory) {
 }
 void PipeIgnore::accept(IPipelineFactory *factory, PData &&data) {
     factory->packProduct();
+}
+
+void PipeVarArray::onSwitch(IPipelineFactory *factory) {}
+enum class VarArrayStep { START = 0, READ_SINGLE, READ_MULTI, FINISH };
+void PipeVarArray::accept(IPipelineFactory *factory, PData &&data) {
+    GET_LEX(data);
+    GET_TOP(factory, GVarContainer);
+    if (lexer::ELexPipeline::Space == type) {
+        return;
+    }
+    std::cout << "PipeVarArray read : " << lex->to_string() << std::endl;
+    switch (topProduct->getStep()) {
+    case int(VarArrayStep::START): {
+        if (makeSymbol("(") == *lex) {
+            topProduct->setStep(int(VarArrayStep::READ_MULTI));
+            return;
+        }
+        if (lexer::ELexPipeline::Identifier == type) {
+            std::cout << "!!!!!!!" << std::endl;
+            factory->undealData(std::move(data));
+            factory->choicePipeline(EGrammer::Variable);
+            auto var = new GVariable();
+            var->setName("return");
+            var->setStep(int(VarStep::WAITING_TYPE));
+            factory->pushProduct(PProduct(var), packVarToContainer);
+            topProduct->setStep(int(VarArrayStep::FINISH));
+            return;
+        }
+
+        factory->onFail("unexcept input: " + lex->to_string());
+        break;
+    }
+    case int(VarArrayStep::READ_MULTI): {
+        if (makeSymbol(",") == *lex) {
+            return;
+        }
+        if (makeSymbol(")") == *lex) {
+            factory->packProduct();
+            return;
+        }
+        factory->undealData(std::move(data));
+        factory->choicePipeline(EGrammer::Variable);
+        auto ptr = new GVariable();
+        factory->pushProduct(PProduct(ptr), packVarToContainer);
+        return;
+    }
+    case int(VarArrayStep::FINISH): {
+        factory->packProduct();
+        return;
+    }
+    }
+}
+
+void PipeTypeFunc::onSwitch(IPipelineFactory *factory) {}
+enum class FuncDefStep { READ_FUNC = 0, READ_PARAM, READ_RETURN, FINISH };
+void PipeTypeFunc::accept(IPipelineFactory *factory, PData &&data) {
+    lexer ::DLex *lex      = static_cast<lexer ::DLex *>(data.get());
+    std ::string  str      = lex->get();
+    int           type     = lex->typeId();
+    std ::string  typeName = lexer ::LEX_PIPE_ENUM[ type ];
+    if (lexer ::ELexPipeline ::Comments == type) {
+        return;
+    }
+    //    GET_LEX(data);
+    GET_TOP(factory, GFuncDef);
+    if (lexer::ELexPipeline::Space == type) {
+        return;
+    }
+    switch (topProduct->getStep()) {
+    case int(FuncDefStep::READ_FUNC): {
+        topProduct->setStep(int(FuncDefStep::READ_PARAM));
+        return;
+    }
+    case int(FuncDefStep::READ_PARAM): {
+        factory->undealData(std::move(data));
+        factory->choicePipeline(EGrammer::VarArray);
+        auto ptr = new GVarContainer();
+        factory->pushProduct(PProduct(ptr), [ = ](auto f, auto pro) {
+            topProduct->params.swap(*ptr);
+        });
+        topProduct->setStep(int(FuncDefStep::READ_RETURN));
+        return;
+    }
+    case int(FuncDefStep::READ_RETURN): {
+        factory->undealData(std::move(data));
+        factory->choicePipeline(EGrammer::VarArray);
+        auto ptr = new GVarContainer();
+        factory->pushProduct(PProduct(ptr), [ = ](auto f, auto pro) {
+            topProduct->result.swap(*ptr);
+        });
+        topProduct->setStep(int(FuncDefStep::FINISH));
+        return;
+    }
+    case int(FuncDefStep::FINISH): {
+        factory->undealData(std::move(data));
+        factory->packProduct();
+        return;
+    }
+    default:
+        factory->onFail("unknow FuncDefStep code = " +
+                        std::to_string(topProduct->getStep()));
+    }
 }
 
 } // namespace grammer

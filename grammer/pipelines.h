@@ -29,5 +29,7 @@ GRAMMER_CLASS(TypeDef);
 GRAMMER_CLASS(Struct);
 GRAMMER_CLASS(Variable);
 GRAMMER_CLASS(Ignore);
+GRAMMER_CLASS(VarArray);
+GRAMMER_CLASS(TypeFunc);
 } // namespace grammer
 } // namespace pangu

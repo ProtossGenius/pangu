@@ -17,7 +17,7 @@ int main(int argc, const char *argv[]) {
             return;
         }
         std::cout << "type = <" << lexer::LEX_PIPE_ENUM[ lex->typeId() ]
-                  << "> content = " << lex->get() << std::endl;
+                  << "> content = \x41\101" << lex->get() << std::endl;
     };
-    lexer::analysis(argv[1], packer);
+    lexer::analysis(argv[ 1 ], packer);
 }

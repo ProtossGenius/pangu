@@ -8,10 +8,12 @@ namespace grammer {
 Grm(Struct);
 Grm(Package);
 Grm(Function);
+Grm(FuncDef);
 Grm(Type);
 Grm(TypeDef);
 Grm(Code);
 Grm(Variable);
 Grm(Import);
+Grm(VarContainer);
 } // namespace grammer
 } // namespace pangu

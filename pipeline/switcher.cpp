@@ -38,9 +38,13 @@ void ISwitcher::dealCachedDatas() {
         cachedDatas.swap(_cached_datas);
         auto beforeSize = cachedDatas.size();
         for (PData &data : cachedDatas) {
-            accept(std::move(data));
+            if (_cached_datas.empty()) {
+                accept(std::move(data));
+            } else {
+                _cached_datas.emplace_back(std::move(data));
+            }
         }
-        if (beforeSize == cachedDatas.size()) {
+        if (beforeSize == _cached_datas.size()) {
             break;
         }
     }

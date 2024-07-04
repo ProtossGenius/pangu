@@ -8,6 +8,10 @@ type Test struct {
   b int;
   c int `json: 'cat'`;
 }
+
+type TestFunc1 func (a int, b int, c string) int ;
+type TestFunc2 func (a int, b, c string) (d int,e error) ;
+
 // 还没实现接口
 /*
 type Interface interface {

@@ -28,7 +28,8 @@ IPipeline *IPipelineFactory::getPipeline() {
 }
 void IPipelineFactory::pushProduct(PProduct &&pro, ProductPack pack) {
 #ifdef DEBUG_MODE
-    std::cout << name() << " pushProduct " << pro->to_string() << std::endl;
+    std::cout << name() << " pushProduct " << typeid(pro.get()).name()
+              << pro->to_string() << std::endl;
 #endif
     _product_stack.emplace(std::move(pro));
     _packer_stack.push(pack);
@@ -103,7 +104,7 @@ IPipelineFactory::~IPipelineFactory() {
 void IPipelineFactory::packProduct() {
     PProduct pro = std::move(_product_stack.top());
 #ifdef DEBUG_MODE
-    std::cout << name() << " packProduct" << pro->to_string() << std::endl;
+    std::cout << name() << " packProduct " << pro->to_string() << std::endl;
 #endif
     _product_stack.pop();
     ProductPack pack = _packer_stack.top();

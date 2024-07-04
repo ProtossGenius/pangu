@@ -32,13 +32,31 @@ void GFunctionContainer::write_string(std::ostream &ss) {
         ss << it.second->to_string() << endl;
     }
 }
-void GVarContainer::addVariable(PVariable &&var) {
-    if (_vars.count("hello world")) {
-        throw std::runtime_error("hello world!");
+
+void GTypeFunctContainer::addFunction(PFuncDef &&fun) {
+    if (_functions.count(fun->sign())) {
+        throw std::runtime_error("existed function:" + fun->sign());
     }
+    _functions[ fun->sign() ] = std::move(fun);
+}
+void GTypeFunctContainer::write_string(std::ostream &ss) {
+    for (auto &it : _functions) {
+        ss << it.second->to_string() << endl;
+    }
+}
+void GVarContainer::addVariable(PVariable &&var) {
     if (_vars.count(var->name())) {
         throw std::runtime_error("existed varaiable : " + var->name());
     }
+    if (var->getType()->empty()) {
+        _no_type_vars.insert(var->name());
+    } else if (!_no_type_vars.empty()) {
+        for (auto name : _no_type_vars) {
+            _vars[ name ]->getType()->copyFrom(*var->getType());
+        }
+        _no_type_vars.clear();
+    }
+
     _vars[ var->name() ] = std::move(var);
 }
 void GVarContainer::write_string(std::ostream      &ss,
@@ -68,12 +86,12 @@ std::string GPackage::to_string() {
     for (auto &it : _imports) {
         ss << it.second->to_string() << endl;
     }
-    ss << "struct list (" << _structs.size() << "):" << endl;
-    GStructContainer::write_string(ss);
-    ss << "function list:(" << _functions.size() << ")" << endl;
-    GFunctionContainer::write_string(ss);
-    ss << "variable list:(" << _vars.size() << ")" << endl;
-    GVarContainer::write_string(ss, "\n");
+    ss << "struct list (" << structs.size() << "):" << endl;
+    structs.write_string(ss);
+    ss << "function list:(" << functions.size() << ")" << endl;
+    functions.write_string(ss);
+    ss << "variable list:(" << vars.size() << ")" << endl;
+    vars.write_string(ss, "\n");
     return ss.str();
 }
 void GPackage::addImport(PImport &&imp) {
@@ -88,7 +106,7 @@ std::string GImport::to_string() {
 }
 
 std::string GType::to_string() {
-    return _package.empty() ? _name : _package + "." + name();
+    return "type(" + (_package.empty() ? _name : _package + "." + name()) + ")";
 }
 
 std::string GVariable::integrityTest() {
@@ -103,6 +121,11 @@ std::string GVariable::integrityTest() {
 
 std::string GVariable::to_string() {
     return "(var) " + name() + " " + _type->to_string() + " " + _detail;
+}
+
+std::string GFuncDef::to_string() {
+    return "func " + name() + "(" + params.to_string() + ")" +
+           result.to_string();
 }
 } // namespace grammer
 } // namespace pangu

@@ -4,11 +4,11 @@ prebuild:
 	python3 ./format
 	smdcatalog	
 
-copycore:
-	sudo mv /var/lib/apport/coredump/* ./build/core.dump 
 dlex:
+	sudo mv /var/lib/apport/coredump/* ./build/core.dump 
 	cd build && echo 'bt' | gdb pangu-lexer core.dump | vim -R -
 debug:
+	sudo mv /var/lib/apport/coredump/* ./build/core.dump 
 	cd build && echo 'bt' | gdb pangu core.dump | vim -R -
 qrun:
 	sudo rm -f /var/lib/apport/coredump/*

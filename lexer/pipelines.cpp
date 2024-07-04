@@ -1,5 +1,6 @@
 #include "lexer/datas.h"
 #include "pipeline/declare.h"
+#include <cassert>
 #include <cctype>
 #include <lexer/pipelines.h>
 #include <set>
@@ -11,7 +12,8 @@ namespace lexer {
     DLex        *lex   = (DLex *) factory->getTopProduct();                    \
     std::string &str   = lex->get()
 std::string DLex::to_string() {
-    return "lexer <" + LEX_PIPE_ENUM[ _typeId ] + "> content = " + _lex;
+    return "lexer <" + LEX_PIPE_ENUM[ _typeId ] + "> content = \"" + _lex +
+           "\"";
 }
 bool isNumber(const std::string &str, std::string &errMsg) {
     if (str.size() == 1) {
@@ -153,12 +155,93 @@ void PipeComments::accept(IPipelineFactory *factory, PData &&data) {
     }
     str.push_back(c);
 }
+const static std::map<char, std::string> CAST_ESCAPE({
+    {'a', "\a"},
+    {'b', "\b"},
+    {'t', "\t"},
+    {'n', "\n"},
+    {'v', "\v"},
+    {'f', "\f"},
+    {'r', "\r"},
+    {'e', "\e"},
+    {'?', "\?"},
+    {'\'', "\'"},
+    {'"', "\""},
+    {'\\', "\\"},
+});
 
+int getFlashPos(const std::string &str) {
+    auto len   = str.size();
+    auto flash = '\\';
+    for (int i = 1; i < 4; ++i) {
+        if (len < i) {
+            break;
+        }
+        if (str[ len - i ] == flash) {
+            return i;
+        }
+    }
+    return -1;
+}
+// @return if push lastChar to str;
+bool tryEscape(std::string &str, int flashPos, char lastChar) {
+    assert(flashPos > 1);
+    auto isO8  = [](char c) { return c >= '0' && c < '8'; };
+    auto isO16 = [](char c) {
+        return isdigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+    };
+    auto escape = [](std::string &str, int flashPos, int o) {
+        int result = 0;
+        for (int i = flashPos - 1; i > 0; --i) {
+            char c      = str[ str.size() - i ];
+            int  intVal = isdigit(c)               ? c - '0'
+                          : (c >= 'a' && c <= 'f') ? c - 'a' + 10
+                                                   : c - 'A' + 10;
+            result *= o;
+            result += intVal;
+        }
+        while (flashPos--) {
+            str.pop_back();
+        }
+        str.push_back((char(result)));
+    };
+
+    std::function<bool(char)> escapeCharCheck = isO8;
+    int                       o               = 8;
+    if (str[ str.size() - flashPos + 1 ] == 'x') { // 16
+        escapeCharCheck = isO16;
+        o               = 16;
+    }
+    if (escapeCharCheck(lastChar)) {
+        str.push_back(lastChar);
+        if (flashPos == 3) {
+            escape(str, flashPos + 1, o);
+        }
+        return true;
+    }
+    escape(str, flashPos, o);
+
+    return false;
+}
 void PipeString::accept(IPipelineFactory *factory, PData &&data) {
     GET_CHAR(data);
     if (str.size() > 1) {
-        if (str[ str.size() - 1 ] != '\\' && str[ 0 ] == c) {
+        auto len = str.size();
+        if (str[ len - 1 ] == '\\') {
+            if (CAST_ESCAPE.count(c)) {
+                str.pop_back();
+                str += CAST_ESCAPE.at(c);
+                return;
+            }
             str.push_back(c);
+            return;
+        }
+        auto flashPos = getFlashPos(str);
+        if (flashPos != -1 && tryEscape(str, flashPos, c)) {
+            return;
+        }
+        if (str[ 0 ] == c) {
+            str = str.substr(1);
             factory->packProduct();
             return;
         }
