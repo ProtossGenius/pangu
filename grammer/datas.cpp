@@ -44,7 +44,10 @@ void GTypeFunctContainer::write_string(std::ostream &ss) {
         ss << it.second->to_string() << endl;
     }
 }
-void GVarContainer::addVariable(PVariable &&var) {
+void GVarDefContainer::addVariable(PVarDef &&var) {
+    if (var->name().empty()) {
+        throw std::runtime_error("varibale name() can't be empty.");
+    }
     if (_vars.count(var->name())) {
         throw std::runtime_error("existed varaiable : " + var->name());
     }
@@ -59,8 +62,8 @@ void GVarContainer::addVariable(PVariable &&var) {
 
     _vars[ var->name() ] = std::move(var);
 }
-void GVarContainer::write_string(std::ostream      &ss,
-                                 const std::string &splitStr) {
+void GVarDefContainer::write_string(std::ostream      &ss,
+                                    const std::string &splitStr) {
     bool first = true;
     for (auto &it : _vars) {
         if (!first) {
@@ -111,17 +114,17 @@ std::string GType::to_string() {
     return "type(" + (_package.empty() ? _name : _package + "." + name()) + ")";
 }
 
-std::string GVariable::integrityTest() {
+std::string GVarDef::integrityTest() {
     if (_name.empty()) {
-        return "need name";
+        return "var need name";
     }
     if (_type->name().empty()) {
-        return "meeed type";
+        return "var need type";
     }
     return "";
 }
 
-std::string GVariable::to_string() {
+std::string GVarDef::to_string() {
     return "(var) " + name() + " " + _type->to_string() + " " + _detail;
 }
 

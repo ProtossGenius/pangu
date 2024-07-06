@@ -22,10 +22,19 @@ class IProduct : public IData {
     virtual std::string to_string() override { return ""; }
     virtual ~IProduct() {}
 };
+
+class IPipeline {
+  public:
+    virtual void accept(IPipelineFactory *factory, PData &&data) = 0;
+    // switch to this pipeline will call onSwitch.
+    virtual void onSwitch(IPipelineFactory *) = 0;
+    virtual ~IPipeline() {}
+};
+
 // dataflow:
 // (IData)  --> ISwitcher --> IPipeline --> (IParts)
 //          --> IPartsDealer  ++> IProduct .
-class IPipelineFactory {
+class IPipelineFactory : public IPipeline {
     // init area.
   public:
     IPipelineFactory(
@@ -56,6 +65,11 @@ class IPipelineFactory {
     bool needSwitch() { return _index_stack.size() > _product_stack.size(); }
 
   public:
+    void accept(IPipelineFactory *factory, PData &&data) override {
+        accept(std::move(data));
+    }
+    // switch to this pipeline will call onSwitch.
+    void onSwitch(IPipelineFactory *) override {}
     void accept(PData &&data);
     virtual ~IPipelineFactory();
 
@@ -68,14 +82,6 @@ class IPipelineFactory {
     std::stack<PProduct>        _product_stack;
     std::stack<ProductPack>     _packer_stack;
     std::stack<size_t>          _index_stack;
-};
-
-class IPipeline {
-  public:
-    virtual void accept(IPipelineFactory *factory, PData &&data) = 0;
-    // switch to this pipeline will call onSwitch.
-    virtual void onSwitch(IPipelineFactory *) = 0;
-    virtual ~IPipeline() {}
 };
 
 class Reg {

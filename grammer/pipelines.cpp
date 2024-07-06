@@ -132,7 +132,7 @@ void PipeStruct::accept(IPipelineFactory *factory, PData &&data) {
         }
         factory->undealData(std::move(data));
         factory->choicePipeline(EGrammer::Variable);
-        auto ptr = new GVariable();
+        auto ptr = new GVarDef();
         factory->pushProduct(PProduct(ptr), packVarToContainer);
         break;
     }
@@ -160,7 +160,7 @@ enum class VarStep {
 };
 void PipeVariable::accept(IPipelineFactory *factory, PData &&data) {
     GET_LEX(data);
-    GET_TOP(factory, GVariable);
+    GET_TOP(factory, GVarDef);
     // ignore space.
     if (lexer::ELexPipeline::Space == type) {
         if (makeSpace("\n") == *lex) {
@@ -405,7 +405,7 @@ void PipeVarArray::onSwitch(IPipelineFactory *factory) {}
 enum class VarArrayStep { START = 0, READ_SINGLE, READ_MULTI, FINISH };
 void PipeVarArray::accept(IPipelineFactory *factory, PData &&data) {
     GET_LEX(data);
-    GET_TOP(factory, GVarContainer);
+    GET_TOP(factory, GVarDefContainer);
 
     if (int(VarArrayStep::FINISH) == topProduct->getStep()) {
         factory->undealData(std::move(data));
@@ -424,7 +424,7 @@ void PipeVarArray::accept(IPipelineFactory *factory, PData &&data) {
         if (lexer::ELexPipeline::Identifier == type) {
             factory->undealData(std::move(data));
             factory->choicePipeline(EGrammer::Variable);
-            auto var = new GVariable();
+            auto var = new GVarDef();
             var->setName("return");
             var->setStep(int(VarStep::WAITING_TYPE));
             factory->pushProduct(PProduct(var), packVarToContainer);
@@ -445,7 +445,7 @@ void PipeVarArray::accept(IPipelineFactory *factory, PData &&data) {
         }
         factory->undealData(std::move(data));
         factory->choicePipeline(EGrammer::Variable);
-        auto ptr = new GVariable();
+        auto ptr = new GVarDef();
         factory->pushProduct(PProduct(ptr), packVarToContainer);
         return;
     }
@@ -466,6 +466,10 @@ void PipeTypeFunc::accept(IPipelineFactory *factory, PData &&data) {
         factory->packProduct();
     }
     if (lexer::ELexPipeline::Space == type) {
+        if (topProduct->getStep() == int(FuncDefStep::READ_RETURN) &&
+            (makeSpace("\n") == *lex)) {
+            factory->packProduct();
+        }
         return;
     }
     switch (topProduct->getStep()) {
@@ -476,7 +480,7 @@ void PipeTypeFunc::accept(IPipelineFactory *factory, PData &&data) {
     case int(FuncDefStep::READ_PARAM): {
         factory->undealData(std::move(data));
         factory->choicePipeline(EGrammer::VarArray);
-        auto ptr = new GVarContainer();
+        auto ptr = new GVarDefContainer();
         factory->pushProduct(PProduct(ptr), [ = ](auto f, auto pro) {
             topProduct->params.swap(*ptr);
         });
@@ -484,9 +488,13 @@ void PipeTypeFunc::accept(IPipelineFactory *factory, PData &&data) {
         return;
     }
     case int(FuncDefStep::READ_RETURN): {
+        if (makeSymbol(";") == *lex) {
+            factory->packProduct();
+            return;
+        }
         factory->undealData(std::move(data));
         factory->choicePipeline(EGrammer::VarArray);
-        auto ptr = new GVarContainer();
+        auto ptr = new GVarDefContainer();
         factory->pushProduct(PProduct(ptr), [ = ](auto f, auto pro) {
             topProduct->result.swap(*ptr);
         });

@@ -8,8 +8,12 @@ struct Test
 (var) c type(int) json: 'cat'
 
 function list:(0)
-type func list:(2)
+type func list:(6)
 type TestFunc1func([(var) a type(int) ,(var) b type(int) ,(var) c type(string) ])[(var) return type(int) ]
 type TestFunc2func([(var) a type(int) ,(var) b type(string) ,(var) c type(string) ])[(var) d type(int) ,(var) e type(error) ]
+type TestFunc3func([(var) a type(int) ,(var) b type(string) ,(var) c type(string) ])[]
+type TestFunc4func([(var) a type(int) ,(var) b type(string) ,(var) c type(string) ])[]
+type TestFunc5func([(var) a type(int) ,(var) b type(string) ,(var) c type(string) ])[]
+type TestFunc6func([(var) a type(int) ,(var) b type(string) ,(var) c type(string) ])[(var) e type(can.hello) ,(var) f type(can.hello) ,(var) g type(can.hello) ]
 variable list:(0)
 

@@ -1,28 +1,74 @@
 package mytest;
 
-// import fmt;
+// define of import.
 import  "fmt" as f;
-
+// define of struct.
 type Test struct {
   a int; // a int;
   b int;
   c int `json: 'cat'`;
 }
-
+// define of function defs.
 type TestFunc1 func (a int, b int, c string) int ;
 type TestFunc2 func (a int, b string, c string) (d int,e error) ;
+type TestFunc3 func (a int, b string, c string) 
+type TestFunc4 func (a int, b string, c string);
+type TestFunc5 func (a int, b, c string);
+type TestFunc6 func (a int, b, c string) (e, f, g can.hello)
 
-// 还没实现接口
 /*
+// define of function; add function bodyvim than function def.
+func main() {
+  f.print("hello world!");
+}
+
+// define of pipeline 
+// ## pipeline like a function, have input and output.
+
+// most simple pipeline.
+pipeline PipeDemo1 (a, b, c From) (d, e, f To) {
+  // all input will give Pipe1, Pipe1's all output give Pipe2
+  //Pipe3's output as PipeDemo1's output.
+  Pipe1 -> Pipe2 -> Pipe3
+  // ===================================================================
+  // ## assume Pipe3's output not same to PipeDemo1's output, have two way 
+  // ===================================================================
+  // ## way1: use Pipe3's output merge to new result. assume pipe3's result is (q Q, r R)
+  // Pipe1 -> Pipe2 -> Pipe3 -> [q.d, r.e, r.f]
+  // ## another way: give Pipe3 a name.
+  // Pipe1 -> Pipe2 -> (last Pipe3) -> [last.q.d, last.r.e, last.r.f]
+}
+
+// simple pipeline
+pipeline PipeDemo2 (a F1, b F2) (d T1, e T2) {
+  // can choice what param pipeline need.
+  def SelfP1 = Pipe1(a) -> Pipe2(b);
+  // can use function to trans PipeDemo2's param to Pipe3's param.
+  def SelfP2 = Pipe3(trans(a, b));
+  // merge result.
+  // ## p2 is Pipe6's output
+  (
+    (p1 SelfP1(a)), 
+    Self2(a, b) -> (Pipe4, Pipe5) -> (p2 Pipe6) 
+  ) -> [p1.d, p2.e]
+}
+// ## Node: You can also define SelfP1 outside. decide to you.
+//====================================================================================
+// ##     Self Define Pipeline.
+//====================================================================================
+type PipeSelf pipeline (i In) (o Out) {
+  // createProduct, if have product in factory, will not call this func.
+  func createProduct() Out {}
+  func accept(f factory, i In) {}
+  // ## Node: there are two default step: START & FINISH
+  // if step = FINISH, will pack output. 
+  // ## Node: steps save in output. (o Out)
+  let steps = [READ_TYPE, READ_NAME, READ_BODY];
+}
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   
+// define of interface.
 type Interface interface {
   Accept(test: Test) (bool, error); 
-}
-*/
-// 还没实现变量
-// var t: Test = {a: 4, b: 5, c: 6};
-// 还没实现函数
-/* func main() {
-  f.print("hello world!");
 }
 */
 

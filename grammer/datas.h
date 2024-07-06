@@ -45,7 +45,7 @@ class IGrammer : public pglang::IProduct {
   public:
     virtual std::string integrityTest() { return ""; }
     virtual int         typeId() const override = 0;
-    virtual std::string to_string() override = 0;
+    virtual std::string to_string() override    = 0;
     virtual ~IGrammer() {}
 
   public:
@@ -68,28 +68,28 @@ class GStep {
     int _step;
 };
 
-class GVarContainer : public IGrammer, public GStep {
+class GVarDefContainer : public IGrammer, public GStep {
   public:
-    void addVariable(PVariable &&var);
+    void addVariable(PVarDef &&var);
     void write_string(std::ostream &ss, const std::string &splitStr);
     virtual std::string integrityTest() override { return ""; }
     virtual int         typeId() const override { return 0; }
     virtual std::string to_string() override {
         std::stringstream ss;
-        ss << "[" ;
+        ss << "[";
         write_string(ss, ",");
-        ss << "]" ;
+        ss << "]";
         return ss.str();
     }
     size_t size() const { return _vars.size(); }
-    virtual ~GVarContainer() {}
-    void swap(GVarContainer &rhs) {
+    virtual ~GVarDefContainer() {}
+    void swap(GVarDefContainer &rhs) {
         _vars.swap(rhs._vars);
         _no_type_vars.swap(rhs._no_type_vars);
     }
 
   protected:
-    std::map<std::string, PVariable> _vars;
+    std::map<std::string, PVarDef> _vars;
 
   private:
     std::set<std::string> _no_type_vars;
@@ -108,7 +108,7 @@ class GPackage : public IGrammer, public GStep {
     GFunctionContainer  functions;
     GTypeFunctContainer function_defs;
     GStructContainer    structs;
-    GVarContainer       vars;
+    GVarDefContainer    vars;
 
   private:
     std::map<std::string, PImport> _imports;
@@ -147,9 +147,9 @@ class GType : public IGrammer {
     std::string _package;
 };
 
-class GVariable : public IGrammer, public GStep {
+class GVarDef : public IGrammer, public GStep {
   public:
-    GVariable()
+    GVarDef()
         : _type(PType(new GType())) {}
     int typeId() const override { return 0; }
 
@@ -169,7 +169,7 @@ class GTypeDef : public IGrammer, public GStep {
     virtual int         typeId() const override { return 0; }
     virtual std::string to_string() override { return "typedef: " + name(); }
 };
-class GStruct : public GVarContainer {
+class GStruct : public GVarDefContainer {
   public:
     int         typeId() const override { return 0; }
     std::string to_string() override;
@@ -185,8 +185,8 @@ class GFuncDef : public IGrammer, public GStep {
     int                 typeId() const override { return 4; }
     std::string         sign() { return ""; }
     virtual std::string to_string() override;
-    GVarContainer       params;
-    GVarContainer       result;
+    GVarDefContainer    params;
+    GVarDefContainer    result;
 };
 
 class GFunction : public GFuncDef {
@@ -197,9 +197,9 @@ class GCode : public IGrammer {
   public:
     int typeId() const override;
 
-    PVariable var;
-    PCode     left;
-    PCode     right;
+    PVarDef var;
+    PCode   left;
+    PCode   right;
 };
 
 } // namespace grammer

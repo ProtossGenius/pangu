@@ -31,14 +31,9 @@ void packFuncDefToPackage(IPipelineFactory *factory, PProduct &&pro) {
 }
 
 void packVarToContainer(IPipelineFactory *factory, PProduct &&pro) {
-    auto ptr             = static_cast<GVariable *>(pro.release());
-    auto integrityResult = ptr->integrityTest();
-    if (!integrityResult.empty()) {
-        factory->onFail(integrityResult);
-        return;
-    }
-    auto top = static_cast<GVarContainer *>(factory->getTopProduct());
-    top->addVariable(PVariable(ptr));
+    auto ptr = static_cast<GVarDef *>(pro.release());
+    auto top = static_cast<GVarDefContainer *>(factory->getTopProduct());
+    top->addVariable(PVarDef(ptr));
 }
 
 } // namespace grammer

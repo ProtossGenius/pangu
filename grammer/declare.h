@@ -12,7 +12,7 @@ Grm(FuncDef);
 Grm(Type);
 Grm(TypeDef);
 Grm(Code);
-Grm(Variable);
+Grm(VarDef);
 Grm(Import);
 Grm(VarContainer);
 } // namespace grammer
