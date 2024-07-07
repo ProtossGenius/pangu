@@ -1,5 +1,6 @@
 #include "grammer/packer.h"
 #include "grammer/datas.h"
+#include "grammer/declare.h"
 namespace pangu {
 namespace grammer {
 
@@ -36,5 +37,15 @@ void packVarToContainer(IPipelineFactory *factory, PProduct &&pro) {
     top->addVariable(PVarDef(ptr));
 }
 
+void packToCodeContainer(IPipelineFactory *factory, PProduct &&pro) {
+    auto ptr             = static_cast<GCode *>(pro.release());
+    auto integrityResult = ptr->integrityTest();
+    if (!integrityResult.empty()) {
+        factory->onFail(integrityResult);
+        return;
+    }
+    auto top = static_cast<GCodeContainer *>(factory->getTopProduct());
+    top->addCode(PCode(ptr));
+}
 } // namespace grammer
 } // namespace pangu

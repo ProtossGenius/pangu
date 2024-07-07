@@ -31,5 +31,6 @@ GRAMMER_CLASS(Variable);
 GRAMMER_CLASS(Ignore);
 GRAMMER_CLASS(VarArray);
 GRAMMER_CLASS(TypeFunc);
+GRAMMER_CLASS(CodeBlock);
 } // namespace grammer
 } // namespace pangu
