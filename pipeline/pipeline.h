@@ -1,13 +1,14 @@
 #pragma once
 #include "pipeline/declare.h"
-#include "pipeline/parts_dealer.h"
+#include <cassert>
+#include <cstddef>
 #include <functional>
 #include <iostream>
 #include <map>
+#include <memory>
 #include <ostream>
 #include <stack>
 #include <string>
-#include <type_traits>
 namespace pglang {
 class IData {
   public:
@@ -31,6 +32,32 @@ class IPipeline {
     virtual ~IPipeline() {}
 };
 
+class PipelinePtr {
+  public:
+    PipelinePtr(const PipelinePtr &) = delete;
+    PipelinePtr()                    = delete;
+    PipelinePtr(PipelinePtr &&rhs) {
+        _pipeline = rhs._pipeline;
+        _destory  = rhs._destory;
+    }
+    PipelinePtr(
+        IPipeline                       *p,
+        std::function<void(IPipeline *)> destory = [](IPipeline *) {})
+        : _pipeline(p)
+        , _destory(destory) {}
+    IPipeline *get() { return _pipeline; }
+    ~PipelinePtr() {
+        if (_destory) _destory(_pipeline);
+    }
+    std::string name() { return _name; }
+    void        setName(const std::string &name) { _name = name; }
+
+  private:
+    IPipeline                       *_pipeline;
+    std::function<void(IPipeline *)> _destory;
+    std::string                      _name;
+};
+
 // dataflow:
 // (IData)  --> ISwitcher --> IPipeline --> (IParts)
 //          --> IPartsDealer  ++> IProduct .
@@ -39,7 +66,7 @@ class IPipelineFactory : public IPipeline {
   public:
     IPipelineFactory(
         const std::string &name, PSwitcher &&switcher,
-        std::map<int, PPipeline>                    &pipelines,
+        std::map<int, std::function<PipelinePtr()>> &pipelines,
         std::map<int, std::string>                  &pipeline_name_map,
         /*PPartsDealer &&partsDealer, */ ProductPack finalProductPacker);
     //    ISwitcher *getSwitcher() { return _switcher.get(); }
@@ -49,7 +76,9 @@ class IPipelineFactory : public IPipeline {
         std::cout << name() << " choicePipeline(" << _pipeline_name_map[ index ]
                   << ")" << std::endl;
 #endif
-        _index_stack.push(index);
+        assert(index >= 0 && index < _pipelines.size());
+        _pipeline_stack.push(std::move(_pipelines[ index ]()));
+        _pipeline_stack.top().setName(_pipeline_name_map[ index ]);
     }
     //   void      unchoicePipeline();
     void      pushProduct(PProduct &&pro, ProductPack pack);
@@ -62,7 +91,7 @@ class IPipelineFactory : public IPipeline {
     void               undealData(PData &&data);
     const std::string &name() { return _name; }
     void               status(std::ostream &ss);
-    bool needSwitch() { return _index_stack.size() > _product_stack.size(); }
+    bool needSwitch() { return _pipeline_stack.size() > _product_stack.size(); }
 
   public:
     void accept(IPipelineFactory *factory, PData &&data) override {
@@ -74,14 +103,14 @@ class IPipelineFactory : public IPipeline {
     virtual ~IPipelineFactory();
 
   protected:
-    std::string                 _name;
-    PSwitcher                   _switcher;
-    std::map<int, PPipeline>   &_pipelines;
-    std::map<int, std::string> &_pipeline_name_map;
-    ProductPack                 _final_product_packer;
-    std::stack<PProduct>        _product_stack;
-    std::stack<ProductPack>     _packer_stack;
-    std::stack<size_t>          _index_stack;
+    std::string                                  _name;
+    PSwitcher                                    _switcher;
+    std::map<int, std::function<PipelinePtr()>> &_pipelines;
+    std::map<int, std::string>                  &_pipeline_name_map;
+    ProductPack                                  _final_product_packer;
+    std::stack<PProduct>                         _product_stack;
+    std::stack<ProductPack>                      _packer_stack;
+    std::stack<PipelinePtr>                      _pipeline_stack;
 };
 
 class Reg {
@@ -90,4 +119,15 @@ class Reg {
 };
 
 const static Reg __REGISTER_TERMINAL_FUNCS([]() { registerTerminalFuncs(); });
+
+class PipelineGetter {
+  public:
+    PipelineGetter(PipelinePtr *p)
+        : _pipeline(p) {}
+    IPipeline *operator()() { return _pipeline->get(); }
+
+  private:
+    std::shared_ptr<PipelinePtr> _pipeline;
+};
+
 } // namespace pglang

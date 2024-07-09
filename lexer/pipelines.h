@@ -9,8 +9,8 @@
 namespace pangu {
 namespace lexer {
 using namespace pglang;
-static std::map<int, PPipeline>   LEX_PIPElINES;
-static std::map<int, std::string> LEX_PIPE_ENUM;
+static std::map<int, std::function<PipelinePtr()>> LEX_PIPElINES;
+static std::map<int, std::string>                  LEX_PIPE_ENUM;
 #define LEXER_CLASS(name, type)                                                \
     class name : public IPipeline {                                            \
       public:                                                                  \
@@ -22,7 +22,7 @@ static std::map<int, std::string> LEX_PIPE_ENUM;
     };                                                                         \
     static Reg  __reg_pipe_##name([]() {                                       \
         LEX_PIPElINES[ ELexPipeline::type ] =                                 \
-            PPipeline((IPipeline *) new name());                              \
+            PipelineGetter(new PipelinePtr(new name()));                      \
         LEX_PIPE_ENUM[ ELexPipeline::type ] = #type;                          \
     });                                                                       \
     inline DLex make##type(const std::string &val) {                           \

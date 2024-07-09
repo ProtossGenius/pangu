@@ -131,8 +131,8 @@ class GType : public IGrammer {
     int                typeId() const override { return 0; }
     const std::string &getPackage() { return _package; }
     void               read(std::string &str) {
-                      _name.swap(_package);
-                      _name.swap(str);
+        _name.swap(_package);
+        _name.swap(str);
     }
 
     void copyFrom(const GType &rhs) {
@@ -195,26 +195,14 @@ class GFunction : public GFuncDef {
 };
 
 enum class ECodeType {
-    Var,    // a
-    If,     // if (...) {} else {}
-    Switch, // switch(...) {}
-    While,  // while() {}
-    Call,   // a.b
-    Calc,   // + - * /
-};
-
-class GCodeContainer : public IGrammer {
-  public:
-    int         typeId() const override { return 0; }
-    std::string to_string() override { return ""; }
-    virtual ~GCodeContainer() {}
-    virtual void addCode(PCode &&code) {
-        _code_list.emplace_back(std::move(code));
-    }
-    const std::vector<PCode> &getCodes() { return _code_list; }
-
-  private:
-    std::vector<PCode> _code_list;
+    Var = 0, // a
+    If,      // if (...) {} else {}
+    Switch,  // switch(...) {}
+    While,   // while() {}
+    Call,    // a.b
+    Calc,    // + - * /
+    Next,    // next code.
+    Params,  // (a, b, c, d)
 };
 
 class GCode : public IGrammer, public GStep {
@@ -225,6 +213,7 @@ class GCode : public IGrammer, public GStep {
     ECodeType   _codeType;
     PCode       _left;
     PCode       _right;
+    GCode      *_parent;
 };
 
 } // namespace grammer

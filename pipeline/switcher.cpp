@@ -1,6 +1,5 @@
 #include "pipeline/switcher.h"
 #include "pipeline/pipeline.h"
-#include <iostream>
 #include <vector>
 namespace pglang {
 void ISwitcher::accept(PData &&data) {

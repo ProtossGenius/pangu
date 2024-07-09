@@ -8,8 +8,8 @@
 namespace pangu {
 namespace grammer {
 using namespace pglang;
-static std::map<int, PPipeline>   GRAMMER_PIPElINES;
-static std::map<int, std::string> GRAMMER_PIPE_ENUM;
+static std::map<int, std::function<PipelinePtr()>> GRAMMER_PIPElINES;
+static std::map<int, std::string>                  GRAMMER_PIPE_ENUM;
 #define GRAMMER_CLASS(type)                                                    \
     class Pipe##type : public IPipeline {                                      \
       public:                                                                  \
@@ -18,7 +18,7 @@ static std::map<int, std::string> GRAMMER_PIPE_ENUM;
     };                                                                         \
     static Reg __reg_pipe_##type([]() {                                        \
         GRAMMER_PIPElINES[ EGrammer::type ] =                                  \
-            PPipeline((IPipeline *) new Pipe##type());                         \
+            PipelineGetter(new PipelinePtr(new Pipe##type()));                 \
         GRAMMER_PIPE_ENUM[ EGrammer::type ] = #type;                           \
     });
 
@@ -31,6 +31,5 @@ GRAMMER_CLASS(Variable);
 GRAMMER_CLASS(Ignore);
 GRAMMER_CLASS(VarArray);
 GRAMMER_CLASS(TypeFunc);
-GRAMMER_CLASS(CodeBlock);
 } // namespace grammer
 } // namespace pangu

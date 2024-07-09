@@ -7,13 +7,11 @@
 #include "lexer/pipelines.h"
 #include "pipeline/declare.h"
 #include "pipeline/pipeline.h"
-#include <iostream>
 #include <string>
 #include <utility>
 
 namespace pangu {
 namespace grammer {
-
 #define GET_LEX(data)                                                          \
     lexer::DLex *lex      = static_cast<lexer::DLex *>(data.get());            \
     std::string  str      = lex->get();                                        \
