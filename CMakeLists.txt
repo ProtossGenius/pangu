@@ -38,6 +38,7 @@ add_subdirectory(virtual_machine)
 add_subdirectory(pipeline)
 add_subdirectory(lexer)
 add_subdirectory(grammer)
-target_link_libraries(pangu virtual_machine grammer lexer pipeline)
+add_subdirectory(pgcodes)
+target_link_libraries(pangu pgcodes grammer lexer pipeline)
 target_link_libraries(pangu-lexer virtual_machine lexer pipeline)
 

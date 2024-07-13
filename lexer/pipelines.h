@@ -25,6 +25,9 @@ static std::map<int, std::string>                  LEX_PIPE_ENUM;
             PipelineGetter(new PipelinePtr(new name()));                      \
         LEX_PIPE_ENUM[ ELexPipeline::type ] = #type;                          \
     });                                                                       \
+    inline bool is##type(DLex *lex) {                                          \
+        return lex->typeId() == ELexPipeline::type;                            \
+    }                                                                          \
     inline DLex make##type(const std::string &val) {                           \
         return DLex(ELexPipeline::type, val);                                  \
     }
