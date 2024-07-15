@@ -3,7 +3,6 @@
 #include "lexer/pipelines.h"
 #include "pgcodes/enums.h"
 #include "pipeline/pipeline.h"
-#include <ctype.h>
 #include <stdexcept>
 #include <string>
 namespace pangu {
@@ -18,11 +17,8 @@ void CodesSwitcher::onChoice() {
         return _factory->choicePipeline(ECodeType::Ignore);
     }
 
-    if (lexer::isSymbol(lex)) {
-        if (lex->get() == "{") {
-            return _factory->choicePipeline(ECodeType::Block);
-        }
-        onFail("unexcept symbol : " + lex->get());
+    if (lexer::makeSymbol("{") == *lex) {
+        return _factory->choicePipeline(ECodeType::Block);
     }
 
     _factory->choicePipeline(ECodeType::Normal);

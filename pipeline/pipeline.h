@@ -77,12 +77,14 @@ class IPipelineFactory : public IPipeline {
                   << ")" << std::endl;
 #endif
         assert(index >= 0 && index < _pipelines.size());
+        _need_choise_pipeline = false;
         _pipeline_stack.push(std::move(_pipelines[ index ]()));
         _pipeline_stack.top().setName(_pipeline_name_map[ index ]);
     }
     //   void      unchoicePipeline();
     void      pushProduct(PProduct &&pro, ProductPack pack);
     void      pushProduct(PProduct &&pro);
+    void      waitChoisePipeline() { _need_choise_pipeline = true; }
     IProduct *getTopProduct() {
         return _product_stack.empty() ? nullptr : _product_stack.top().get();
     }
@@ -111,6 +113,7 @@ class IPipelineFactory : public IPipeline {
     std::stack<PProduct>                         _product_stack;
     std::stack<ProductPack>                      _packer_stack;
     std::stack<PipelinePtr>                      _pipeline_stack;
+    bool                                         _need_choise_pipeline;
 };
 
 class Reg {

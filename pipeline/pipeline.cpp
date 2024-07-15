@@ -22,7 +22,7 @@ IPipelineFactory::IPipelineFactory(
 }
 IPipeline *IPipelineFactory::getPipeline() {
 
-    return _pipeline_stack.empty() ||
+    return _need_choise_pipeline || _pipeline_stack.empty() ||
                    _pipeline_stack.size() < _packer_stack.size()
                ? nullptr
                : _pipeline_stack.top().get();

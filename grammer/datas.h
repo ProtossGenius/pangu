@@ -194,23 +194,11 @@ class GFunction : public GFuncDef {
     PCode code;
 };
 
-enum class ECodeType {
-    Var = 0, // a
-    If,      // if (...) {} else {}
-    Switch,  // switch(...) {}
-    While,   // while() {}
-    Call,    // a.b
-    Calc,    // + - * /
-    Next,    // next code.
-    Params,  // (a, b, c, d)
-};
-
 class GCode : public IGrammer, public GStep {
   public:
     int         typeId() const override { return 0; }
     std::string to_string() override { return ""; }
     std::string _value;
-    ECodeType   _codeType;
     PCode       _left;
     PCode       _right;
     GCode      *_parent;
