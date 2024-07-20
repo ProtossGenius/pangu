@@ -1,6 +1,6 @@
 #pragma once
 #include "pipeline/pipeline.h"
-#include <iostream>
+#include <set>
 #include <string>
 namespace pangu {
 namespace lexer {
@@ -43,5 +43,7 @@ class DLex : public pglang::IProduct {
     std::string _lex;
 };
 
+int                                symbol_power(const std::string &s);
+extern const std::set<std::string> symbols;
 } // namespace lexer
 } // namespace pangu

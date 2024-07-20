@@ -112,11 +112,6 @@ void PipeSpace::accept(IPipelineFactory *factory, PData &&data) {
 
 void PipeSymbol::accept(IPipelineFactory *factory, PData &&data) {
     GET_CHAR(data);
-    const static std::set<std::string> symbols{
-        "!",  "!=",  "@", "%", "%=", "^",  "^=", "&",  "&=", "&&", "&&=",
-        "*",  "*=",  "(", ")", "-",  "-=", "+",  "+=", "=",  "==", "|",
-        "||", "||=", "[", "]", "{",  "}",  "<-", "<",  "<=", ">",  "->",
-        ">=", ",",   ".", "?", "/",  "/=", "\\", ";",  ":",  "::"};
     std::string add = str;
     add.push_back(c);
     if (symbols.count(add) != 0) {

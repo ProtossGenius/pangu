@@ -1,6 +1,7 @@
 #pragma once
 #include <functional>
 #include <memory>
+#include <string>
 namespace pglang {
 #define T(t)                                                                   \
     class I##t;                                                                \
@@ -39,4 +40,5 @@ T(PartsDealer);
 void addOnTerminalFuncs(std::function<void()> funcs);
 void registerTerminalFuncs();
 class PipelinePtr;
+
 } // namespace pglang

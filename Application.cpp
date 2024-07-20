@@ -1,6 +1,7 @@
 #include "grammer/datas.h"
 #include "grammer/declare.h"
 #include "grammer/grammer.h"
+#include "lexer/datas.h"
 #include "lexer/lexer.h"
 #include "pipeline/declare.h"
 #include <cassert>
@@ -18,7 +19,6 @@ int main(int argc, const char *argv[]) {
         cout << "need file name." << endl;
         return -1;
     }
-
     auto grm = grammer::create(grammer::PACK_PRINT);
     lexer::analysis(argv[ 1 ], lexer::packNext(grm.get()));
     // lexer ::analysis(argv[ 1 ], lexer::PACK_PRINT);

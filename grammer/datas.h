@@ -2,6 +2,7 @@
 #include "grammer/declare.h"
 #include "grammer/enums.h"
 #include "pipeline/pipeline.h"
+#include <cassert>
 #include <cstddef>
 #include <map>
 #include <set>
@@ -194,14 +195,43 @@ class GFunction : public GFuncDef {
     PCode code;
 };
 
+enum class ValueType { NOT_VALUE = 0, IDENTIFIER, STRING, NUMBER };
+
 class GCode : public IGrammer, public GStep {
   public:
     int         typeId() const override { return 0; }
     std::string to_string() override { return ""; }
+
+  public:
+    void setValue(const std::string &val, ValueType type) {
+        assert(_value.empty());
+        assert(type != ValueType::NOT_VALUE);
+        _value_type = type;
+        _value      = val;
+    }
+    void setOper(const std::string &val) {
+        assert(_value.empty());
+        _value = val;
+    }
+
+    void setLeft(GCode *left) {
+        assert(_left.get() == nullptr);
+        _left.reset(left);
+    }
+
+    void setRight(GCode *right) {
+        assert(_right.get() == nullptr);
+        _right.reset(right);
+    }
+    GCode             *getLeft() { return _left.get(); }
+    GCode             *getRight() { return _right.get(); }
+    const std::string &getValue() { return _value; }
+
+  private:
     std::string _value;
+    ValueType   _value_type = ValueType::NOT_VALUE;
     PCode       _left;
     PCode       _right;
-    GCode      *_parent;
 };
 
 } // namespace grammer

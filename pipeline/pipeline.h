@@ -29,6 +29,7 @@ class IPipeline {
     virtual void accept(IPipelineFactory *factory, PData &&data) = 0;
     // switch to this pipeline will call onSwitch.
     virtual void onSwitch(IPipelineFactory *) = 0;
+    virtual bool isClean() { return true; }
     virtual ~IPipeline() {}
 };
 
@@ -79,6 +80,7 @@ class IPipelineFactory : public IPipeline {
         assert(index >= 0 && index < _pipelines.size());
         _need_choise_pipeline = false;
         _pipeline_stack.push(std::move(_pipelines[ index ]()));
+        assert(_pipeline_stack.top().get()->isClean());
         _pipeline_stack.top().setName(_pipeline_name_map[ index ]);
     }
     //   void      unchoicePipeline();
@@ -88,12 +90,21 @@ class IPipelineFactory : public IPipeline {
     IProduct *getTopProduct() {
         return _product_stack.empty() ? nullptr : _product_stack.top().get();
     }
+    PProduct &getTopProductPtr() {
+        assert(!_product_stack.empty());
+        return _product_stack.top();
+    }
+    size_t             productStackSize() { return _product_stack.size(); }
     void               packProduct();
     void               onFail(const std::string &errMsg);
     void               undealData(PData &&data);
     const std::string &name() { return _name; }
     void               status(std::ostream &ss);
     bool needSwitch() { return _pipeline_stack.size() > _product_stack.size(); }
+    bool isClean() override {
+        return _product_stack.empty() && _pipeline_stack.empty() &&
+               _packer_stack.empty();
+    }
 
   public:
     void accept(IPipelineFactory *factory, PData &&data) override {

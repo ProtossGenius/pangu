@@ -1,8 +1,13 @@
 #include "pgcodes/pipelines.h"
 #include "grammer/datas.h"
+#include "grammer/declare.h"
 #include "lexer/datas.h"
 #include "lexer/pipelines.h"
+#include "pgcodes/packers.h"
+#include "pipeline/declare.h"
 #include "pipeline/pipeline.h"
+#include <string>
+#include <utility>
 
 namespace pangu {
 namespace pgcodes {
@@ -18,11 +23,6 @@ using grammer::GCode;
 #define GET_TOP(factory, Type)                                                 \
     Type *topProduct = static_cast<Type *>(factory->getTopProduct());
 
-void pack_as_next(IPipelineFactory *factory, PProduct &&data) {
-    GCode* code = static_cast<GCode*>(data.release());
-    GCode* topProduct = static_cast<GCode*>(factory->getTopProduct());
-    
-}
 enum class StepEnum {
     START = 0,
 };
@@ -90,13 +90,75 @@ void PipeDo::accept(IPipelineFactory *factory, PData &&data) {
         return;
     }
 }
-
-void PipeNormal::onSwitch(IPipelineFactory *factory) {}
+enum class NormalStep {
+    START = 0,
+    WAIT_MID_OPER,
+    WAIT_RIGHT,
+    PRE_VIEW_NEXT,
+    FINISH
+};
+void               PipeNormal::onSwitch(IPipelineFactory *factory) {}
+grammer::ValueType getValueType(lexer::DLex *lex) {
+    return lexer::isIdentifier(lex) ? grammer::ValueType::IDENTIFIER
+           : lexer::isString(lex)   ? grammer::ValueType::STRING
+           : lexer::isNumber(lex)   ? grammer::ValueType::NOT_VALUE
+                                    : grammer::ValueType::NOT_VALUE;
+}
 void PipeNormal::accept(IPipelineFactory *factory, PData &&data) {
     GET_LEX(data);
     GET_TOP(factory, GCode);
     if (lexer::ELexPipeline::Space == type) {
         return;
+    }
+
+    switch (topProduct->getStep()) {
+    case int(NormalStep::START): {
+        if (lexer::isIdentifier(lex)) {
+            topProduct->setValue(lex->get(), grammer::ValueType::IDENTIFIER);
+            topProduct->setStep(int(NormalStep::WAIT_MID_OPER));
+        } else if (lexer::isSymbol(lex)) {
+            topProduct->setOper(lex->get());
+            topProduct->setStep(int(NormalStep::WAIT_RIGHT));
+        } else {
+            factory->onFail("except identifier or symbol , but get " +
+                            lex->to_string());
+        }
+
+        return;
+    }
+    case int(NormalStep::WAIT_MID_OPER): {
+        if (!lexer::isSymbol(lex)) {
+            factory->onFail("except symbol, but get : " + lex->to_string());
+        }
+        topProduct->setOper(lex->get());
+        topProduct->setStep(int(NormalStep::WAIT_RIGHT));
+
+        return;
+    }
+    case int(NormalStep::WAIT_RIGHT): {
+        if (lexer::isIdentifier(lex) || lexer::isNumber(lex) ||
+            lexer::isString(lex)) {
+            auto code = new GCode();
+            code->setValue(lex->get(), getValueType(lex));
+            topProduct->setRight(code);
+            topProduct->setStep(int(NormalStep::PRE_VIEW_NEXT));
+            return;
+        }
+        factory->undealData(std::move(data));
+        factory->pushProduct(PProduct(new GCode()), pack_as_right);
+        factory->waitChoisePipeline();
+        return;
+    }
+    case int(NormalStep::PRE_VIEW_NEXT): {
+    }
+    case int(NormalStep::FINISH): {
+        factory->undealData(std::move(data));
+        factory->packProduct();
+        return;
+    }
+    default:
+        factory->onFail("unknown step code : " +
+                        std::to_string(topProduct->getStep()));
     }
 }
 

@@ -46,14 +46,15 @@ void IPipelineFactory::undealData(PData &&data) {
     _switcher->pushToCache(std::move(data));
 }
 #ifdef DEBUG_MODE
-void print_stack(std::stack<size_t>                &stack,
-                 std::function<void(size_t &, int)> print, int deep) {
+void print_stack(std::stack<PipelinePtr>                      &stack,
+                 std::function<void(const std::string &, int)> print,
+                 int                                           deep) {
     if (stack.empty()) return;
-    size_t it = stack.top();
+    auto &&it = std::move(stack.top());
     stack.pop();
-    print(it, deep);
+    print(it.name(), deep);
     print_stack(stack, print, deep - 1);
-    stack.push(it);
+    stack.push(std::move(it));
 }
 void print_stack(std::stack<PProduct>                &stack,
                  std::function<void(PProduct &, int)> print, int deep) {
@@ -86,9 +87,8 @@ void IPipelineFactory::status(std::ostream &ss) {
 #ifdef DEBUG_MODE
     print_stack(
         _pipeline_stack,
-        [ & ](size_t it, int deep) {
-            ss << "pipe_stack<" << deep << ">:" << _pipeline_name_map[ it ]
-               << endl;
+        [ & ](const std::string &name, int deep) {
+            ss << "pipe_stack<" << deep << ">:" << name << endl;
         },
         _pipeline_stack.size());
 #else
