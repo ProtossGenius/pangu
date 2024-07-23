@@ -27,7 +27,7 @@ class IProduct : public IData {
 class IPipeline {
   public:
     virtual void accept(IPipelineFactory *factory, PData &&data) = 0;
-    // switch to this pipeline will call onSwitch.
+    // create default product.
     virtual void onSwitch(IPipelineFactory *) = 0;
     virtual bool isClean() { return true; }
     virtual ~IPipeline() {}
@@ -125,6 +125,7 @@ class IPipelineFactory : public IPipeline {
     std::stack<ProductPack>                      _packer_stack;
     std::stack<PipelinePtr>                      _pipeline_stack;
     bool                                         _need_choise_pipeline;
+    size_t                                       _stack_max_size = 10;
 };
 
 class Reg {

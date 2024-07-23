@@ -37,7 +37,7 @@ std::map<std::string, int> getSymbolPowerMap() {
     int                        i = 0;
     for (auto &it : power_vec) {
         for (auto &symbol : it) {
-            mmp[ symbol ] = i;
+            mmp[ symbol ] = -i;
         }
         ++i;
     }

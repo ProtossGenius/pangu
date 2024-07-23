@@ -1,10 +1,12 @@
 #include "pipeline/pipeline.h"
 #include "pipeline/declare.h"
 #include "pipeline/switcher.h"
+#include <cassert>
 #include <functional>
 #include <iostream>
 #include <ostream>
 #include <stack>
+#include <stdexcept>
 #include <utility>
 namespace pglang {
 IPipelineFactory::IPipelineFactory(
@@ -30,8 +32,12 @@ IPipeline *IPipelineFactory::getPipeline() {
 void IPipelineFactory::pushProduct(PProduct &&pro, ProductPack pack) {
 #ifdef DEBUG_MODE
     std::cout << name() << " pushProduct " << typeid(pro.get()).name()
-              << pro->to_string() << std::endl;
+             <<"product = " << pro->to_string() << std::endl;
 #endif
+    if (_product_stack.size() > _stack_max_size) {
+        throw std::runtime_error(
+            name() + " when push product, product stack size is too large.");
+    }
     _product_stack.emplace(std::move(pro));
     _packer_stack.push(pack);
 }

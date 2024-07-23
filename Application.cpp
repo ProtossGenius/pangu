@@ -3,6 +3,7 @@
 #include "grammer/grammer.h"
 #include "lexer/datas.h"
 #include "lexer/lexer.h"
+#include "pgcodes/codes.h"
 #include "pipeline/declare.h"
 #include <cassert>
 #include <cstdlib>
@@ -19,7 +20,8 @@ int main(int argc, const char *argv[]) {
         cout << "need file name." << endl;
         return -1;
     }
-    auto grm = grammer::create(grammer::PACK_PRINT);
-    lexer::analysis(argv[ 1 ], lexer::packNext(grm.get()));
+    // auto grm  = grammer::create(grammer::PACK_PRINT);
+    auto code = pgcodes::create(pgcodes::PACK_PRINT);
+    lexer::analysis(argv[ 1 ], lexer::packNext(code.get()));
     // lexer ::analysis(argv[ 1 ], lexer::PACK_PRINT);
 }

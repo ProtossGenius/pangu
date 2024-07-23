@@ -33,6 +33,7 @@ aux_source_directory(. src_files)
 
 add_executable(pangu Application.cpp)
 add_executable(pangu-lexer pangu_lexer.cpp)
+add_executable(pangu-grammer pangu_grammer.cpp)
 
 add_subdirectory(virtual_machine)
 add_subdirectory(pipeline)
@@ -40,5 +41,6 @@ add_subdirectory(lexer)
 add_subdirectory(grammer)
 add_subdirectory(pgcodes)
 target_link_libraries(pangu pgcodes grammer lexer pipeline)
+target_link_libraries(pangu-grammer pgcodes grammer lexer pipeline)
 target_link_libraries(pangu-lexer virtual_machine lexer pipeline)
 

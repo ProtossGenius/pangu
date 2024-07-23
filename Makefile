@@ -13,7 +13,7 @@ debug:
 qrun:
 	sudo rm -f /var/lib/apport/coredump/*
 	mkdir -p build
-	cd build && cmake -DCMAKE_BUILD_TYPE=Debug .. && make -j24 && ./pangu ../test_datas/grammer/grammer.pgl
+	cd build && cmake -DCMAKE_BUILD_TYPE=Debug .. && make -j24 && ./pangu ../test_datas/pgcodes/easy_4_calc.pgc
 test:
 	sudo rm -f /var/lib/apport/coredump/*
 	mkdir -p build 

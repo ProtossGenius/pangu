@@ -5,8 +5,10 @@
 #include <cassert>
 #include <cstddef>
 #include <map>
+#include <ostream>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 namespace pangu {
 namespace grammer {
@@ -196,21 +198,34 @@ class GFunction : public GFuncDef {
 };
 
 enum class ValueType { NOT_VALUE = 0, IDENTIFIER, STRING, NUMBER };
-
+inline void assert_empty(const std::string &str) {
+    if (!str.empty()) {
+        throw std::runtime_error("assert empty fail: string `" + str +
+                                 "` not empty.");
+    }
+}
 class GCode : public IGrammer, public GStep {
   public:
     int         typeId() const override { return 0; }
-    std::string to_string() override { return ""; }
+    std::string to_string() override {
+        std::stringstream ss;
+        write_string(ss);
+        return ss.str();
+    }
+    void write_string(std::ostream &os);
 
   public:
     void setValue(const std::string &val, ValueType type) {
-        assert(_value.empty());
+        assert_empty(_value);
         assert(type != ValueType::NOT_VALUE);
         _value_type = type;
         _value      = val;
     }
     void setOper(const std::string &val) {
-        assert(_value.empty());
+        std::cout << _value << std::endl;
+        assert(_value_type == ValueType::NOT_VALUE);
+        assert_empty(_value);
+
         _value = val;
     }
 
@@ -223,9 +238,19 @@ class GCode : public IGrammer, public GStep {
         assert(_right.get() == nullptr);
         _right.reset(right);
     }
-    GCode             *getLeft() { return _left.get(); }
-    GCode             *getRight() { return _right.get(); }
-    const std::string &getValue() { return _value; }
+    GCode      *getLeft() { return _left.get(); }
+    GCode      *getRight() { return _right.get(); }
+    GCode      *releaseLeft() { return _left.release(); }
+    GCode      *releaseRight() { return _right.release(); }
+    std::string getValue() {
+        assert(_value_type != ValueType::NOT_VALUE);
+        return _value;
+    }
+    std::string getOper() {
+        assert(_value_type == ValueType::NOT_VALUE);
+        return _value;
+    }
+    ValueType getValueType() { return _value_type; }
 
   private:
     std::string _value;
