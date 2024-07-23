@@ -114,6 +114,7 @@ class IPipelineFactory : public IPipeline {
     void onSwitch(IPipelineFactory *) override {}
     void accept(PData &&data);
     virtual ~IPipelineFactory();
+    void setMaxStackSize(size_t size) { _stack_max_size = size; }
 
   protected:
     std::string                                  _name;
@@ -125,7 +126,7 @@ class IPipelineFactory : public IPipeline {
     std::stack<ProductPack>                      _packer_stack;
     std::stack<PipelinePtr>                      _pipeline_stack;
     bool                                         _need_choise_pipeline;
-    size_t                                       _stack_max_size = 10;
+    size_t                                       _stack_max_size = 10000;
 };
 
 class Reg {

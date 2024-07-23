@@ -182,8 +182,8 @@ void PipeNormal::accept(IPipelineFactory *factory, PData &&data) {
         code->setOper(str);
         code->setLeft(topProduct->releaseRight());
         code->setStep(int(NormalStep::WAIT_RIGHT));
-        factory->pushProduct(PProduct(code), pack_as_right);
         factory->choicePipeline(ECodeType::Normal);
+        factory->pushProduct(PProduct(code), pack_as_right);
         return;
     }
     case int(NormalStep::FINISH): {

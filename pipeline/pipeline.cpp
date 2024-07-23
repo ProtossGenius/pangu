@@ -32,12 +32,13 @@ IPipeline *IPipelineFactory::getPipeline() {
 void IPipelineFactory::pushProduct(PProduct &&pro, ProductPack pack) {
 #ifdef DEBUG_MODE
     std::cout << name() << " pushProduct " << typeid(pro.get()).name()
-             <<"product = " << pro->to_string() << std::endl;
+              << "product = " << pro->to_string() << std::endl;
 #endif
     if (_product_stack.size() > _stack_max_size) {
         throw std::runtime_error(
             name() + " when push product, product stack size is too large.");
     }
+    assert(_product_stack.size() < _pipeline_stack.size());
     _product_stack.emplace(std::move(pro));
     _packer_stack.push(pack);
 }
