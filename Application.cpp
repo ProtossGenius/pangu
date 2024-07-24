@@ -25,4 +25,5 @@ int main(int argc, const char *argv[]) {
     auto code = pgcodes::create(pgcodes::PACK_PRINT);
     lexer::analysis(argv[ 1 ], lexer::packNext(code.get()));
     //  lexer ::analysis(argv[ 1 ], lexer::PACK_PRINT);
+    code->status(std::cout);
 }

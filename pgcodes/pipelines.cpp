@@ -101,7 +101,11 @@ enum class NormalStep {
     FINISH
 };
 void PipeNormal::onSwitch(IPipelineFactory *factory) {
-    factory->pushProduct(PProduct(new GCode()), pack_as_right);
+    if (factory->productStackSize() == 0) {
+        factory->pushProduct(PProduct(new GCode()));
+    } else {
+        factory->pushProduct(PProduct(new GCode()), pack_as_right);
+    }
 }
 grammer::ValueType getValueType(lexer::DLex *lex) {
     return lexer::isIdentifier(lex) ? grammer::ValueType::IDENTIFIER
@@ -117,6 +121,7 @@ void PipeNormal::accept(IPipelineFactory *factory, PData &&data) {
         return;
     }
     if (lexer::ELexPipeline::Eof == type) {
+        factory->undealData(std::move(data));
         factory->packProduct();
         return;
     }
@@ -176,8 +181,11 @@ void PipeNormal::accept(IPipelineFactory *factory, PData &&data) {
     case int(NormalStep::PRE_VIEW_NEXT): {
         pgassert(isSymbol(lex));
         if (topProduct->isValue() ||
-            lexer::symbol_power(topProduct->getOper()) >=
-                lexer::symbol_power(lex->get())) {
+            lexer::symbol_power(topProduct->getOper()) >
+                lexer::symbol_power(lex->get()) ||
+            (lexer::symbol_power(topProduct->getOper()) >
+                 lexer::symbol_power(lex->get()) &&
+             lex->get() != "=")) {
             if (factory->productStackSize() > 1) {
                 factory->undealData(std::move(data));
                 factory->packProduct();

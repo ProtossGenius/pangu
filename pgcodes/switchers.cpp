@@ -13,7 +13,7 @@ void CodesSwitcher::onFail(const std::string &errMsg) {
 using namespace std;
 void CodesSwitcher::onChoice() {
     lexer::DLex *lex = get(0);
-    if (lexer::isSpace(lex) || lexer::isComments(lex)) {
+    if (lexer::isSpace(lex) || lexer::isComments(lex) || lexer::isEof(lex)) {
         return _factory->choicePipeline(ECodeType::Ignore);
     }
 

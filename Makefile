@@ -9,12 +9,12 @@ dlex:
 	cd build && echo 'bt' | gdb pangu-lexer core.dump | less
 debug:
 	sudo mv /var/lib/apport/coredump/* ./build/core.dump 
-	cd build && echo 'bt' | gdb pangu-grammer core.dump | less
+	cd build && echo 'bt' | gdb pangu core.dump | vim -R -
 qrun:
 	sudo rm -f /var/lib/apport/coredump/*
 	mkdir -p build
-#	cd build && cmake -DCMAKE_BUILD_TYPE=Debug .. && make -j24 && ./pangu ../test_datas/pgcodes/easy_4_calc.pgc
-	cd build && cmake -DCMAKE_BUILD_TYPE=Debug .. && make -j24 && ./pangu-grammer ../test_datas/grammer/grammer.pgl
+	cd build && cmake -DCMAKE_BUILD_TYPE=Debug .. && make -j24 && ./pangu ../test_datas/pgcodes/easy_4_calc.pgc
+#	cd build && cmake -DCMAKE_BUILD_TYPE=Debug .. && make -j24 && ./pangu-grammer ../test_datas/grammer/grammer.pgl
 
 test:
 	sudo rm -f /var/lib/apport/coredump/*

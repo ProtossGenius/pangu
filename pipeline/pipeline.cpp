@@ -104,6 +104,7 @@ void IPipelineFactory::status(std::ostream &ss) {
 #else
     ss << "\t" << _pipeline_stack.top().name() << endl;
 #endif
+    ss << "packer_stack.size = " << _packer_stack.size() << endl;
 }
 IPipelineFactory::~IPipelineFactory() {
     if (!_pipeline_stack.empty()) {

@@ -94,9 +94,10 @@ class IPipelineFactory : public IPipeline {
     PProduct swapTopProduct(IProduct *pro) {
         pgassert(pro != nullptr);
         pgassert(!_product_stack.empty());
-        auto &it = _product_stack.top();
-        it.reset(pro);
-        return PProduct(it.release());
+        auto &topPtr = _product_stack.top();
+        auto  oldTop = topPtr.release();
+        topPtr.reset(pro);
+        return PProduct(oldTop);
     }
     size_t             productStackSize() { return _product_stack.size(); }
     void               packProduct();

@@ -4,7 +4,7 @@ for i in `ls test_datas/lexer/* | grep -v -E '.out$|.target$'`; do
     echo "\033[32m analysising lexer $i ......\033[0m"; 
     ./build/pangu-lexer $i > $i.out; 
     if [ $? -eq 0 ]; then diff $i.target  $i.out; else exit; fi 
-    if [ $? -ne 0 ]; then echo "\033[31m lexer $i fail \033[0m"; fi 
+    if [ $? -ne 0 ]; then echo "\033[31m lexer $i fail \033[0m"; exit; fi 
 done
 
 
