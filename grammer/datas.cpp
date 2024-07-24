@@ -1,6 +1,6 @@
 #include "grammer/datas.h"
 #include "grammer/declare.h"
-#include <cassert>
+#include "pipeline/assert.h"
 #include <iostream>
 #include <ostream>
 #include <sstream>
@@ -138,7 +138,7 @@ void GCode::write_string(std::ostream &os) {
     if (auto left = _left.get()) {
         left->write_string(os);
     }
-    os << _value;
+    os << " _" << _value << "_ ";
     if (";" == _value) {
         os << std::endl;
     }

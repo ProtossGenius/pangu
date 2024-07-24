@@ -1,6 +1,6 @@
 #include "lexer/datas.h"
+#include "pipeline/assert.h"
 #include "pipeline/declare.h"
-#include <cassert>
 #include <cctype>
 #include <lexer/pipelines.h>
 #include <set>
@@ -180,7 +180,7 @@ int getFlashPos(const std::string &str) {
 }
 // @return if push lastChar to str;
 bool tryEscape(std::string &str, int flashPos, char lastChar) {
-    assert(flashPos > 1);
+    pgassert(flashPos > 1);
     auto isO8  = [](char c) { return c >= '0' && c < '8'; };
     auto isO16 = [](char c) {
         return isdigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');

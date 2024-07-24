@@ -1,6 +1,6 @@
 #pragma once
+#include "pipeline/assert.h"
 #include "pipeline/declare.h"
-#include <cassert>
 #include <cstddef>
 #include <functional>
 #include <iostream>
@@ -77,10 +77,10 @@ class IPipelineFactory : public IPipeline {
         std::cout << name() << " choicePipeline(" << _pipeline_name_map[ index ]
                   << ")" << std::endl;
 #endif
-        assert(index >= 0 && index < _pipelines.size());
+        pgassert(index >= 0 && index < _pipelines.size());
         _need_choise_pipeline = false;
         _pipeline_stack.push(std::move(_pipelines[ index ]()));
-        assert(_pipeline_stack.top().get()->isClean());
+        pgassert(_pipeline_stack.top().get()->isClean());
         _pipeline_stack.top().setName(_pipeline_name_map[ index ]);
     }
     //   void      unchoicePipeline();
@@ -88,11 +88,15 @@ class IPipelineFactory : public IPipeline {
     void      pushProduct(PProduct &&pro);
     void      waitChoisePipeline() { _need_choise_pipeline = true; }
     IProduct *getTopProduct() {
+        pgassert(!_product_stack.empty());
         return _product_stack.empty() ? nullptr : _product_stack.top().get();
     }
-    PProduct &getTopProductPtr() {
-        assert(!_product_stack.empty());
-        return _product_stack.top();
+    PProduct swapTopProduct(IProduct *pro) {
+        pgassert(pro != nullptr);
+        pgassert(!_product_stack.empty());
+        auto &it = _product_stack.top();
+        it.reset(pro);
+        return PProduct(it.release());
     }
     size_t             productStackSize() { return _product_stack.size(); }
     void               packProduct();

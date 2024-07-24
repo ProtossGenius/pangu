@@ -1,12 +1,12 @@
 #include "grammer/switcher.h"
 #include "grammer/enums.h"
+#include "pipeline/assert.h"
 #include "pipeline/declare.h"
 #include "pipeline/pipeline.h"
-#include <cassert>
 namespace pangu {
 namespace grammer {
 void GrammerSwitcher::onChoice() {
-    if (_factory->getTopProduct() == nullptr) {
+    if (_factory->productStackSize() == 0) {
         return _factory->choicePipeline(EGrammer::Package);
     }
 

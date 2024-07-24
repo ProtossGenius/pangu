@@ -72,14 +72,14 @@ void PipeTypeDef::accept(IPipelineFactory *factory, PData &&data) {
         if (str == "struct") {
             auto ptr = new GStruct();
             ptr->setName(name);
-            factory->pushProduct(PProduct(ptr), packStructToContainer);
             factory->choicePipeline(EGrammer::Struct);
+            factory->pushProduct(PProduct(ptr), packStructToContainer);
         } else if (str == "func") {
             factory->undealData(std::move(data));
             auto ptr = new GFuncDef();
             ptr->setName(name);
-            factory->pushProduct(PProduct(ptr), packFuncDefToPackage);
             factory->choicePipeline(EGrammer::TypeFunc);
+            factory->pushProduct(PProduct(ptr), packFuncDefToPackage);
         } else {
             factory->onFail("unknow type " + str);
         }
@@ -328,7 +328,7 @@ void PipeImport::accept(IPipelineFactory *factory, PData &&data) {
 }
 
 void PipePackage::onSwitch(IPipelineFactory *factory) {
-    if (factory->getTopProduct()) {
+    if (factory->productStackSize() != 0) {
         factory->onFail("package can't in another container:" +
                         factory->getTopProduct()->to_string());
     }

@@ -1,7 +1,8 @@
 #include "pipeline/pipeline.h"
+#include "pipeline/assert.h"
 #include "pipeline/declare.h"
 #include "pipeline/switcher.h"
-#include <cassert>
+#include <cstddef>
 #include <functional>
 #include <iostream>
 #include <ostream>
@@ -34,11 +35,13 @@ void IPipelineFactory::pushProduct(PProduct &&pro, ProductPack pack) {
     std::cout << name() << " pushProduct " << typeid(pro.get()).name()
               << "product = " << pro->to_string() << std::endl;
 #endif
-    if (_product_stack.size() > _stack_max_size) {
-        throw std::runtime_error(
-            name() + " when push product, product stack size is too large.");
-    }
-    assert(_product_stack.size() < _pipeline_stack.size());
+    pgassert_msg(_product_stack.size() <= _stack_max_size,
+                 name() +
+                     " when push product, product stack size is too large.");
+    pgassert(pack != nullptr);
+    pgassert(_product_stack.size() < _pipeline_stack.size());
+    pgassert(_product_stack.size() == _packer_stack.size());
+    pgassert(pro.get() != nullptr);
     _product_stack.emplace(std::move(pro));
     _packer_stack.push(pack);
 }

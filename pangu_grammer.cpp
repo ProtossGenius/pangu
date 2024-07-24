@@ -4,8 +4,8 @@
 #include "lexer/datas.h"
 #include "lexer/lexer.h"
 #include "pgcodes/codes.h"
+#include "pipeline/assert.h"
 #include "pipeline/declare.h"
-#include <cassert>
 #include <cstdlib>
 #include <iostream>
 #include <lexer/pipelines.h>

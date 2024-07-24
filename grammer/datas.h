@@ -1,8 +1,8 @@
 #pragma once
 #include "grammer/declare.h"
 #include "grammer/enums.h"
+#include "pipeline/assert.h"
 #include "pipeline/pipeline.h"
-#include <cassert>
 #include <cstddef>
 #include <map>
 #include <ostream>
@@ -217,40 +217,48 @@ class GCode : public IGrammer, public GStep {
   public:
     void setValue(const std::string &val, ValueType type) {
         assert_empty(_value);
-        assert(type != ValueType::NOT_VALUE);
+        pgassert(type != ValueType::NOT_VALUE);
         _value_type = type;
         _value      = val;
     }
     void setOper(const std::string &val) {
         std::cout << _value << std::endl;
-        assert(_value_type == ValueType::NOT_VALUE);
+        pgassert(_value_type == ValueType::NOT_VALUE);
         assert_empty(_value);
 
         _value = val;
     }
 
     void setLeft(GCode *left) {
-        assert(_left.get() == nullptr);
+        pgassert_msg(_left.get() == nullptr,
+                     "left value = " + _right->to_string());
         _left.reset(left);
     }
 
     void setRight(GCode *right) {
-        assert(_right.get() == nullptr);
+        pgassert_msg(_right.get() == nullptr,
+                     "right value = " + _right->to_string());
         _right.reset(right);
     }
     GCode      *getLeft() { return _left.get(); }
     GCode      *getRight() { return _right.get(); }
     GCode      *releaseLeft() { return _left.release(); }
     GCode      *releaseRight() { return _right.release(); }
+    void        swapChild() { _left.swap(_right); }
     std::string getValue() {
-        assert(_value_type != ValueType::NOT_VALUE);
+        pgassert(_value_type != ValueType::NOT_VALUE);
         return _value;
     }
     std::string getOper() {
-        assert(_value_type == ValueType::NOT_VALUE);
+        pgassert(_value_type == ValueType::NOT_VALUE);
         return _value;
     }
     ValueType getValueType() { return _value_type; }
+    bool      isOper() { return _value_type == ValueType::NOT_VALUE; }
+    bool      isValue() {
+        return _value_type != ValueType::NOT_VALUE || _value == "(" ||
+               _value == "[";
+    }
 
   private:
     std::string _value;

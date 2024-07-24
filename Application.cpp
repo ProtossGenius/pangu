@@ -4,6 +4,7 @@
 #include "lexer/datas.h"
 #include "lexer/lexer.h"
 #include "pgcodes/codes.h"
+#include "pipeline/assert.h"
 #include "pipeline/declare.h"
 #include <cassert>
 #include <cstdlib>
@@ -23,5 +24,5 @@ int main(int argc, const char *argv[]) {
     // auto grm  = grammer::create(grammer::PACK_PRINT);
     auto code = pgcodes::create(pgcodes::PACK_PRINT);
     lexer::analysis(argv[ 1 ], lexer::packNext(code.get()));
-    // lexer ::analysis(argv[ 1 ], lexer::PACK_PRINT);
+    //  lexer ::analysis(argv[ 1 ], lexer::PACK_PRINT);
 }

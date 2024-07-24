@@ -1,8 +1,8 @@
 #pragma once
 
 #include "lexer/datas.h"
+#include "pipeline/assert.h"
 #include "pipeline/switcher.h"
-#include <cassert>
 #include <cstring>
 #include <sstream>
 #include <stdexcept>
@@ -14,7 +14,7 @@ class GrammerSwitcher : public ISwitcher {
     void         onChoice() override;
     void         readForAnalysis(const PData &data) override {}
     lexer::DLex &get(size_t i) {
-        assert(i < _cached_datas.size());
+        pgassert(i < _cached_datas.size());
         return *(static_cast<lexer::DLex *>(_cached_datas[ i ].get()));
     }
     void onFail(const std::string &str) override {

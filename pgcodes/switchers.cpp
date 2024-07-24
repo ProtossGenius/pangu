@@ -17,8 +17,33 @@ void CodesSwitcher::onChoice() {
         return _factory->choicePipeline(ECodeType::Ignore);
     }
 
-    if (lexer::makeSymbol("{") == *lex) {
+    if (lexer::makeSymbol("{") == *lex || lexer::makeSymbol("(") == *lex ||
+        lexer::makeSymbol("[") == *lex) {
         return _factory->choicePipeline(ECodeType::Block);
+    }
+
+    if (lexer::makeIdentifier("if") == *lex) {
+        return _factory->choicePipeline(ECodeType::If);
+    }
+
+    if (lexer::makeIdentifier("do") == *lex) {
+        return _factory->choicePipeline(ECodeType::Do);
+    }
+
+    if (lexer::makeIdentifier("for") == *lex) {
+        return _factory->choicePipeline(ECodeType::For);
+    }
+
+    if (lexer::makeIdentifier("while") == *lex) {
+        return _factory->choicePipeline(ECodeType::While);
+    }
+
+    if (lexer ::makeIdentifier("goto") == *lex) {
+        return _factory->choicePipeline(ECodeType::Goto);
+    }
+
+    if (lexer::makeIdentifier("switch") == *lex) {
+        return _factory->choicePipeline(ECodeType::Switch);
     }
 
     _factory->choicePipeline(ECodeType::Normal);
