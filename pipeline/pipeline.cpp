@@ -2,12 +2,10 @@
 #include "pipeline/assert.h"
 #include "pipeline/declare.h"
 #include "pipeline/switcher.h"
-#include <cstddef>
 #include <functional>
 #include <iostream>
 #include <ostream>
 #include <stack>
-#include <stdexcept>
 #include <utility>
 namespace pglang {
 IPipelineFactory::IPipelineFactory(

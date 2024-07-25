@@ -254,7 +254,6 @@ class GCode : public IGrammer, public GStep {
         return _value;
     }
     ValueType getValueType() { return _value_type; }
-    bool      isOper() { return _value_type == ValueType::NOT_VALUE; }
     bool      isValue() {
         return _value_type != ValueType::NOT_VALUE || _value == "(" ||
                _value == "[";

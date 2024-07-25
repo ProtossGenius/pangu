@@ -21,7 +21,9 @@ void CodesSwitcher::onChoice() {
         lexer::makeSymbol("[") == *lex) {
         return _factory->choicePipeline(ECodeType::Block);
     }
-
+    if (lexer::makeIdentifier("var") == *lex) {
+        return _factory->choicePipeline(ECodeType::Var);
+    }
     if (lexer::makeIdentifier("if") == *lex) {
         return _factory->choicePipeline(ECodeType::If);
     }

@@ -183,7 +183,7 @@ void PipeNormal::accept(IPipelineFactory *factory, PData &&data) {
         if (topProduct->isValue() ||
             lexer::symbol_power(topProduct->getOper()) >
                 lexer::symbol_power(lex->get()) ||
-            (lexer::symbol_power(topProduct->getOper()) >
+            (lexer::symbol_power(topProduct->getOper()) ==
                  lexer::symbol_power(lex->get()) &&
              lex->get() != "=")) {
             if (factory->productStackSize() > 1) {
@@ -220,7 +220,11 @@ void PipeNormal::accept(IPipelineFactory *factory, PData &&data) {
 }
 
 void PipeBlock::onSwitch(IPipelineFactory *factory) {
-    factory->pushProduct(PProduct(new GCode()), pack_as_block);
+    if (factory->productStackSize() == 0) {
+        factory->pushProduct(PProduct(new GCode()));
+    } else {
+        factory->pushProduct(PProduct(new GCode()), pack_as_block);
+    }
 }
 
 enum class BlockStep { START = 0, WAIT_FINISH };
@@ -260,7 +264,7 @@ void PipeBlock::accept(IPipelineFactory *factory, PData &&data) {
             return;
         }
         pgassert(topProduct->getRight() != nullptr);
-        if (topProduct->getRight()->isValue() && lexer::isSymbol(lex)) {
+        if (lexer::isSymbol(lex)) {
             auto right   = topProduct->releaseRight();
             auto newProd = new GCode();
             newProd->setLeft(right);
@@ -270,6 +274,7 @@ void PipeBlock::accept(IPipelineFactory *factory, PData &&data) {
             factory->pushProduct(PProduct(newProd), pack_as_right);
             return;
         }
+
         factory->onFail("PipeBlock WAIT_FINISH unexcept input " +
                         lex->to_string());
     }
