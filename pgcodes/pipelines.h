@@ -13,7 +13,7 @@ static std::map<int, std::string>                  CODES_PIPE_ENUM;
 #define CODES_CLASS(type)                                                      \
     class Pipe##type : public IPipeline {                                      \
       public:                                                                  \
-        void onSwitch(IPipelineFactory *_factory) override;                    \
+        void createProduct(IPipelineFactory *_factory) override;                    \
         void accept(IPipelineFactory *factory, PData &&data) override;         \
     };                                                                         \
     static Reg __reg_pipe_##type([]() {                                        \

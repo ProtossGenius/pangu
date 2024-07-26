@@ -1,11 +1,12 @@
 #include "pipeline/switcher.h"
+#include "pipeline/assert.h"
 #include "pipeline/pipeline.h"
 #include <vector>
 namespace pglang {
 void ISwitcher::accept(PData &&data) {
     readForAnalysis(data);
     auto choisedPipeline = _factory->getPipeline();
-    if (choisedPipeline && !_factory->needSwitch()) {
+    if (choisedPipeline && !_factory->needCreateProduct()) {
         choisedPipeline->accept(_factory, std::move(data));
         dealCachedDatas();
         return;
@@ -19,7 +20,8 @@ void ISwitcher::accept(PData &&data) {
     if (nullptr == choisedPipeline) {
         return;
     }
-    choisedPipeline->onSwitch(_factory);
+    choisedPipeline->createProduct(_factory);
+    pgassert(!_factory->needCreateProduct());
     dealCachedDatas();
     return;
 }

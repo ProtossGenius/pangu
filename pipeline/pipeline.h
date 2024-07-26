@@ -16,7 +16,7 @@ class IPipeline {
   public:
     virtual void accept(IPipelineFactory *factory, PData &&data) = 0;
     // create default product.
-    virtual void onSwitch(IPipelineFactory *) = 0;
+    virtual void createProduct(IPipelineFactory *) = 0;
     virtual bool isClean() { return true; }
     virtual ~IPipeline() {}
 };
@@ -93,7 +93,7 @@ class IPipelineFactory : public IPipeline {
     void               undealData(PData &&data);
     const std::string &name() { return _name; }
     void               status(std::ostream &ss);
-    bool needSwitch() { return _pipeline_stack.size() > _product_stack.size(); }
+    bool needCreateProduct() { return _pipeline_stack.size() > _product_stack.size(); }
     bool isClean() override {
         return _product_stack.empty() && _pipeline_stack.empty() &&
                _packer_stack.empty();
@@ -109,8 +109,8 @@ class IPipelineFactory : public IPipeline {
         pgassert(_parent != nullptr);
         _parent->packProduct(std::move(pro));
     }
-    // switch to this pipeline will call onSwitch.
-    void onSwitch(IPipelineFactory *) override {}
+    // switch to this pipeline will call createProduct.
+    void createProduct(IPipelineFactory *) override {}
     void accept(PData &&data);
     virtual ~IPipelineFactory();
     void setMaxStackSize(size_t size) { _stack_max_size = size; }
@@ -165,7 +165,7 @@ class PipeIgnore : public IPipeline {
         factory->packProduct();
     }
     // create default product.
-    virtual void onSwitch(IPipelineFactory *factory) {
+    virtual void createProduct(IPipelineFactory *factory) {
         factory->pushProduct(PProduct(new Ignore()), [](auto, auto) {});
     }
 };

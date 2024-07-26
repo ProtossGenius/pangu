@@ -31,7 +31,7 @@ enum class TypeDefStep {
 };
 
 void dropType(IPipelineFactory *factory, PProduct &&pro) {}
-void PipeTypeDef::onSwitch(IPipelineFactory *factory) {
+void PipeTypeDef::createProduct(IPipelineFactory *factory) {
     factory->pushProduct(PProduct(new GTypeDef()), dropType);
 }
 void PipeTypeDef::accept(IPipelineFactory *factory, PData &&data) {
@@ -95,7 +95,7 @@ enum class StructStep {
     READING_VAR,
 };
 
-void PipeStruct::onSwitch(IPipelineFactory *_factory) {
+void PipeStruct::createProduct(IPipelineFactory *_factory) {
     // if (_factory->getTopProduct()) {
     //     auto ptr = new GStruct();
     //     ptr->setStep((int) (int) StructStep::WAIT_TYPE);
@@ -140,7 +140,7 @@ void PipeStruct::accept(IPipelineFactory *factory, PData &&data) {
     }
 }
 
-void PipeVariable::onSwitch(IPipelineFactory *factory) {
+void PipeVariable::createProduct(IPipelineFactory *factory) {
     if (factory->getTopProduct()) {
         return;
     }
@@ -244,7 +244,7 @@ void packImport(IPipelineFactory *factory, PProduct &&pro) {
     top->addImport(PImport((GImport *) pro.release()));
 }
 
-void PipeImport::onSwitch(IPipelineFactory *factory) {
+void PipeImport::createProduct(IPipelineFactory *factory) {
     if (factory->getTopProduct()) {
         auto ptr = new GImport();
         factory->pushProduct(PProduct(ptr), packImport);
@@ -326,7 +326,7 @@ void PipeImport::accept(IPipelineFactory *factory, PData &&data) {
     }
 }
 
-void PipePackage::onSwitch(IPipelineFactory *factory) {
+void PipePackage::createProduct(IPipelineFactory *factory) {
     if (factory->productStackSize() != 0) {
         factory->onFail("package can't in another container:" +
                         factory->getTopProduct()->to_string());
@@ -395,14 +395,14 @@ void PipePackage::accept(IPipelineFactory *factory, PData &&data) {
     factory->onFail("package can't choice pipeline: " + lex->to_string());
 }
 
-void PipeIgnore::onSwitch(IPipelineFactory *factory) {
+void PipeIgnore::createProduct(IPipelineFactory *factory) {
     factory->pushProduct(PProduct(new GIgnore()), [](auto a, auto b) {});
 }
 void PipeIgnore::accept(IPipelineFactory *factory, PData &&data) {
     factory->packProduct();
 }
 
-void PipeVarArray::onSwitch(IPipelineFactory *factory) {}
+void PipeVarArray::createProduct(IPipelineFactory *factory) {}
 enum class VarArrayStep { START = 0, READ_SINGLE, READ_MULTI, FINISH };
 void PipeVarArray::accept(IPipelineFactory *factory, PData &&data) {
     GET_LEX(data);
@@ -457,7 +457,7 @@ void PipeVarArray::accept(IPipelineFactory *factory, PData &&data) {
     }
 }
 
-void PipeTypeFunc::onSwitch(IPipelineFactory *factory) {}
+void PipeTypeFunc::createProduct(IPipelineFactory *factory) {}
 enum class FuncDefStep { READ_FUNC = 0, READ_PARAM, READ_RETURN, FINISH };
 void PipeTypeFunc::accept(IPipelineFactory *factory, PData &&data) {
     GET_LEX(data);
@@ -517,7 +517,7 @@ enum class FuncStep {
     READ_CODE,
     FINISH
 };
-void PipeFunc::onSwitch(IPipelineFactory *factory) {
+void PipeFunc::createProduct(IPipelineFactory *factory) {
     factory->pushProduct(PProduct(new GFunction()), packFuncToPackage);
 }
 void PipeFunc::accept(IPipelineFactory *factory, PData &&data) {

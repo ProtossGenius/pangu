@@ -30,7 +30,7 @@ namespace pgcodes {
 enum class StepEnum {
     START = 0,
 };
-void PipeIf::onSwitch(IPipelineFactory *factory) {}
+void PipeIf::createProduct(IPipelineFactory *factory) {}
 
 void PipeIf::accept(IPipelineFactory *factory, PData &&data) {
     GET_LEX(data);
@@ -42,7 +42,7 @@ void PipeIf::accept(IPipelineFactory *factory, PData &&data) {
     switch (topProduct->getStep()) {}
 }
 
-void PipeVar::onSwitch(IPipelineFactory *factory) {}
+void PipeVar::createProduct(IPipelineFactory *factory) {}
 void PipeVar::accept(IPipelineFactory *factory, PData &&data) {
     GET_LEX(data);
     GET_TOP(factory, GCode);
@@ -50,7 +50,7 @@ void PipeVar::accept(IPipelineFactory *factory, PData &&data) {
         return;
     }
 }
-void PipeWhile::onSwitch(IPipelineFactory *factory) {}
+void PipeWhile::createProduct(IPipelineFactory *factory) {}
 void PipeWhile::accept(IPipelineFactory *factory, PData &&data) {
     GET_LEX(data);
     GET_TOP(factory, GCode);
@@ -59,7 +59,7 @@ void PipeWhile::accept(IPipelineFactory *factory, PData &&data) {
     }
 }
 
-void PipeFor::onSwitch(IPipelineFactory *factory) {}
+void PipeFor::createProduct(IPipelineFactory *factory) {}
 void PipeFor::accept(IPipelineFactory *factory, PData &&data) {
     GET_LEX(data);
     GET_TOP(factory, GCode);
@@ -68,7 +68,7 @@ void PipeFor::accept(IPipelineFactory *factory, PData &&data) {
     }
 }
 
-void PipeSwitch::onSwitch(IPipelineFactory *factory) {}
+void PipeSwitch::createProduct(IPipelineFactory *factory) {}
 void PipeSwitch::accept(IPipelineFactory *factory, PData &&data) {
     GET_LEX(data);
     GET_TOP(factory, GCode);
@@ -77,7 +77,7 @@ void PipeSwitch::accept(IPipelineFactory *factory, PData &&data) {
     }
 }
 
-void PipeGoto::onSwitch(IPipelineFactory *factory) {}
+void PipeGoto::createProduct(IPipelineFactory *factory) {}
 void PipeGoto::accept(IPipelineFactory *factory, PData &&data) {
     GET_LEX(data);
     GET_TOP(factory, GCode);
@@ -86,7 +86,7 @@ void PipeGoto::accept(IPipelineFactory *factory, PData &&data) {
     }
 }
 
-void PipeDo::onSwitch(IPipelineFactory *factory) {}
+void PipeDo::createProduct(IPipelineFactory *factory) {}
 void PipeDo::accept(IPipelineFactory *factory, PData &&data) {
     GET_LEX(data);
     GET_TOP(factory, GCode);
@@ -101,7 +101,7 @@ enum class NormalStep {
     PRE_VIEW_NEXT,
     FINISH
 };
-void PipeNormal::onSwitch(IPipelineFactory *factory) {
+void PipeNormal::createProduct(IPipelineFactory *factory) {
     if (factory->productStackSize() == 0) {
         factory->pushProduct(PProduct(new GCode()));
     } else {
@@ -219,7 +219,7 @@ void PipeNormal::accept(IPipelineFactory *factory, PData &&data) {
     }
 }
 
-void PipeBlock::onSwitch(IPipelineFactory *factory) {
+void PipeBlock::createProduct(IPipelineFactory *factory) {
     if (factory->productStackSize() == 0) {
         factory->pushProduct(PProduct(new GCode()));
     } else {
@@ -281,7 +281,7 @@ void PipeBlock::accept(IPipelineFactory *factory, PData &&data) {
     }
 }
 
-void PipeIgnore::onSwitch(IPipelineFactory *factory) {
+void PipeIgnore::createProduct(IPipelineFactory *factory) {
     factory->pushProduct(PProduct(new pglang::Ignore()), [](auto a, auto b) {});
 }
 void PipeIgnore::accept(IPipelineFactory *factory, PData &&data) {
