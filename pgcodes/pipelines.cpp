@@ -3,9 +3,11 @@
 #include "grammer/declare.h"
 #include "lexer/datas.h"
 #include "lexer/pipelines.h"
+#include "pgcodes/datas.h"
 #include "pgcodes/enums.h"
 #include "pgcodes/packers.h"
 #include "pipeline/assert.h"
+#include "pipeline/datas.h"
 #include "pipeline/declare.h"
 #include "pipeline/pipeline.h"
 #include <cassert>
@@ -14,7 +16,6 @@
 
 namespace pangu {
 namespace pgcodes {
-using grammer::GCode;
 #define GET_LEX(data)                                                          \
     lexer::DLex *lex      = static_cast<lexer::DLex *>(data.get());            \
     std::string  str      = lex->get();                                        \
@@ -107,16 +108,15 @@ void PipeNormal::onSwitch(IPipelineFactory *factory) {
         factory->pushProduct(PProduct(new GCode()), pack_as_right);
     }
 }
-grammer::ValueType getValueType(lexer::DLex *lex) {
-    return lexer::isIdentifier(lex) ? grammer::ValueType::IDENTIFIER
-           : lexer::isString(lex)   ? grammer::ValueType::STRING
-           : lexer::isNumber(lex)   ? grammer::ValueType::NUMBER
-                                    : grammer::ValueType::NOT_VALUE;
+ValueType getValueType(lexer::DLex *lex) {
+    return lexer::isIdentifier(lex) ? ValueType::IDENTIFIER
+           : lexer::isString(lex)   ? ValueType::STRING
+           : lexer::isNumber(lex)   ? ValueType::NUMBER
+                                    : ValueType::NOT_VALUE;
 }
 void PipeNormal::accept(IPipelineFactory *factory, PData &&data) {
     GET_LEX(data);
     GET_TOP(factory, GCode);
-    std::cout << ">>>>>>>>>>>>>" << lex->to_string() << std::endl;
     if (lexer::ELexPipeline::Space == type) {
         return;
     }
@@ -179,7 +179,7 @@ void PipeNormal::accept(IPipelineFactory *factory, PData &&data) {
         return;
     }
     case int(NormalStep::PRE_VIEW_NEXT): {
-        pgassert(isSymbol(lex));
+        pgassert_msg(isSymbol(lex), lex->to_string());
         if (topProduct->isValue() ||
             lexer::symbol_power(topProduct->getOper()) >
                 lexer::symbol_power(lex->get()) ||
@@ -282,8 +282,7 @@ void PipeBlock::accept(IPipelineFactory *factory, PData &&data) {
 }
 
 void PipeIgnore::onSwitch(IPipelineFactory *factory) {
-    factory->pushProduct(PProduct(new grammer::GIgnore()),
-                         [](auto a, auto b) {});
+    factory->pushProduct(PProduct(new pglang::Ignore()), [](auto a, auto b) {});
 }
 void PipeIgnore::accept(IPipelineFactory *factory, PData &&data) {
     factory->packProduct();

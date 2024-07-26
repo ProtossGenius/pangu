@@ -31,6 +31,17 @@ void packFuncDefToPackage(IPipelineFactory *factory, PProduct &&pro) {
     top->function_defs.addFunction(PFuncDef(ptr));
 }
 
+void packFuncToPackage(IPipelineFactory *factory, PProduct &&pro) {
+    auto ptr             = static_cast<GFunction *>(pro.release());
+    auto integrityResult = ptr->integrityTest();
+    if (!integrityResult.empty()) {
+        factory->onFail(integrityResult);
+        return;
+    }
+    auto top = static_cast<GPackage *>(factory->getTopProduct());
+    top->functions.addFunction(PFunction(ptr));
+}
+
 void packVarToContainer(IPipelineFactory *factory, PProduct &&pro) {
     auto ptr = static_cast<GVarDef *>(pro.release());
     auto top = static_cast<GVarDefContainer *>(factory->getTopProduct());

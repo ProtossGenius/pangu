@@ -1,6 +1,8 @@
 #pragma once
 
 #include "grammer/enums.h"
+#include "pgcodes/codes.h"
+#include "pipeline/declare.h"
 #include "pipeline/pipeline.h"
 #include <functional>
 #include <map>
@@ -18,7 +20,7 @@ static std::map<int, std::string>                  GRAMMER_PIPE_ENUM;
     };                                                                         \
     static Reg __reg_pipe_##type([]() {                                        \
         GRAMMER_PIPElINES[ EGrammer::type ] =                                  \
-            PipelineGetter(new PipelinePtr(new Pipe##type()));                 \
+            SinglePipelineGetter(new PipelinePtr(new Pipe##type()));           \
         GRAMMER_PIPE_ENUM[ EGrammer::type ] = #type;                           \
     });
 
@@ -31,5 +33,13 @@ GRAMMER_CLASS(Variable);
 GRAMMER_CLASS(Ignore);
 GRAMMER_CLASS(VarArray);
 GRAMMER_CLASS(TypeFunc);
+GRAMMER_CLASS(Func);
+
+static Reg __reg_pipe_CodeBlock([]() {
+    GRAMMER_PIPElINES[ EGrammer::CodeBlock ] = []() {
+        return PipelinePtr(pgcodes::create(USE_PARENT_PACKER).release());
+    };
+    GRAMMER_PIPE_ENUM[ EGrammer::CodeBlock ] = "CodeBlock";
+});
 } // namespace grammer
 } // namespace pangu

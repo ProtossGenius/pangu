@@ -1,7 +1,5 @@
 #include "pgcodes/codes.h"
-#include "grammer/datas.h"
-#include "lexer/pipelines.h"
-#include "lexer/switchers.h"
+#include "pgcodes/datas.h"
 #include "pgcodes/pipelines.h"
 #include "pgcodes/switchers.h"
 #include "pipeline/declare.h"
@@ -20,7 +18,7 @@ pglang::PPipelineFactory create(pglang::ProductPack packer) {
 }
 
 const pglang::ProductPack PACK_PRINT = [](auto factory, auto pro) {
-    auto code = ((grammer::GCode *) pro.get());
+    auto code = ((GCode *) pro.get());
     std::cout << "code = " << code->to_string() << std::endl;
 };
 

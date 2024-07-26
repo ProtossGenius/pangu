@@ -23,7 +23,7 @@ T(Product);
 // for class Big, when it finish, it will as output give another factory.
 // for class Small, when it finish, it should add into class Big.
 typedef std::function<void(IPipelineFactory *, PProduct &&)> ProductPack;
-
+void USE_PARENT_PACKER(IPipelineFactory *father, PProduct &&pro);
 // decide the IData should give witch Pipeline.
 T(Switcher);
 

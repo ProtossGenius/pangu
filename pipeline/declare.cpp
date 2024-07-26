@@ -1,11 +1,17 @@
+#include "pipeline/pipeline.h"
 #include <cstdlib>
 #include <exception>
 #include <functional>
 #include <iostream>
+#include <ostream>
 #include <pipeline/declare.h>
+#include <utility>
 #include <vector>
 namespace pglang {
 
+void USE_PARENT_PACKER(IPipelineFactory *factory, PProduct &&pro) {
+    factory->packToParent(std::move(pro));
+}
 static std::vector<std::function<void()>> _terminal_functions;
 
 void addOnTerminalFuncs(std::function<void()> funcs) {

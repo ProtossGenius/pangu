@@ -12,6 +12,7 @@ enum EGrammer {
     Ignore,      // ignore input.
     VarArray,    // for func ( --var array-- )
     TypeFunc,    // type func(...) ...
+    Func,        // func name(...) (...)
     CodeBlock,   // {code...}
 };
 

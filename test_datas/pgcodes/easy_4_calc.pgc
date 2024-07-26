@@ -1,7 +1,0 @@
-{
-    asshole = 1 + 2 + 3; // normal add
-    asshole = 2 * 3 * 4; // normal multi
-    asshole = b = 3 * 4 * (1 + 5) * 6 / 7; // priority and '()'
-    baga = 7 * a(10 * b[2] ,3); // function call && array-index
-    bata = 6+ (7 > 5 ? 7 : 5); // 3-meta oper  ? :
-}

@@ -122,7 +122,16 @@ void IPipelineFactory::packProduct() {
     pack(this, std::move(pro));
     _pipeline_stack.pop();
 }
-
+void IPipelineFactory::packProduct(PProduct &&pro) {
+    _product_stack.pop();
+#ifdef DEBUG_MODE
+    std::cout << name() << " packProduct " << pro->to_string() << std::endl;
+#endif
+    ProductPack pack = _packer_stack.top();
+    _packer_stack.pop();
+    pack(this, std::move(pro));
+    _pipeline_stack.pop();
+}
 void IPipelineFactory::onFail(const std::string &errMsg) {
     _switcher->onFail(errMsg);
 }

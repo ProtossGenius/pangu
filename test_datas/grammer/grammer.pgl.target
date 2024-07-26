@@ -7,7 +7,17 @@ struct Test
 (var) b type(int) ;
 (var) c type(int) json: 'cat'
 
-function list:(0)
+function list:(3)
+func hello([(var) a type(int) ])[] (( _}_ ) _{_ ((( _f_ ) _._ (( _print_ ) _(_ ( _only for test_ ))) _;_ 
+))
+func main([])[] (( _}_ ) _{_ ((( _f_ ) _._ (( _print_ ) _(_ ( _hello world!_ ))) _;_ 
+))
+func test_calc([])[] (( _}_ ) _{_ ((((((( _asshole_ ) _=_ ((( _1_ ) _+_ ( _2_ )) _+_ ( _3_ ))) _;_ 
+(( _asshole_ ) _=_ ((( _2_ ) _*_ ( _3_ )) _*_ ( _4_ )))) _;_ 
+(( _asshole_ ) _=_ (( _b_ ) _=_ ((((( _3_ ) _*_ ( _4_ )) _*_ ( _(_ (( _1_ ) _+_ ( _5_ )))) _*_ ( _6_ )) _/_ ( _7_ ))))) _;_ 
+(( _baga_ ) _=_ (( _7_ ) _*_ (( _a_ ) _(_ ((( _10_ ) _*_ (( _b_ ) _[_ ( _2_ ))) _,_ ( _3_ )))))) _;_ 
+(( _bata_ ) _=_ (( _6_ ) _+_ ( _(_ ((( _7_ ) _>_ ( _5_ )) _?_ (( _7_ ) _:_ ( _5_ ))))))) _;_ 
+))
 type func list:(6)
 type TestFunc1func([(var) a type(int) ,(var) b type(int) ,(var) c type(string) ])[(var) return type(int) ]
 type TestFunc2func([(var) a type(int) ,(var) b type(string) ,(var) c type(string) ])[(var) d type(int) ,(var) e type(error) ]

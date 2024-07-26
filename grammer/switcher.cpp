@@ -1,6 +1,5 @@
 #include "grammer/switcher.h"
 #include "grammer/enums.h"
-#include "pipeline/assert.h"
 #include "pipeline/declare.h"
 #include "pipeline/pipeline.h"
 namespace pangu {

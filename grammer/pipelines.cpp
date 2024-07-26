@@ -6,7 +6,6 @@
 #include "lexer/datas.h"
 #include "lexer/pipelines.h"
 #include "pipeline/declare.h"
-#include "pipeline/pipeline.h"
 #include <string>
 #include <utility>
 
@@ -384,6 +383,10 @@ void PipePackage::accept(IPipelineFactory *factory, PData &&data) {
     if (lexer::makeIdentifier("type") == *lex) {
         return factory->choicePipeline(EGrammer::TypeDef);
     }
+    if (lexer::makeIdentifier("func") == *lex) {
+        return factory->choicePipeline(EGrammer::Func);
+    }
+
     if (lex->typeId() == lexer::ELexPipeline::Space ||
         lex->typeId() == lexer::ELexPipeline::Comments ||
         makeSymbol(";") == *lex) { // TODO: think another symbol?
@@ -503,6 +506,82 @@ void PipeTypeFunc::accept(IPipelineFactory *factory, PData &&data) {
         factory->onFail(
             "PipeTypeFunc: product = " + topProduct->to_string() +
             " unexcept step code : " + std::to_string(topProduct->getStep()));
+    }
+}
+
+enum class FuncStep {
+    START = 0,
+    READ_NAME,
+    READ_PARAM,
+    READ_RETURN,
+    READ_CODE,
+    FINISH
+};
+void PipeFunc::onSwitch(IPipelineFactory *factory) {
+    factory->pushProduct(PProduct(new GFunction()), packFuncToPackage);
+}
+void PipeFunc::accept(IPipelineFactory *factory, PData &&data) {
+    GET_LEX(data);
+    GET_TOP(factory, GFunction);
+    if (lexer::ELexPipeline::Space == type) {
+        return;
+    }
+
+    switch (int(topProduct->getStep())) {
+    case int(FuncStep::START): {
+        topProduct->setStep(int(FuncStep::READ_NAME));
+        return;
+    }
+    case int(FuncStep::READ_NAME): {
+        if (!lexer::isIdentifier(lex)) {
+            factory->onFail("PipeFunc read_name want a identifier, but get " +
+                            lex->to_string());
+        }
+        topProduct->setName(str);
+        topProduct->setStep(int(FuncStep::READ_PARAM));
+        return;
+    }
+
+    case int(FuncStep::READ_PARAM): {
+        factory->undealData(std::move(data));
+        factory->choicePipeline(EGrammer::VarArray);
+        auto ptr = new GVarDefContainer();
+        factory->pushProduct(PProduct(ptr), [ = ](auto f, auto pro) {
+            topProduct->params.swap(*ptr);
+        });
+        topProduct->setStep(int(FuncStep::READ_RETURN));
+        return;
+    }
+    case int(FuncStep::READ_RETURN): {
+        if (makeSymbol("{") == *lex) {
+            factory->undealData(std::move(data));
+            topProduct->setStep(int(FuncStep::READ_CODE));
+            return;
+        }
+        factory->undealData(std::move(data));
+        factory->choicePipeline(EGrammer::VarArray);
+        auto ptr = new GVarDefContainer();
+        factory->pushProduct(PProduct(ptr), [ = ](auto f, auto pro) {
+            topProduct->result.swap(*ptr);
+        });
+        topProduct->setStep(int(FuncStep::READ_CODE));
+        return;
+    }
+    case int(FuncStep::READ_CODE): {
+        factory->undealData(std::move(data));
+        factory->choicePipeline(EGrammer::CodeBlock);
+        factory->pushProduct(
+            PProduct(new GCode()), [ = ](auto *_factory, auto pro) {
+                topProduct->code.reset(static_cast<GCode *>(pro.release()));
+            });
+        topProduct->setStep(int(FuncStep::FINISH));
+        return;
+    }
+    case int(FuncStep::FINISH): {
+        factory->undealData(std::move(data));
+        factory->packProduct();
+        return;
+    }
     }
 }
 

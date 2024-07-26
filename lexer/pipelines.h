@@ -22,7 +22,7 @@ static std::map<int, std::string>                  LEX_PIPE_ENUM;
     };                                                                         \
     static Reg  __reg_pipe_##name([]() {                                       \
         LEX_PIPElINES[ ELexPipeline::type ] =                                 \
-            PipelineGetter(new PipelinePtr(new name()));                      \
+            SinglePipelineGetter(new PipelinePtr(new name()));                \
         LEX_PIPE_ENUM[ ELexPipeline::type ] = #type;                          \
     });                                                                       \
     inline bool is##type(DLex *lex) {                                          \

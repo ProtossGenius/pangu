@@ -1,5 +1,6 @@
 #pragma once
 #include "pipeline/assert.h"
+#include "pipeline/datas.h"
 #include "pipeline/declare.h"
 #include <cstddef>
 #include <functional>
@@ -10,19 +11,6 @@
 #include <stack>
 #include <string>
 namespace pglang {
-class IData {
-  public:
-    virtual int         typeId() const = 0;
-    virtual std::string to_string() { return ""; }
-    virtual ~IData() {}
-};
-
-class IProduct : public IData {
-  public:
-    virtual int         typeId() const override = 0;
-    virtual std::string to_string() override { return ""; }
-    virtual ~IProduct() {}
-};
 
 class IPipeline {
   public:
@@ -110,16 +98,25 @@ class IPipelineFactory : public IPipeline {
         return _product_stack.empty() && _pipeline_stack.empty() &&
                _packer_stack.empty();
     }
+    ProductPack getDefaultPacker() { return _final_product_packer; }
 
   public:
     void accept(IPipelineFactory *factory, PData &&data) override {
+        _parent = factory;
         accept(std::move(data));
+    }
+    void packToParent(PProduct &&pro) {
+        pgassert(_parent != nullptr);
+        _parent->packProduct(std::move(pro));
     }
     // switch to this pipeline will call onSwitch.
     void onSwitch(IPipelineFactory *) override {}
     void accept(PData &&data);
     virtual ~IPipelineFactory();
     void setMaxStackSize(size_t size) { _stack_max_size = size; }
+
+  private:
+    void packProduct(PProduct &&pro);
 
   protected:
     std::string                                  _name;
@@ -132,8 +129,20 @@ class IPipelineFactory : public IPipeline {
     std::stack<PipelinePtr>                      _pipeline_stack;
     bool                                         _need_choise_pipeline;
     size_t                                       _stack_max_size = 10000;
+    IPipelineFactory                            *_parent;
 };
 
+class GStep {
+  public:
+    GStep()
+        : _step(0) {}
+    virtual ~GStep() {}
+    int  getStep() { return _step; }
+    void setStep(int step) { this->_step = step; }
+
+  private:
+    int _step;
+};
 class Reg {
   public:
     Reg(std::function<void()> action) { action(); }
@@ -141,9 +150,9 @@ class Reg {
 
 const static Reg __REGISTER_TERMINAL_FUNCS([]() { registerTerminalFuncs(); });
 
-class PipelineGetter {
+class SinglePipelineGetter {
   public:
-    PipelineGetter(PipelinePtr *p)
+    SinglePipelineGetter(PipelinePtr *p)
         : _pipeline(p) {}
     IPipeline *operator()() { return _pipeline->get(); }
 
@@ -151,4 +160,13 @@ class PipelineGetter {
     std::shared_ptr<PipelinePtr> _pipeline;
 };
 
+class PipeIgnore : public IPipeline {
+    void accept(IPipelineFactory *factory, PData &&data) {
+        factory->packProduct();
+    }
+    // create default product.
+    virtual void onSwitch(IPipelineFactory *factory) {
+        factory->pushProduct(PProduct(new Ignore()), [](auto, auto) {});
+    }
+};
 } // namespace pglang

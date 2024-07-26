@@ -18,7 +18,7 @@ static std::map<int, std::string>                  CODES_PIPE_ENUM;
     };                                                                         \
     static Reg __reg_pipe_##type([]() {                                        \
         CODES_PIPELINES[ ECodeType::type ] =                                   \
-            PipelineGetter(new PipelinePtr(new Pipe##type()));                 \
+            SinglePipelineGetter(new PipelinePtr(new Pipe##type()));           \
         CODES_PIPE_ENUM[ ECodeType::type ] = #type;                            \
     });
 CODES_CLASS(If);
