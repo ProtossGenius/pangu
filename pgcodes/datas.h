@@ -2,6 +2,7 @@
 #include "pipeline/assert.h"
 #include "pipeline/datas.h"
 #include "pipeline/pipeline.h"
+#include <set>
 namespace pangu {
 namespace pgcodes {
 typedef pglang::INameProduct IGrammer;
@@ -58,8 +59,8 @@ class GCode : public IGrammer, public pglang::GStep {
     }
     ValueType getValueType() { return _value_type; }
     bool      isValue() {
-        return _value_type != ValueType::NOT_VALUE || _value == "(" ||
-               _value == "[";
+        const static std::set<std::string> VALUE_SET{"(", "[", "++", "--"};
+        return _value_type != ValueType::NOT_VALUE || VALUE_SET.count(_value);
     }
 
   private:

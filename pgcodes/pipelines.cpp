@@ -160,6 +160,10 @@ void PipeNormal::accept(IPipelineFactory *factory, PData &&data) {
             factory->onFail("except symbol, but get : " + lex->to_string());
         }
         topProduct->setOper(lex->get());
+        if (str == "++" || str == "--") {
+            factory->packProduct();
+            return;
+        }
         topProduct->setStep(int(NormalStep::WAIT_RIGHT));
 
         return;
@@ -173,6 +177,7 @@ void PipeNormal::accept(IPipelineFactory *factory, PData &&data) {
             topProduct->setStep(int(NormalStep::PRE_VIEW_NEXT));
             return;
         }
+        topProduct->setStep(int(NormalStep::PRE_VIEW_NEXT));
         factory->undealData(std::move(data));
         factory->choicePipeline(int(ECodeType::Normal));
         factory->pushProduct(PProduct(new GCode()), pack_as_right);
@@ -203,6 +208,10 @@ void PipeNormal::accept(IPipelineFactory *factory, PData &&data) {
         auto code = new GCode();
         code->setOper(str);
         code->setLeft(topProduct->releaseRight());
+        if (str == "++" || str == "--") {
+            topProduct->setRight(code);
+            return;
+        }
         code->setStep(int(NormalStep::WAIT_RIGHT));
         factory->choicePipeline(ECodeType::Normal);
         factory->pushProduct(PProduct(code), pack_as_right);
