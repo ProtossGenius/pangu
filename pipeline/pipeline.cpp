@@ -133,7 +133,13 @@ void IPipelineFactory::packProduct(PProduct &&pro) {
     _pipeline_stack.pop();
 }
 void IPipelineFactory::onFail(const std::string &errMsg) {
-    _switcher->onFail(errMsg);
+    std::string current_pipeline = "";
+    if (_pipeline_stack.empty()) {
+        current_pipeline = "null";
+    } else {
+        current_pipeline = _pipeline_stack.top().name();
+    }
+    _switcher->onFail(merge_string(name(), ":", current_pipeline, ":", errMsg));
 }
 
 } // namespace pglang

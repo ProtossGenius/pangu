@@ -45,5 +45,7 @@ class DLex : public pglang::IProduct {
 
 int                                symbol_power(const std::string &s);
 extern const std::set<std::string> symbols;
+extern const std::set<std::string> keywords;
+bool is_keywords(DLex *lex);
 } // namespace lexer
 } // namespace pangu

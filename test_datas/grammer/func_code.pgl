@@ -10,17 +10,9 @@ func test_func() {
     a = ++a + b++;
     ++a;
     a++;
-    /*
     // single if
     if (a == 1) {return;}
-    // if with else if
-    if (a == 1) {
-        a = 2;
-    } else if (a == 2) {
-        a = 3;
-    } else if (a == 3) {
-        a = 4;
-    }
+    /*
     // if with "else if" and with else
     if (a == 1) {
         a = 2;

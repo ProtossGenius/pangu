@@ -1,4 +1,6 @@
 #include "lexer/datas.h"
+#include "lexer/pipelines.h"
+#include <fstream>
 #include <map>
 #include <stdexcept>
 #include <vector>
@@ -60,6 +62,15 @@ int symbol_power(const std::string &s) {
     return power[ s ];
 }
 
+const std::set<std::string> keywords{
+    "if",     "for",    "while",  "do",    "type", "func",
+    "struct", "class",  "switch", "goto",  "try",  "catch",
+    "public", "static", "const",  "final", "var",
+};
+bool is_keywords(DLex *lex) {
+
+    return isIdentifier(lex) && (keywords.count(lex->get()) > 0);
+}
 } // namespace lexer
 
 } // namespace pangu

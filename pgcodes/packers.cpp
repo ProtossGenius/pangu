@@ -15,8 +15,9 @@ void pack_as_block(IPipelineFactory *factory, PProduct &&data) {
     code->releaseLeft();
     if (topProduct->getRight() != nullptr) {
         if (!topProduct->getRight()->isValue()) {
-            factory->onFail(
-                "block need topProduct's right value is null or value");
+            factory->onFail("block need topProduct's right value is null or "
+                            "value, right value = :" +
+                            topProduct->getRight()->getValue());
         }
         code->setLeft(topProduct->releaseRight());
     }

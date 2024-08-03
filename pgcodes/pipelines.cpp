@@ -1,6 +1,5 @@
 #include "pgcodes/pipelines.h"
-#include "grammer/datas.h"
-#include "grammer/declare.h"
+#include "grammer/enums.h"
 #include "lexer/datas.h"
 #include "lexer/pipelines.h"
 #include "pgcodes/datas.h"
@@ -27,11 +26,22 @@ namespace pgcodes {
 #define GET_TOP(factory, Type)                                                 \
     Type *topProduct = static_cast<Type *>(factory->getTopProduct());
 
-enum class StepEnum {
-    START = 0,
-};
-void PipeIf::createProduct(IPipelineFactory *factory) {}
+void PipeIf::createProduct(IPipelineFactory *factory) {
+    if (factory->productStackSize() == 0) {
+        factory->pushProduct(PProduct(new GCode()));
+    } else {
+        factory->pushProduct(PProduct(new GCode()), pack_as_right);
+    }
+}
 
+enum class IfStep {
+    START = 0,
+    WAIT_IF,
+    WAIT_CONDITION,
+    WAIT_ACTION,
+    WAIT_ELSE,
+    FINISH
+};
 void PipeIf::accept(IPipelineFactory *factory, PData &&data) {
     GET_LEX(data);
     GET_TOP(factory, GCode);
@@ -39,7 +49,50 @@ void PipeIf::accept(IPipelineFactory *factory, PData &&data) {
     if (lexer::ELexPipeline::Space == type) {
         return;
     }
-    switch (topProduct->getStep()) {}
+    switch (topProduct->getStep()) {
+    case int(IfStep::START): {
+        if (lexer::makeIdentifier("if") != *lex) {
+            factory->onFail("in step START, should get identifier 'if'");
+        }
+        topProduct->setOper("if");
+        topProduct->setStep(int(IfStep::WAIT_CONDITION));
+        return;
+    }
+    case int(IfStep::WAIT_CONDITION): {
+        if (lexer::makeSymbol("(") != *lex) {
+            factory->onFail("in step WAIT_CONDITION, should get symbol '('");
+        }
+        factory->undealData(std::move(data));
+        topProduct->setStep(int(IfStep::WAIT_ACTION));
+        factory->choicePipeline(ECodeType::Block);
+        return;
+    }
+    case int(IfStep::WAIT_ACTION): {
+        factory->undealData(std::move(data));
+        if (lexer::makeSymbol("{") == *lex) {
+            topProduct->setStep(int(IfStep::WAIT_ELSE));
+            factory->choicePipeline(ECodeType::Block);
+        } else {
+            topProduct->setStep(int(IfStep::FINISH));
+            factory->choicePipeline(ECodeType::Normal);
+        }
+        return;
+    }
+    case int(IfStep::WAIT_ELSE): {
+        if (lexer::makeIdentifier("else") == *lex) {
+            // TODO: deal with else;
+            return;
+        }
+
+        factory->undealData(std::move(data));
+        factory->packProduct();
+        return;
+    }
+
+    default:
+        factory->onFail("unknow step value : " +
+                        std::to_string(topProduct->getStep()));
+    }
 }
 
 void PipeVar::createProduct(IPipelineFactory *factory) {}
@@ -141,6 +194,8 @@ void PipeNormal::accept(IPipelineFactory *factory, PData &&data) {
     }
     switch (topProduct->getStep()) {
     case int(NormalStep::START): {
+        pgassert_msg(!lexer::is_keywords(lex),
+                     "PipeNormal should not have keyword, keyword = " + str);
         if (lexer::isIdentifier(lex) || lexer::isNumber(lex) ||
             lexer::isString(lex)) {
             topProduct->setValue(lex->get(), getValueType(lex));
@@ -169,6 +224,12 @@ void PipeNormal::accept(IPipelineFactory *factory, PData &&data) {
         return;
     }
     case int(NormalStep::WAIT_RIGHT): {
+        if (lexer::is_keywords(lex)) {
+            factory->undealData(std::move(data));
+            factory->waitChoisePipeline();
+            topProduct->setStep(int(NormalStep::PRE_VIEW_NEXT));
+            return;
+        }
         if (lexer::isIdentifier(lex) || lexer::isNumber(lex) ||
             lexer::isString(lex)) {
             auto code = new GCode();
@@ -196,7 +257,6 @@ void PipeNormal::accept(IPipelineFactory *factory, PData &&data) {
                 factory->packProduct();
                 return;
             }
-
             GCode *newTop = new GCode();
             newTop->setOper(str);
             newTop->setStep(int(NormalStep::WAIT_RIGHT));

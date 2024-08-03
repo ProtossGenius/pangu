@@ -3,6 +3,7 @@
 #include "pipeline/datas.h"
 #include "pipeline/pipeline.h"
 #include <set>
+#include <string>
 namespace pangu {
 namespace pgcodes {
 typedef pglang::INameProduct IGrammer;

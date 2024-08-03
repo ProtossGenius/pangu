@@ -40,31 +40,31 @@ func test_calc() {
 // ## pipeline like a function, have input and output.
 
 // most simple pipeline.
-pipeline PipeDemo1 (a, b, c From) (d, e, f To) {
+pipeline PipeDemo1 (a From) (d To) {
   // all input will give Pipe1, Pipe1's all output give Pipe2
   //Pipe3's output as PipeDemo1's output.
   Pipe1 -> Pipe2 -> Pipe3
   // ===================================================================
   // ## assume Pipe3's output not same to PipeDemo1's output, have two way 
   // ===================================================================
-  // ## way1: use Pipe3's output merge to new result. assume pipe3's result is (q Q, r R)
-  // Pipe1 -> Pipe2 -> Pipe3 -> [q.d, r.e, r.f]
-  // ## another way: give Pipe3 a name.
-  // Pipe1 -> Pipe2 -> (last Pipe3) -> [last.q.d, last.r.e, last.r.f]
+  // ## way1: use Pipe3's output merge to new result. assume pipe3's result is (q Q)
+  // Pipe1 -> Pipe2 -> Pipe3 -> [q.d, q.e, q.f] // or [d, e, f]
+  // ## way2: define merge function.
+  func merge(q Q) (d To) {
+    return(To{q.d, q.e, q.f});
+  }
 }
 
-// simple pipeline
-pipeline PipeDemo2 (a F1, b F2) (d T1, e T2) {
+// use more than one pipeline and merge result.
+pipeline PipeDemo2 (a F1) (d T1) {
   // can choice what param pipeline need.
-  def SelfP1 = Pipe1(a) -> Pipe2(b);
+  def SelfP1 = Pipe1 -> Pipe2; // assume Pipe2's result is O1
   // can use function to trans PipeDemo2's param to Pipe3's param.
-  def SelfP2 = Pipe3(trans(a, b));
+  def SelfP2 = Pipe3; // assume Pipe2's result is O2
   // merge result.
-  // ## p2 is Pipe6's output
-  (
-    (p1 SelfP1(a)), 
-    Self2(a, b) -> Pipe4 -> (p2 Pipe5) 
-  ) -> [p1.d, p2.e]
+  func merge(a O1, b O1) {
+    return(T1{a, b});
+  }
 }
 // ## Node: You can also define SelfP1 outside. decide to you.
 //====================================================================================
