@@ -40,6 +40,7 @@ enum class IfStep {
     WAIT_CONDITION,
     WAIT_ACTION,
     WAIT_ELSE,
+    WAIT_ELSE_CONDITION,
     FINISH
 };
 void PipeIf::accept(IPipelineFactory *factory, PData &&data) {
@@ -54,7 +55,7 @@ void PipeIf::accept(IPipelineFactory *factory, PData &&data) {
         if (lexer::makeIdentifier("if") != *lex) {
             factory->onFail("in step START, should get identifier 'if'");
         }
-        topProduct->setOper("if");
+        topProduct->setOper("?");
         topProduct->setStep(int(IfStep::WAIT_CONDITION));
         return;
     }
@@ -65,6 +66,7 @@ void PipeIf::accept(IPipelineFactory *factory, PData &&data) {
         factory->undealData(std::move(data));
         topProduct->setStep(int(IfStep::WAIT_ACTION));
         factory->choicePipeline(ECodeType::Block);
+        factory->pushProduct(PProduct(new GCode()), pack_as_left);
         return;
     }
     case int(IfStep::WAIT_ACTION): {
@@ -76,19 +78,37 @@ void PipeIf::accept(IPipelineFactory *factory, PData &&data) {
             topProduct->setStep(int(IfStep::FINISH));
             factory->choicePipeline(ECodeType::Normal);
         }
+        factory->pushProduct(PProduct(new GCode()), pack_as_if_action);
         return;
     }
     case int(IfStep::WAIT_ELSE): {
         if (lexer::makeIdentifier("else") == *lex) {
-            // TODO: deal with else;
+            topProduct->setStep(int(IfStep::WAIT_ELSE_CONDITION));
             return;
         }
 
         factory->undealData(std::move(data));
-        factory->packProduct();
+        topProduct->setStep(int(IfStep::FINISH));
         return;
     }
 
+    case int(IfStep::WAIT_ELSE_CONDITION): {
+        if (lexer::makeIdentifier("if") == *lex) {
+            factory->choicePipeline(ECodeType::If);
+        } else {
+            factory->waitChoisePipeline();
+        }
+        topProduct->setStep(int(IfStep::FINISH));
+        factory->setNextPacker(pack_as_if_else);
+        factory->undealData(std::move(data));
+        return;
+    }
+    case int(IfStep::FINISH): {
+        factory->undealData(PData(lexer::makeSymbolPtr(";")));
+        factory->undealData(std::move(data));
+        factory->packProduct();
+        return;
+    }
     default:
         factory->onFail("unknow step value : " +
                         std::to_string(topProduct->getStep()));

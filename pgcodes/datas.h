@@ -42,7 +42,9 @@ class GCode : public IGrammer, public pglang::GStep {
 
     void setRight(GCode *right) {
         pgassert_msg(_right.get() == nullptr,
-                     "right value = " + _right->to_string());
+                     merge_string("this->_right = ", _right->to_string(), "\n",
+                                  "right = ", right->to_string()));
+
         _right.reset(right);
     }
     GCode      *getLeft() { return _left.get(); }

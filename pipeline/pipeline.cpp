@@ -41,6 +41,10 @@ void IPipelineFactory::pushProduct(PProduct &&pro, ProductPack pack) {
     pgassert(_product_stack.size() == _packer_stack.size());
     pgassert(pro.get() != nullptr);
     _product_stack.emplace(std::move(pro));
+    if (_next_packer != nullptr) {
+        pack         = _next_packer;
+        _next_packer = nullptr;
+    }
     _packer_stack.push(pack);
 }
 void IPipelineFactory::accept(PData &&data) {

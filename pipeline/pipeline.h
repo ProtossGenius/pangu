@@ -93,7 +93,9 @@ class IPipelineFactory : public IPipeline {
     void               undealData(PData &&data);
     const std::string &name() { return _name; }
     void               status(std::ostream &ss);
-    bool needCreateProduct() { return _pipeline_stack.size() > _product_stack.size(); }
+    bool               needCreateProduct() {
+        return _pipeline_stack.size() > _product_stack.size();
+    }
     bool isClean() override {
         return _product_stack.empty() && _pipeline_stack.empty() &&
                _packer_stack.empty();
@@ -114,6 +116,7 @@ class IPipelineFactory : public IPipeline {
     void accept(PData &&data);
     virtual ~IPipelineFactory();
     void setMaxStackSize(size_t size) { _stack_max_size = size; }
+    void setNextPacker(ProductPack nextPacker) { _next_packer = nextPacker; }
 
   private:
     void packProduct(PProduct &&pro);
@@ -124,12 +127,15 @@ class IPipelineFactory : public IPipeline {
     std::map<int, std::function<PipelinePtr()>> &_pipelines;
     std::map<int, std::string>                  &_pipeline_name_map;
     ProductPack                                  _final_product_packer;
-    std::stack<PProduct>                         _product_stack;
-    std::stack<ProductPack>                      _packer_stack;
-    std::stack<PipelinePtr>                      _pipeline_stack;
-    bool                                         _need_choise_pipeline;
-    size_t                                       _stack_max_size = 10000;
-    IPipelineFactory                            *_parent;
+    // if have _next_packer, will push _next_packer to stack and reset
+    // _next_packer to nullptr;
+    ProductPack             _next_packer;
+    std::stack<PProduct>    _product_stack;
+    std::stack<ProductPack> _packer_stack;
+    std::stack<PipelinePtr> _pipeline_stack;
+    bool                    _need_choise_pipeline;
+    size_t                  _stack_max_size = 10000;
+    IPipelineFactory       *_parent;
 };
 
 class GStep {

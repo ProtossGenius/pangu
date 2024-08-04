@@ -7,3 +7,4 @@
 - switch
 - for
 - function call
+- return;

@@ -14,7 +14,7 @@ static std::map<int, std::string>                  LEX_PIPE_ENUM;
 #define LEXER_CLASS(name, type)                                                \
     class name : public IPipeline {                                            \
       public:                                                                  \
-        void createProduct(IPipelineFactory *_factory) override {                   \
+        void createProduct(IPipelineFactory *_factory) override {              \
             _factory->pushProduct(std::move(std::unique_ptr<IProduct>(         \
                 (IProduct *) new DLex(ELexPipeline::type))));                  \
         }                                                                      \
@@ -30,6 +30,9 @@ static std::map<int, std::string>                  LEX_PIPE_ENUM;
     }                                                                          \
     inline DLex make##type(const std::string &val) {                           \
         return DLex(ELexPipeline::type, val);                                  \
+    }                                                                          \
+    inline DLex *make##type##Ptr(const std::string &val) {                     \
+        return new DLex(ELexPipeline::type, val);                              \
     }
 
 enum ELexPipeline {

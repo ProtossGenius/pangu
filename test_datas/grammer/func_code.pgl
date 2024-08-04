@@ -12,7 +12,8 @@ func test_func() {
     a++;
     // single if
     if (a == 1) {return;}
-    /*
+    if (b == 1) {return;}
+    else {return;}
     // if with "else if" and with else
     if (a == 1) {
         a = 2;
@@ -23,6 +24,7 @@ func test_func() {
     } else {
         a = 5;
     }
+    /*
     // for 
     for (a := 1; a < 5; ++a) {
 
