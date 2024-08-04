@@ -56,9 +56,8 @@ std::map<std::string, int> getSymbolPowerMap() {
 }
 int symbol_power(const std::string &s) {
     static std::map<std::string, int> power = getSymbolPowerMap();
-    if (power.count(s) == 0) {
-        throw std::runtime_error("symbol_power fail, no such symbol: " + s);
-    }
+    pgassert_msg(power.count(s) != 0,
+                 "symbol_power fail, no such symbol: " + s);
     return power[ s ];
 }
 

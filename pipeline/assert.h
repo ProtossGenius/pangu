@@ -24,4 +24,5 @@ template <typename... Args> inline std::string merge_string(Args... args) {
 #define pgassert(e) pgassert_msg(e, "assert fail.")
 
 #define assert_empty(e)                                                        \
-    pgassert_msg(e.empty(), merge_string(#e, "cant be empty"))
+    pgassert_msg(e.empty(),                                                    \
+                 merge_string(#e, " should be empty, ", #e, " = \"", e, "\""))

@@ -21,31 +21,35 @@ class GCode : public IGrammer, public pglang::GStep {
     void write_string(std::ostream &os);
 
   public:
-    void setValue(const std::string &val, ValueType type) {
+    GCode *setValue(const std::string &val, ValueType type) {
         assert_empty(_value);
         pgassert(type != ValueType::NOT_VALUE);
         _value_type = type;
         _value      = val;
+        return this;
     }
-    void setOper(const std::string &val) {
+    GCode *setOper(const std::string &val) {
         pgassert(_value_type == ValueType::NOT_VALUE);
         assert_empty(_value);
 
         _value = val;
+        return this;
     }
 
-    void setLeft(GCode *left) {
+    GCode *setLeft(GCode *left) {
         pgassert_msg(_left.get() == nullptr,
                      "left value = " + _right->to_string());
         _left.reset(left);
+        return this;
     }
 
-    void setRight(GCode *right) {
+    GCode *setRight(GCode *right) {
         pgassert_msg(_right.get() == nullptr,
                      merge_string("this->_right = ", _right->to_string(), "\n",
                                   "right = ", right->to_string()));
 
         _right.reset(right);
+        return this;
     }
     GCode      *getLeft() { return _left.get(); }
     GCode      *getRight() { return _right.get(); }

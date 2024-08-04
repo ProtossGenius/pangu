@@ -1,5 +1,4 @@
 #include "pgcodes/pipelines.h"
-#include "grammer/enums.h"
 #include "lexer/datas.h"
 #include "lexer/pipelines.h"
 #include "pgcodes/datas.h"
@@ -72,16 +71,18 @@ void PipeIf::accept(IPipelineFactory *factory, PData &&data) {
     case int(IfStep::WAIT_ACTION): {
         factory->undealData(std::move(data));
         if (lexer::makeSymbol("{") == *lex) {
-            topProduct->setStep(int(IfStep::WAIT_ELSE));
             factory->choicePipeline(ECodeType::Block);
         } else {
-            topProduct->setStep(int(IfStep::FINISH));
             factory->choicePipeline(ECodeType::Normal);
         }
+        topProduct->setStep(int(IfStep::WAIT_ELSE));
         factory->pushProduct(PProduct(new GCode()), pack_as_if_action);
         return;
     }
     case int(IfStep::WAIT_ELSE): {
+        if (lexer ::makeSymbol(";") == *lex) {
+            return;
+        }
         if (lexer::makeIdentifier("else") == *lex) {
             topProduct->setStep(int(IfStep::WAIT_ELSE_CONDITION));
             return;
@@ -216,8 +217,12 @@ void PipeNormal::accept(IPipelineFactory *factory, PData &&data) {
     case int(NormalStep::START): {
         pgassert_msg(!lexer::is_keywords(lex),
                      "PipeNormal should not have keyword, keyword = " + str);
-        if (lexer::isIdentifier(lex) || lexer::isNumber(lex) ||
-            lexer::isString(lex)) {
+        if (lexer::makeIdentifier("return") == *lex) {
+            topProduct->setStep(int(NormalStep::PRE_VIEW_NEXT));
+            factory->choicePipeline(ECodeType::Normal);
+            factory->pushProduct(PProduct(new GCode()), pack_as_return);
+        } else if (lexer::isIdentifier(lex) || lexer::isNumber(lex) ||
+                   lexer::isString(lex)) {
             topProduct->setValue(lex->get(), getValueType(lex));
             topProduct->setStep(int(NormalStep::PRE_VIEW_NEXT));
         } else if (lexer::isSymbol(lex)) {
@@ -227,7 +232,6 @@ void PipeNormal::accept(IPipelineFactory *factory, PData &&data) {
             factory->onFail("except identifier or symbol , but get " +
                             lex->to_string());
         }
-
         return;
     }
     case int(NormalStep::WAIT_MID_OPER): {
