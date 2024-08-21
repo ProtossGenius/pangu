@@ -1,10 +1,5 @@
-#include "grammer/datas.h"
-#include "grammer/declare.h"
-#include "grammer/grammer.h"
-#include "lexer/datas.h"
 #include "lexer/lexer.h"
 #include "pgcodes/codes.h"
-#include "pipeline/assert.h"
 #include "pipeline/declare.h"
 #include <cassert>
 #include <cstdlib>

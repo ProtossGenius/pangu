@@ -24,12 +24,13 @@ func test_func() {
     } else {
         a = 5;
     }
+
+    a:float = 32.0;
     /*
     // for 
     for (a := 1; a < 5; ++a) {
 
     }
-
 
     */
 }

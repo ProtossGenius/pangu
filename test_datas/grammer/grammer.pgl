@@ -71,18 +71,18 @@ pipeline PipeDemo2 (a F1) (d T1) {
 // ##     Self Define Pipeline.
 //====================================================================================
 type PipeSelf pipeline (i In) (o Out) {
+  [READ_TYPE, READ_NAME, READ_BODY]
   // createProduct, if have product in factory, will not call this func.
   func createProduct() Out {}
   func accept(f factory, i In) {}
   // ## Node: there are two default step: START & FINISH
   // if step = FINISH, will pack output. 
   // ## Node: steps save in output. (o Out)
-  let steps = [READ_TYPE, READ_NAME, READ_BODY];
 }
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
 // define of interface.
 type Interface interface {
-  Accept(test: Test) (bool, error); 
+  Accept(test Test) (bool, error); 
 }
 
 */

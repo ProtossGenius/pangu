@@ -9,6 +9,7 @@
 #include "pipeline/declare.h"
 #include "pipeline/pipeline.h"
 #include <cassert>
+#include <memory>
 #include <string>
 #include <utility>
 
@@ -54,7 +55,7 @@ void PipeIf::accept(IPipelineFactory *factory, PData &&data) {
         if (lexer::makeIdentifier("if") != *lex) {
             factory->onFail("in step START, should get identifier 'if'");
         }
-        topProduct->setOper("?");
+        topProduct->setOper("if");
         topProduct->setStep(int(IfStep::WAIT_CONDITION));
         return;
     }
