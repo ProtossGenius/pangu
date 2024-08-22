@@ -65,7 +65,7 @@ class IPipelineFactory : public IPipeline {
         std::cout << name() << " choicePipeline(" << _pipeline_name_map[ index ]
                   << ")" << std::endl;
 #endif
-        pgassert(index >= 0 && index < _pipelines.size());
+        pgassert(_pipelines.count(index));
         _need_choise_pipeline = false;
         _pipeline_stack.push(std::move(_pipelines[ index ]()));
         pgassert(_pipeline_stack.top().get()->isClean());
@@ -138,17 +138,6 @@ class IPipelineFactory : public IPipeline {
     IPipelineFactory       *_parent;
 };
 
-class GStep {
-  public:
-    GStep()
-        : _step(0) {}
-    virtual ~GStep() {}
-    int  getStep() { return _step; }
-    void setStep(int step) { this->_step = step; }
-
-  private:
-    int _step;
-};
 class Reg {
   public:
     Reg(std::function<void()> action) { action(); }
@@ -175,4 +164,7 @@ class PipeIgnore : public IPipeline {
         factory->pushProduct(PProduct(new Ignore()), [](auto, auto) {});
     }
 };
+
+#define GET_TOP(factory, Type)                                                 \
+    Type *topProduct = static_cast<Type *>(factory->getTopProduct());
 } // namespace pglang

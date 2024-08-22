@@ -1,7 +1,6 @@
 #pragma once
 #include <functional>
 #include <memory>
-#include <string>
 namespace pglang {
 #define T(t)                                                                   \
     class I##t;                                                                \
@@ -24,6 +23,7 @@ T(Product);
 // for class Small, when it finish, it should add into class Big.
 typedef std::function<void(IPipelineFactory *, PProduct &&)> ProductPack;
 void USE_PARENT_PACKER(IPipelineFactory *father, PProduct &&pro);
+void DROP_PACKER(IPipelineFactory *father, PProduct &&pro);
 // decide the IData should give witch Pipeline.
 T(Switcher);
 

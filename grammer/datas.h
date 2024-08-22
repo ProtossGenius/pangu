@@ -13,7 +13,6 @@
 #include <string>
 namespace pangu {
 namespace grammer {
-using pglang::GStep;
 typedef pglang::INameProduct IGrammer;
 class GStructContainer {
   public:
@@ -47,7 +46,7 @@ class GTypeFunctContainer {
     std::map<std::string, PFuncDef> _functions;
 };
 
-class GVarDefContainer : public IGrammer, public GStep {
+class GVarDefContainer : public IGrammer {
   public:
     void addVariable(PVarDef &&var);
     void write_string(std::ostream &ss, const std::string &splitStr);
@@ -75,7 +74,7 @@ class GVarDefContainer : public IGrammer, public GStep {
 };
 
 // package package_name;
-class GPackage : public IGrammer, public GStep {
+class GPackage : public IGrammer {
   public:
     int      typeId() const override { return EGrammer::Package; }
     void     addImport(PImport &&imp);
@@ -93,7 +92,7 @@ class GPackage : public IGrammer, public GStep {
     std::map<std::string, PImport> _imports;
 };
 // import "package path" [as alias_name];
-class GImport : public IGrammer, public GStep {
+class GImport : public IGrammer {
   public:
     int                typeId() const override { return EGrammer::Import; }
     const std::string &getPackage() { return _package; }
@@ -126,7 +125,7 @@ class GType : public IGrammer {
     std::string _package;
 };
 
-class GVarDef : public IGrammer, public GStep {
+class GVarDef : public IGrammer {
   public:
     GVarDef()
         : _type(PType(new GType())) {}
@@ -143,7 +142,7 @@ class GVarDef : public IGrammer, public GStep {
     PType       _type;
     std::string _detail;
 };
-class GTypeDef : public IGrammer, public GStep {
+class GTypeDef : public IGrammer {
   public:
     virtual int         typeId() const override { return 0; }
     virtual std::string to_string() override { return "typedef: " + name(); }
@@ -159,7 +158,7 @@ class GIgnore : public IGrammer {
     std::string to_string() override { return "GIgnore"; }
 };
 
-class GFuncDef : public IGrammer, public GStep {
+class GFuncDef : public IGrammer {
   public:
     int                 typeId() const override { return 4; }
     std::string         sign() { return ""; }

@@ -3,7 +3,7 @@
 namespace pangu {
 namespace pgcodes {
 enum ECodeType {
-    If,
+    If = 0,
     Var,
     While,
     For,

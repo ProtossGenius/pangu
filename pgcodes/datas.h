@@ -10,7 +10,7 @@ typedef pglang::INameProduct IGrammer;
 class GCode;
 typedef std::unique_ptr<GCode> PCode;
 enum class ValueType { NOT_VALUE = 0, IDENTIFIER, STRING, NUMBER };
-class GCode : public IGrammer, public pglang::GStep {
+class GCode : public IGrammer {
   public:
     int         typeId() const override { return 0; }
     std::string to_string() override {

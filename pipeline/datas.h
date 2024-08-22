@@ -14,6 +14,13 @@ class IProduct : public IData {
     virtual int         typeId() const override = 0;
     virtual std::string to_string() override { return ""; }
     virtual ~IProduct() {}
+
+  public:
+    int  getStep() { return _step; }
+    void setStep(int step) { this->_step = step; }
+
+  private:
+    int _step = 0;
 };
 
 class Ignore : public IProduct {

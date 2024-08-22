@@ -12,6 +12,7 @@ namespace pglang {
 void USE_PARENT_PACKER(IPipelineFactory *factory, PProduct &&pro) {
     factory->packToParent(std::move(pro));
 }
+void DROP_PACKER(IPipelineFactory *factory, PProduct &&pro) {}
 static std::vector<std::function<void()>> _terminal_functions;
 
 void addOnTerminalFuncs(std::function<void()> funcs) {
