@@ -67,7 +67,7 @@ class IPipelineFactory : public IPipeline {
 #endif
         pgassert(_pipelines.count(index));
         _need_choise_pipeline = false;
-        _pipeline_stack.push(std::move(_pipelines[ index ]()));
+        _pipeline_stack.push(_pipelines[ index ]());
         pgassert(_pipeline_stack.top().get()->isClean());
         _pipeline_stack.top().setName(_pipeline_name_map[ index ]);
     }
@@ -94,7 +94,7 @@ class IPipelineFactory : public IPipeline {
     const std::string &name() { return _name; }
     void               status(std::ostream &ss);
     bool               needCreateProduct() {
-        return _pipeline_stack.size() > _product_stack.size();
+                      return _pipeline_stack.size() > _product_stack.size();
     }
     bool isClean() override {
         return _product_stack.empty() && _pipeline_stack.empty() &&

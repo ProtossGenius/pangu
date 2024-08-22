@@ -15,8 +15,8 @@ static std::map<int, std::string>                  LEX_PIPE_ENUM;
     class name : public IPipeline {                                            \
       public:                                                                  \
         void createProduct(IPipelineFactory *_factory) override {              \
-            _factory->pushProduct(std::move(std::unique_ptr<IProduct>(         \
-                (IProduct *) new DLex(ELexPipeline::type))));                  \
+            _factory->pushProduct(std::unique_ptr<IProduct>(                   \
+                (IProduct *) new DLex(ELexPipeline::type)));                   \
         }                                                                      \
         void accept(IPipelineFactory *factory, PData &&data) override;         \
     };                                                                         \

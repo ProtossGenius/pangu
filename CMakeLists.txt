@@ -7,7 +7,7 @@ set(CXX_FLAGS
         -D_FILE_OFFSET_BITS=64
         -Wall
         -Wextra
-        -Werror
+        -Wpessimizing-move
         -Wconversion
         -Wno-unused-parameter
         -Wold-style-cast
@@ -15,6 +15,7 @@ set(CXX_FLAGS
         -Wpointer-arith
         -Wshadow
         -Wwrite-strings
+        -Werror
         -march=native
         # -MMD
         -rdynamic
