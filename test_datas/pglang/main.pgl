@@ -1,0 +1,92 @@
+package main;
+import "filesystem" as fs; 
+import "llvm" as llvm; // llvm .
+func main() {
+    cfg := get_config_from_execute_params();
+    compiler := PCompiler{};
+    compiler<-cfg;
+    // can use compiler(cfg) instead.
+}
+
+
+// define compiler main pipeline.
+pipeline PCompiler (cfg CompileConfig) (llvm.IR) {
+  PipeGetFile -> PipeLexer -> PipeGrammer -> PipeSeme -> PipeIR -> PipeWriteIR;
+}
+
+// ####### code about PLexer
+
+// pipeline define .
+type PLexer pipeline(c char)(o Lex);
+
+type LexType enum {
+  STRING,
+  CHAR,
+  NUMBER,
+  INDENT,
+  SYMBOL,
+  // etc ...
+}
+
+type Lex struct {
+  lex string;
+  typeId LexType;
+}
+/**
+* Assume input is char, cause in this-project, lexer input is char.
+*  In llvm, use pointer maybe better.
+* implement PLexer create "Lexer", and it is a switcher, means it don't deal data, only choice a pipeline to deal data.
+* when the pipeline it choised finish, back to swicher doSwitch again.
+/
+
+
+impl Lexer PLexer switcher {
+  func create() Lex {return Lex{};}
+  func doSwitch(cache c[]) {
+    const symbols: Set = ["+", "-", "*"   /*etc.*/]
+    case(c[0]) {
+      '\"' => return PLexString{};
+      '\'  => return PLexChar{};
+      c[0] >= '0' && c[0] <= '9' => return PLexNumber{};
+      symbols.contains(c[0]) => return PLexSymbol{};
+      // ...
+    } 
+    panic("!!!")
+  }
+}
+
+impl PLexString PLexer worker {
+    []
+    func create() = delete; // get Lex from its parent;
+    func accept(c char) {
+      return case (cache[-1]) {
+        '\\' => APPEND; // append data to cache;
+        '\"'  => FINISH; // accept and finish;
+        // another actions 
+        // => DROP // ignore this input and continue;
+        // => DROP_FINISH // ignore this input and finish;
+        // => TRANSFER_FINISH // finsh and transer this input to next pipeline.
+      }
+    }
+}
+
+
+func isNumber(c char) boolean {
+   return c[0] >= '0' && c[0] <= '9'
+}
+
+impl PLexNumber PLexer worker {
+    [AFTER_POINT] // setp.
+    func create() = delete; // get Lex from its parent;
+    func accept(c char) {
+      return case (cache[-1]) {
+        isNumber => APPEND; // append data to cache;
+        '.'  => {
+          if (getStep() == AFTER_POINT) {panic();}
+          setStep(AFTER_POINT);
+          return APPEND; // return to case(...)'s value
+        } // accept and finish;
+        default => TRANSFER_FINISH;
+      }
+    }
+}
