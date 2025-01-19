@@ -1,0 +1,106 @@
+package main;
+import "llvm" as llvm; // llvm .
+
+func main() {
+    cfg := get_config_from_execute_params();
+    compiler := PCompiler{};
+    compiler<-cfg;
+    // can use compiler(cfg) instead.
+}
+
+
+// define compiler main pipeline.
+pipeline PCompiler (cfg CompileConfig) (llvm.IR) {
+  PipeGetFile -> PipeLexer -> PipeGrammer -> PipeSeme -> PipeIR -> PipeWriteIR;
+}
+
+// ####### code about PLexer
+
+// pipeline define .
+type PLexer pipeline(c char)(o Lex);
+
+type LexType enum {
+  STRING,
+  CHAR,
+  NUMBER,
+  INDENT,
+  SYMBOL,
+  // etc ...
+}
+
+type Lex struct {
+  lex string;
+  typeId LexType;
+}
+
+/**
+* Assume input is char, cause in this-project, lexer input is char.
+*  In llvm, use pointer maybe better.
+* implement PLexer create "Lexer", and it is a switcher, means it don't deal data, only choice a pipeline to deal data.
+* when the pipeline it choised finish, back to swicher doSwitch again.
+/
+impl Lexer Switcher {
+  [] // steps, default START & FINISH, step's type is a special pipeline
+  func create() Lex {return Lex{};}
+  func onSwitch(c char) {
+    const symbols: Set = ["+", "-", "*"   /*etc.*/]
+    lex := getProduct().lex;
+    return case(c[0]) {
+      '\"' => return PLexString; // return a type, not return a object.
+      '\'  => return PLexChar;
+      lex[0] >= '0' && lex[0] <= '9' => return PLexNumber;
+      symbols.contains(c) => return PLexSymbol;
+      // ...
+      EOF => FINISH;
+      default => panic("!!!")
+    } 
+  }
+}
+
+impl PLexString PLexer {
+    []
+    func create() = delete; // get Lex from its parent;
+    func onSTART(c char) {
+      lex := getProduct().lex;
+      return case (c) {
+        '\\' => {lex += c; return CONTINUE;} // 
+        '\"'  => {lex += c; return FINISH;} // set step to finish;
+        // => TRANSFER_FINISH // finsh and transer this input to next pipeline.
+      }
+    }
+}
+
+
+func isNumber(c char) boolean {
+   return c[0] >= '0' && c[0] <= '9'
+}
+
+impl PLexNumber PLexer worker {
+    [AFTER_POINT] // step.
+    func create() = delete; // get Lex from its parent;
+    func onSTART(c char) {
+      lex := getProduct().lex;
+      return case (c) {
+        isNumber => APPEND; // append data to cache;
+        '.'  => {
+          lex += c;
+          return AFTER_POINT; 
+        } 
+        'x'  => {
+          if (len(cache) == 2 && cache[0] == '0') {
+            return PHexNumber
+          } 
+        }
+        default => TRANSFER_FINISH;
+      }
+    }
+    func onAFTER_POINT(c char) {
+      lex := getProduct().lex;
+      return case (c) {
+        isNumber => {lex += c; return CONTINUE};
+        '.' => panic();
+          
+        
+      }
+    }
+}
