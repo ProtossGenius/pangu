@@ -1,8 +1,14 @@
 ##Tail
+.PHONY: prebuild linux tests test qrun install clean format
+
+BUILD_DIR ?= build
+BUILD_TYPE ?= Release
+BUILD_JOBS ?= 8
+
 prebuild:
 	# smist -exts ".cpp,.c,.h,.hpp,.cc"
 	python3 ./format
-	smdcatalog	
+	smdcatalog
 
 dlex:
 	sudo mv /var/lib/apport/coredump/* ./build/core.dump 
@@ -11,15 +17,17 @@ debug:
 	sudo mv /var/lib/apport/coredump/* ./build/core.dump 
 	cd build && echo 'bt' | gdb pangu-grammer core.dump | less
 qrun:
-	sudo rm -f /var/lib/apport/coredump/*
-	mkdir -p build
-	cd build && cmake -DCMAKE_BUILD_TYPE=Debug .. && make -j24 && ./pangu-grammer ../test_datas/grammer/func_code.pgl
+	mkdir -p $(BUILD_DIR)
+	cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=Debug .. && make -j$(BUILD_JOBS) && ./pangu-grammer ../test_datas/grammer/func_code.pgl
 
-test:
-	sudo rm -f /var/lib/apport/coredump/*
-	mkdir -p build 
-	cd build && cmake -DCMAKE_BUILD_TYPE=Release .. && make -j24 
-	sh all_test.sh
+linux:
+	mkdir -p $(BUILD_DIR)
+	cd $(BUILD_DIR) && cmake -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) .. && make -j$(BUILD_JOBS)
+
+tests: linux
+	bash all_test.sh
+
+test: tests
 
 install:
 
