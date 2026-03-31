@@ -24,6 +24,8 @@ const std::set<std::string> BUILTIN_FUNCTIONS = {
     "println", "print", "exit",
     "str_concat", "str_len", "str_eq", "str_substr",
     "int_to_str", "str_to_int",
+    "read_file", "write_file",
+    "str_char_at", "char_to_str",
 };
 
 bool isBuiltin(const std::string &name) {
@@ -34,7 +36,9 @@ size_t builtinParamCount(const std::string &name) {
     if (name == "println" || name == "print" || name == "exit") return 1;
     if (name == "str_len" || name == "int_to_str" || name == "str_to_int")
         return 1;
+    if (name == "read_file" || name == "char_to_str") return 1;
     if (name == "str_concat" || name == "str_eq") return 2;
+    if (name == "write_file" || name == "str_char_at") return 2;
     if (name == "str_substr") return 3;
     return 0;
 }

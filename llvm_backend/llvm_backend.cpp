@@ -1131,6 +1131,32 @@ class ModuleBuilder {
                 throw std::runtime_error("str_to_int expects 1 argument");
             return emitStrToInt(args);
         }
+        // File I/O builtins
+        if (callee == "read_file") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 1)
+                throw std::runtime_error("read_file expects 1 argument");
+            return emitReadFile(args[0]);
+        }
+        if (callee == "write_file") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 2)
+                throw std::runtime_error("write_file expects 2 arguments");
+            return emitWriteFile(args[0], args[1]);
+        }
+        // Character builtins
+        if (callee == "str_char_at") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 2)
+                throw std::runtime_error("str_char_at expects 2 arguments");
+            return emitStrCharAt(args[0], args[1]);
+        }
+        if (callee == "char_to_str") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 1)
+                throw std::runtime_error("char_to_str expects 1 argument");
+            return emitCharToStr(args[0]);
+        }
         if (callee_function == nullptr) {
             throw std::runtime_error("unsupported function call: " + callee);
         }
@@ -1316,6 +1342,113 @@ class ModuleBuilder {
     // str_to_int(s) → int
     llvm::Value *emitStrToInt(const std::vector<llvm::Value *> &args) {
         return _builder.CreateCall(getAtoi(), {args[0]}, "atoi");
+    }
+
+    // read_file(path) → string (reads entire file into malloc'd buffer)
+    llvm::Value *emitReadFile(llvm::Value *path) {
+        auto fopen_fn = _module->getOrInsertFunction(
+            "fopen",
+            llvm::FunctionType::get(_builder.getPtrTy(),
+                                    {_builder.getPtrTy(), _builder.getPtrTy()},
+                                    false));
+        auto fseek_fn = _module->getOrInsertFunction(
+            "fseek",
+            llvm::FunctionType::get(_builder.getInt32Ty(),
+                                    {_builder.getPtrTy(), _builder.getInt64Ty(),
+                                     _builder.getInt32Ty()},
+                                    false));
+        auto ftell_fn = _module->getOrInsertFunction(
+            "ftell",
+            llvm::FunctionType::get(_builder.getInt64Ty(),
+                                    {_builder.getPtrTy()}, false));
+        auto fread_fn = _module->getOrInsertFunction(
+            "fread",
+            llvm::FunctionType::get(_builder.getInt64Ty(),
+                                    {_builder.getPtrTy(), _builder.getInt64Ty(),
+                                     _builder.getInt64Ty(), _builder.getPtrTy()},
+                                    false));
+        auto fclose_fn = _module->getOrInsertFunction(
+            "fclose",
+            llvm::FunctionType::get(_builder.getInt32Ty(),
+                                    {_builder.getPtrTy()}, false));
+
+        auto *mode = _builder.CreateGlobalStringPtr("rb");
+        auto *fp = _builder.CreateCall(fopen_fn, {path, mode}, "fp");
+
+        // fseek(fp, 0, SEEK_END=2)
+        _builder.CreateCall(fseek_fn,
+                            {fp, llvm::ConstantInt::get(_builder.getInt64Ty(), 0),
+                             llvm::ConstantInt::get(_builder.getInt32Ty(), 2)});
+        auto *size = _builder.CreateCall(ftell_fn, {fp}, "fsize");
+
+        // fseek(fp, 0, SEEK_SET=0)
+        _builder.CreateCall(fseek_fn,
+                            {fp, llvm::ConstantInt::get(_builder.getInt64Ty(), 0),
+                             llvm::ConstantInt::get(_builder.getInt32Ty(), 0)});
+
+        auto *alloc = _builder.CreateAdd(
+            size, llvm::ConstantInt::get(_builder.getInt64Ty(), 1), "alloc");
+        auto *buf = _builder.CreateCall(getMalloc(), {alloc}, "buf");
+
+        _builder.CreateCall(fread_fn,
+                            {buf, llvm::ConstantInt::get(_builder.getInt64Ty(), 1),
+                             size, fp});
+        _builder.CreateCall(fclose_fn, {fp});
+
+        // null-terminate
+        auto *term = _builder.CreateGEP(_builder.getInt8Ty(), buf, {size},
+                                        "term");
+        _builder.CreateStore(llvm::ConstantInt::get(_builder.getInt8Ty(), 0),
+                             term);
+        return buf;
+    }
+
+    // write_file(path, content) → int (0 on success)
+    llvm::Value *emitWriteFile(llvm::Value *path, llvm::Value *content) {
+        auto fopen_fn = _module->getOrInsertFunction(
+            "fopen",
+            llvm::FunctionType::get(_builder.getPtrTy(),
+                                    {_builder.getPtrTy(), _builder.getPtrTy()},
+                                    false));
+        auto fputs_fn = _module->getOrInsertFunction(
+            "fputs",
+            llvm::FunctionType::get(_builder.getInt32Ty(),
+                                    {_builder.getPtrTy(), _builder.getPtrTy()},
+                                    false));
+        auto fclose_fn = _module->getOrInsertFunction(
+            "fclose",
+            llvm::FunctionType::get(_builder.getInt32Ty(),
+                                    {_builder.getPtrTy()}, false));
+
+        auto *mode = _builder.CreateGlobalStringPtr("w");
+        auto *fp = _builder.CreateCall(fopen_fn, {path, mode}, "fp");
+        _builder.CreateCall(fputs_fn, {content, fp});
+        _builder.CreateCall(fclose_fn, {fp});
+        return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+    }
+
+    // str_char_at(s, i) → int (character code at index)
+    llvm::Value *emitStrCharAt(llvm::Value *s, llvm::Value *idx) {
+        auto *idx64 = _builder.CreateSExt(idx, _builder.getInt64Ty(), "idx64");
+        auto *ptr = _builder.CreateGEP(_builder.getInt8Ty(), s, {idx64},
+                                       "charptr");
+        auto *ch = _builder.CreateLoad(_builder.getInt8Ty(), ptr, "ch");
+        return _builder.CreateZExt(ch, _builder.getInt32Ty(), "char_i32");
+    }
+
+    // char_to_str(c) → string (single character string)
+    llvm::Value *emitCharToStr(llvm::Value *ch) {
+        auto *buf = _builder.CreateCall(
+            getMalloc(),
+            {llvm::ConstantInt::get(_builder.getInt64Ty(), 2)}, "buf");
+        auto *ch8 = _builder.CreateTrunc(ch, _builder.getInt8Ty(), "ch8");
+        _builder.CreateStore(ch8, buf);
+        auto *term = _builder.CreateGEP(
+            _builder.getInt8Ty(), buf,
+            {llvm::ConstantInt::get(_builder.getInt64Ty(), 1)}, "term");
+        _builder.CreateStore(llvm::ConstantInt::get(_builder.getInt8Ty(), 0),
+                             term);
+        return buf;
     }
 
   private:

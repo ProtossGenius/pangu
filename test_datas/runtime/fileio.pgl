@@ -1,0 +1,13 @@
+package main;
+
+func main() {
+    write_file("/tmp/pangu_test_io.txt", "pangu io test");
+    content := read_file("/tmp/pangu_test_io.txt");
+    println(content);
+
+    ch := str_char_at("ABCDE", 2);
+    println(ch);
+
+    s := char_to_str(90);
+    println(s);
+}
