@@ -27,6 +27,9 @@ make tests
 
 `compile` currently writes the executable to `build/<source-stem>`.
 
+Syntax and parse errors now print in a clang/LLVM-style format with
+`file:line:column`, the original source line, and a caret marker.
+
 ## Standard library
 
 Bootstrap-oriented PGL standard library files now live under `stdlib/`.

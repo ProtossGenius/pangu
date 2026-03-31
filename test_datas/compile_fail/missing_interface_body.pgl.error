@@ -1,1 +1,3 @@
-parse failed: GrammerPipelineFactory:Interface:interface need '{'
+test_datas/compile_fail/missing_interface_body.pgl:3:23: error: interface need '{', but get lexer <Symbol> content = ";"
+type Reader interface ;
+                      ^

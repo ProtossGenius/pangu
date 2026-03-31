@@ -1,4 +1,5 @@
 #include "lexer/lexer.h"
+#include <exception>
 #include <iostream>
 int main(int argc, const char *argv[]) {
     using namespace std;
@@ -7,5 +8,11 @@ int main(int argc, const char *argv[]) {
         cout << "need file name." << endl;
         return -1;
     }
-    lexer::analysis(argv[ 1 ], lexer::PACK_PRINT);
+    try {
+        lexer::analysis(argv[ 1 ], lexer::PACK_PRINT);
+    } catch (const std::exception &ex) {
+        cerr << ex.what() << endl;
+        return -1;
+    }
+    return 0;
 }

@@ -8,8 +8,7 @@
 namespace pangu {
 namespace lexer {
 void LexSwitcher::onFail(const std::string &errMsg) {
-    throw std::runtime_error("file:" + std::to_string(lineNo) + "," +
-                             std::to_string(linePos) + " " + errMsg);
+    throw std::runtime_error(formatDiagnostic(_last_location, errMsg));
 }
 using namespace std;
 void LexSwitcher::onChoice() {

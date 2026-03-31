@@ -39,6 +39,14 @@ make tests
 
 `compile` currently writes the executable to `build/<source-stem>`.
 
+Syntax diagnostics now use a clang/LLVM-style format:
+
+```text
+path/file.pgl:line:column: error: message
+<source line>
+^
+```
+
 ## Lexical structure
 
 ### Comments

@@ -71,7 +71,7 @@ bool tryParseWithPrinter(const std::string &input_path, std::string &error) {
 int runParsePipeline(const std::string &input_path) {
     std::string error;
     if (!tryParseWithPrinter(input_path, error)) {
-        std::cerr << "parse failed: " << error << std::endl;
+        std::cerr << error << std::endl;
         return -1;
     }
     return 0;
@@ -123,7 +123,7 @@ int emitIR(const std::string &input_path) {
     std::string parse_error;
     auto package = parsePackage(input_path, parse_error);
     if (package == nullptr) {
-        std::cerr << "parse failed: " << parse_error << std::endl;
+        std::cerr << parse_error << std::endl;
         return -1;
     }
     std::string ir_text;
@@ -143,7 +143,7 @@ int runDirect(const std::string &input_path) {
     std::string parse_error;
     auto package = parsePackage(input_path, parse_error);
     if (package == nullptr) {
-        std::cerr << "parse failed: " << parse_error << std::endl;
+        std::cerr << parse_error << std::endl;
         return -1;
     }
     int         exit_code = 0;
@@ -166,7 +166,7 @@ int compileSource(const std::string &input_path) {
     std::string parse_error;
     auto package = parsePackage(input_path, parse_error);
     if (package == nullptr) {
-        std::cerr << "parse failed: " << parse_error << std::endl;
+        std::cerr << parse_error << std::endl;
         return -1;
     }
     const std::string output_path = "build/" + moduleNameFromPath(input_path);

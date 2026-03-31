@@ -1,1 +1,3 @@
-parse failed: GrammerPipelineFactory:TypeFunc:type func declaration should end with ';'
+test_datas/compile_fail/type_func_body_not_allowed.pgl:3:26: error: type func declaration should end with ';'
+type Bad func(a int) int {
+                         ^

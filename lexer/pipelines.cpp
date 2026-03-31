@@ -7,10 +7,12 @@
 namespace pangu {
 namespace lexer {
 #define GET_CHAR(data)                                                         \
-    const char   c     = ((DInChar *) data.get())->get();                      \
-    const char   cType = ((DInChar *) data.get())->typeId();                   \
-    DLex        *lex   = (DLex *) factory->getTopProduct();                    \
-    std::string &str   = lex->get()
+    DInChar     *inChar = static_cast<DInChar *>(data.get());                  \
+    const char   c      = inChar->get();                                       \
+    const char   cType  = inChar->typeId();                                    \
+    DLex        *lex    = (DLex *) factory->getTopProduct();                   \
+    lex->setLocationIfUnset(inChar->location());                               \
+    std::string &str    = lex->get()
 std::string DLex::to_string() {
     return "lexer <" + LEX_PIPE_ENUM[ _typeId ] + "> content = \"" + _lex +
            "\"";

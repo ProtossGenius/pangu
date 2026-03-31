@@ -7,6 +7,7 @@
 #include "pipeline/assert.h"
 #include "pipeline/declare.h"
 #include <cstdlib>
+#include <exception>
 #include <iostream>
 #include <lexer/pipelines.h>
 #include <ostream>
@@ -20,6 +21,12 @@ int main(int argc, const char *argv[]) {
         cout << "need file name." << endl;
         return -1;
     }
-    auto grm = grammer::create(grammer::PACK_PRINT);
-    lexer::analysis(argv[ 1 ], lexer::packNext(grm.get()));
+    try {
+        auto grm = grammer::create(grammer::PACK_PRINT);
+        lexer::analysis(argv[ 1 ], lexer::packNext(grm.get()));
+    } catch (const std::exception &ex) {
+        cerr << ex.what() << endl;
+        return -1;
+    }
+    return 0;
 }

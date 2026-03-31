@@ -9,8 +9,7 @@ class LexSwitcher : public ISwitcher {
   private:
     void onChoice() override;
     void readForAnalysis(const PData &data) override {
-        ((DInChar *) data.get())->get() == '\n'            ? linePos = 0,
-                                                  ++lineNo : ++linePos;
+        _last_location = static_cast<DInChar *>(data.get())->location();
     }
     DInChar &get(size_t i) {
         return *static_cast<DInChar *>(_cached_datas[ i ].get());
@@ -20,10 +19,7 @@ class LexSwitcher : public ISwitcher {
     void onFail(const std::string &errMsg) override;
 
   private:
-    // char's position in line.
-    int linePos;
-    // line number in file.
-    int lineNo;
+    SourceLocation _last_location;
 };
 } // namespace lexer
 } // namespace pangu

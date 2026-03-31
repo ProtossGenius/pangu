@@ -1,12 +1,83 @@
 #include "lexer/datas.h"
 #include "lexer/pipelines.h"
+#include <algorithm>
 #include <fstream>
 #include <map>
+#include <sstream>
 #include <stdexcept>
 #include <vector>
 
 namespace pangu {
 namespace lexer {
+
+namespace {
+
+std::string expandTabs(const std::string &line) {
+    std::string expanded;
+    size_t      column = 1;
+    for (char ch : line) {
+        if (ch == '\t') {
+            const size_t spaces = 4 - ((column - 1) % 4);
+            expanded.append(spaces, ' ');
+            column += spaces;
+            continue;
+        }
+        expanded.push_back(ch);
+        ++column;
+    }
+    return expanded;
+}
+
+size_t displayColumn(const std::string &line, int column) {
+    size_t display = 1;
+    const int limit = std::max(1, column);
+    for (int i = 1; i < limit && size_t(i - 1) < line.size(); ++i) {
+        if (line[ size_t(i - 1) ] == '\t') {
+            display += 4 - ((display - 1) % 4);
+        } else {
+            ++display;
+        }
+    }
+    return display;
+}
+
+} // namespace
+
+std::string stripInternalErrorPrefix(const std::string &message) {
+    const std::string::size_type first = message.find(':');
+    if (first == std::string::npos) {
+        return message;
+    }
+    const std::string::size_type second = message.find(':', first + 1);
+    if (second == std::string::npos) {
+        return message;
+    }
+    return message.substr(second + 1);
+}
+
+std::string formatDiagnostic(const SourceLocation &location,
+                             const std::string   &message,
+                             size_t               highlight_width) {
+    const std::string clean_message = stripInternalErrorPrefix(message);
+    if (!location.valid()) {
+        return "error: " + clean_message;
+    }
+
+    const std::string expanded_line = expandTabs(location.line_text);
+    const size_t      caret_column =
+        displayColumn(location.line_text, location.column);
+    const size_t width = std::max<size_t>(1, highlight_width);
+
+    std::stringstream ss;
+    ss << location.file << ":" << location.line << ":" << location.column
+       << ": error: " << clean_message << "\n";
+    ss << expanded_line << "\n";
+    ss << std::string(caret_column > 0 ? caret_column - 1 : 0, ' ') << "^";
+    if (width > 1) {
+        ss << std::string(width - 1, '~');
+    }
+    return ss.str();
+}
 
 const std::set<std::string> symbols{
     "!",  "!=",  "@", "%", "%=", "^",  "^=", "&",  "&=", "&&", "&&=", "*",

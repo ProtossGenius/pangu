@@ -8,7 +8,8 @@
 namespace pangu {
 namespace pgcodes {
 void CodesSwitcher::onFail(const std::string &errMsg) {
-    throw std::runtime_error("codes switcher: " + errMsg);
+    throw std::runtime_error(
+        lexer::formatDiagnostic(_last_location, errMsg, _last_width));
 }
 using namespace std;
 void CodesSwitcher::onChoice() {
