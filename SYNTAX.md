@@ -22,7 +22,8 @@ The repository currently provides:
 - a grammar/parser,
 - a partial code tree builder,
 - a minimal LLVM IR backend,
-- a minimal LLVM JIT direct-run path.
+- a minimal LLVM JIT direct-run path,
+- a bootstrap-oriented standard library scaffold in `stdlib/`.
 
 ## Toolchain modes
 
@@ -33,8 +34,10 @@ make tests
 ./build/pangu parse   <file.pgl>
 ./build/pangu emit-ir <file.pgl>
 ./build/pangu run     <file.pgl>
-./build/pangu compile <file.pgl>   # planned, not implemented yet
+./build/pangu compile <file.pgl>
 ```
+
+`compile` currently writes the executable to `build/<source-stem>`.
 
 ## Lexical structure
 
@@ -280,10 +283,12 @@ Supported by `./build/pangu parse`:
 Supported today by `./build/pangu emit-ir`:
 
 - source parsing through the grammar front-end
-- generation of a runnable `main`
+- generation of multiple top-level functions
+- integer parameters and a single integer return value
 - integer variables
 - integer arithmetic `+ - * /`
 - assignment / define-assignment
+- user-defined function calls
 - `println(<int-expr>)`
 - `return`
 
@@ -291,18 +296,28 @@ Supported today by `./build/pangu emit-ir`:
 
 Supported today by `./build/pangu run`:
 
-- a single `main` function
+- multiple top-level functions
+- integer parameters and a single integer return value
 - integer locals
 - integer arithmetic
+- user-defined function calls
 - `println`
 - `return`
+
+For backend-stable code today, using a temporary variable before `return` is safer than returning a compound expression directly.
+
+### Native compile support
+
+Supported today by `./build/pangu compile`:
+
+- emit LLVM IR for the supported runnable subset
+- invoke system clang to produce a native executable
+- place the executable at `build/<source-stem>`
 
 ### Planned but not implemented end-to-end
 
 - semantic analysis and type checking
-- native binary output for `compile`
 - import resolution / module loading
-- user-defined function calls in the LLVM backend
 - structs, enum semantics, and impl semantics in codegen
 - loop lowering
 - switch lowering
@@ -320,15 +335,15 @@ Pangu is **not yet self-hostable**.
 
 1. The front-end accepts more syntax than the backend can execute.
 2. `sema/` is still effectively empty, so there is no real type checking, symbol resolution, or method binding.
-3. `compile` mode does not yet produce a native executable.
-4. The direct-run path only executes a very small integer/arithmetic subset.
+3. The backend still executes only a narrow integer-oriented subset.
+4. Imports and package linking are not implemented, so standard library files cannot yet participate in real program builds.
 5. Important language features used by the design files are still parser-only or still planned:
    - enum semantics
    - impl body semantics
    - interface declarations
    - richer pipeline definitions
    - module/import loading
-6. There is no language-level standard library sufficient to write the compiler in Pangu itself.
+6. A standard library directory now exists, but it is only a scaffold and is not yet integrated into module loading or compilation.
 
 ### What would be required before self-hosting
 
@@ -340,10 +355,9 @@ Pangu is **not yet self-hostable**.
 
 2. Complete backend:
    - full expression lowering
-   - function calls
    - control flow
    - aggregate values
-   - binary emission in `compile`
+   - package/import linking
 
 3. Runtime and library support:
    - basic IO
@@ -366,7 +380,7 @@ Pangu is **not yet self-hostable**.
 The most realistic near-term milestone is:
 
 1. finish `sema`,
-2. finish `compile`,
-3. lower user functions and control flow through LLVM,
-4. add a minimal standard library,
+2. lower control flow and aggregates through LLVM,
+3. connect `stdlib/` to real import/module loading,
+4. expand the standard library until the compiler can depend on it,
 5. then reassess bootstrap.

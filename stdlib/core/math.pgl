@@ -1,0 +1,6 @@
+package stdmath;
+
+func add1(a int) int {
+    b := a + 1;
+    return b;
+}

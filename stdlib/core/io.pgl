@@ -1,0 +1,5 @@
+package stdio;
+
+func print_int(v int) {
+    println(v);
+}

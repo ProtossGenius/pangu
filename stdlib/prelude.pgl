@@ -1,0 +1,6 @@
+package stdprelude;
+
+type ExitCode enum {
+  OK,
+  FAIL,
+}
