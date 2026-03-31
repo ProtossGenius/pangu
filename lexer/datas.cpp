@@ -66,7 +66,7 @@ const std::set<std::string> keywords{
     "while",   "do",      "type",    "func",   "return", "struct",
     "class",   "switch",  "goto",    "try",    "catch",  "public",
     "static",  "const",   "final",   "var",    "pipeline",
-    "impl",    "enum",    "switcher","worker",
+    "impl",    "enum",    "interface","switcher","worker",
 };
 bool is_keywords(DLex *lex) {
 

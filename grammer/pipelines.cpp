@@ -78,6 +78,11 @@ void PipeTypeDef::accept(IPipelineFactory *factory, PData &&data) {
             ptr->setName(name);
             factory->choicePipeline(EGrammer::Enum);
             factory->pushProduct(PProduct(ptr), packTypeDefToPackage);
+        } else if (str == "interface") {
+            auto ptr = new GInterface();
+            ptr->setName(name);
+            factory->choicePipeline(EGrammer::Interface);
+            factory->pushProduct(PProduct(ptr), packTypeDefToPackage);
         } else if (str == "func" || str == "pipeline") {
             factory->undealData(std::move(data));
             auto ptr = new GFuncDef();
@@ -132,6 +137,47 @@ void PipeEnum::accept(IPipelineFactory *factory, PData &&data) {
     }
     default:
         factory->onFail("unexcept enum step code : " +
+                        std::to_string(topProduct->getStep()));
+    }
+}
+enum class InterfaceStep { WAIT_BODY = 0, READ_BODY };
+void PipeInterface::createProduct(IPipelineFactory *factory) {}
+void PipeInterface::accept(IPipelineFactory *factory, PData &&data) {
+    GET_LEX(data);
+    GET_TOP(factory, GInterface);
+    if (lexer::ELexPipeline::Comments == type || lexer::ELexPipeline::Space == type) {
+        return;
+    }
+    switch (topProduct->getStep()) {
+    case int(InterfaceStep::WAIT_BODY): {
+        if (makeSymbol("{") != *lex) {
+            factory->onFail("interface need '{', but get " + lex->to_string());
+        }
+        topProduct->setBraceDepth(1);
+        topProduct->setStep(int(InterfaceStep::READ_BODY));
+        return;
+    }
+    case int(InterfaceStep::READ_BODY): {
+        if (makeSymbol("{") == *lex) {
+            topProduct->setBraceDepth(topProduct->getBraceDepth() + 1);
+            topProduct->addBodyToken();
+            return;
+        }
+        if (makeSymbol("}") == *lex) {
+            const int next_depth = topProduct->getBraceDepth() - 1;
+            if (next_depth == 0) {
+                factory->packProduct();
+                return;
+            }
+            topProduct->setBraceDepth(next_depth);
+            topProduct->addBodyToken();
+            return;
+        }
+        topProduct->addBodyToken();
+        return;
+    }
+    default:
+        factory->onFail("unexcept interface step code : " +
                         std::to_string(topProduct->getStep()));
     }
 }
@@ -588,7 +634,14 @@ void PipeVarArray::accept(IPipelineFactory *factory, PData &&data) {
 }
 
 void PipeTypeFunc::createProduct(IPipelineFactory *factory) {}
-enum class FuncDefStep { READ_FUNC = 0, READ_PARAM, READ_RETURN, FINISH };
+enum class FuncDefStep {
+    READ_FUNC = 0,
+    READ_PARAM,
+    READ_RETURN,
+    READ_BODY_HEADER,
+    READ_BODY,
+    FINISH
+};
 void PipeTypeFunc::accept(IPipelineFactory *factory, PData &&data) {
     GET_LEX(data);
     GET_TOP(factory, GFuncDef);
@@ -630,13 +683,60 @@ void PipeTypeFunc::accept(IPipelineFactory *factory, PData &&data) {
             factory->packProduct();
             return;
         }
+        if (makeSymbol("{") == *lex) {
+            if (topProduct->getDeclKeyword() != "pipeline") {
+                factory->onFail("type " + topProduct->getDeclKeyword() +
+                                " declaration should end with ';'");
+            }
+            topProduct->setBraceDepth(1);
+            topProduct->setStep(int(FuncDefStep::READ_BODY));
+            return;
+        }
         factory->undealData(std::move(data));
         factory->choicePipeline(EGrammer::VarArray);
         auto ptr = new GVarDefContainer();
         factory->pushProduct(PProduct(ptr), [ = ](auto f, auto pro) {
             topProduct->result.swap(*ptr);
         });
-        topProduct->setStep(int(FuncDefStep::FINISH));
+        topProduct->setStep(int(FuncDefStep::READ_BODY_HEADER));
+        return;
+    }
+    case int(FuncDefStep::READ_BODY_HEADER): {
+        if (makeSymbol(";") == *lex) {
+            factory->packProduct();
+            return;
+        }
+        if (makeSymbol("{") == *lex) {
+            if (topProduct->getDeclKeyword() != "pipeline") {
+                factory->onFail("type " + topProduct->getDeclKeyword() +
+                                " declaration should end with ';'");
+            }
+            topProduct->setBraceDepth(1);
+            topProduct->setStep(int(FuncDefStep::READ_BODY));
+            return;
+        }
+        factory->onFail("type " + topProduct->getDeclKeyword() +
+                        " declaration needs ';' or '{', but get " +
+                        lex->to_string());
+        return;
+    }
+    case int(FuncDefStep::READ_BODY): {
+        if (makeSymbol("{") == *lex) {
+            topProduct->setBraceDepth(topProduct->getBraceDepth() + 1);
+            topProduct->addBodyToken();
+            return;
+        }
+        if (makeSymbol("}") == *lex) {
+            const int next_depth = topProduct->getBraceDepth() - 1;
+            if (next_depth == 0) {
+                factory->packProduct();
+                return;
+            }
+            topProduct->setBraceDepth(next_depth);
+            topProduct->addBodyToken();
+            return;
+        }
+        topProduct->addBodyToken();
         return;
     }
     default:

@@ -1,0 +1,12 @@
+package control_demo;
+
+func main() {
+    a := 0;
+    while (a < 3) {
+        a = a + 1;
+    }
+    for (i := 0; i < 2; ++i) {
+        println(i);
+    }
+    switch (a) {}
+}

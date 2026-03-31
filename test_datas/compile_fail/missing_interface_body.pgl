@@ -1,0 +1,3 @@
+package bad_interface;
+
+type Reader interface ;

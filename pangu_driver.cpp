@@ -57,9 +57,23 @@ bool parseArgs(int argc, const char *argv[], Options &options) {
     return argc == 3;
 }
 
+bool tryParseWithPrinter(const std::string &input_path, std::string &error) {
+    try {
+        auto grm = grammer::create(grammer::PACK_PRINT);
+        lexer::analysis(input_path.c_str(), lexer::packNext(grm.get()));
+        return true;
+    } catch (const std::exception &ex) {
+        error = ex.what();
+        return false;
+    }
+}
+
 int runParsePipeline(const std::string &input_path) {
-    auto grm = grammer::create(grammer::PACK_PRINT);
-    lexer::analysis(input_path.c_str(), lexer::packNext(grm.get()));
+    std::string error;
+    if (!tryParseWithPrinter(input_path, error)) {
+        std::cerr << "parse failed: " << error << std::endl;
+        return -1;
+    }
     return 0;
 }
 
@@ -86,13 +100,19 @@ bool ensureBuildDir() {
     return std::system("mkdir -p build") == 0;
 }
 
-std::unique_ptr<grammer::GPackage> parsePackage(const std::string &input_path) {
+std::unique_ptr<grammer::GPackage> parsePackage(const std::string &input_path,
+                                                std::string       &error) {
     std::unique_ptr<grammer::GPackage> package;
-    auto packer = [&](auto, auto pro) {
-        package.reset(static_cast<grammer::GPackage *>(pro.release()));
-    };
-    auto grm = grammer::create(packer);
-    lexer::analysis(input_path.c_str(), lexer::packNext(grm.get()));
+    try {
+        auto packer = [&](auto, auto pro) {
+            package.reset(static_cast<grammer::GPackage *>(pro.release()));
+        };
+        auto grm = grammer::create(packer);
+        lexer::analysis(input_path.c_str(), lexer::packNext(grm.get()));
+    } catch (const std::exception &ex) {
+        error = ex.what();
+        return nullptr;
+    }
     return package;
 }
 
@@ -100,9 +120,10 @@ int emitIR(const std::string &input_path) {
     if (!ensureReadable(input_path)) {
         return -1;
     }
-    auto package = parsePackage(input_path);
+    std::string parse_error;
+    auto package = parsePackage(input_path, parse_error);
     if (package == nullptr) {
-        std::cerr << "parse package failed: " << input_path << std::endl;
+        std::cerr << "parse failed: " << parse_error << std::endl;
         return -1;
     }
     std::string ir_text;
@@ -119,9 +140,10 @@ int runDirect(const std::string &input_path) {
     if (!ensureReadable(input_path)) {
         return -1;
     }
-    auto package = parsePackage(input_path);
+    std::string parse_error;
+    auto package = parsePackage(input_path, parse_error);
     if (package == nullptr) {
-        std::cerr << "parse package failed: " << input_path << std::endl;
+        std::cerr << "parse failed: " << parse_error << std::endl;
         return -1;
     }
     int         exit_code = 0;
@@ -141,9 +163,10 @@ int compileSource(const std::string &input_path) {
         std::cerr << "can not create build directory" << std::endl;
         return -1;
     }
-    auto package = parsePackage(input_path);
+    std::string parse_error;
+    auto package = parsePackage(input_path, parse_error);
     if (package == nullptr) {
-        std::cerr << "parse package failed: " << input_path << std::endl;
+        std::cerr << "parse failed: " << parse_error << std::endl;
         return -1;
     }
     const std::string output_path = "build/" + moduleNameFromPath(input_path);

@@ -152,7 +152,9 @@ std::string GFuncDef::to_string() {
     const std::string keyword_split = getDeclKeyword() == "func" ? "" : " ";
     return "type " + name() + keyword_split + getDeclKeyword() + "(" +
            params.to_string() + ")" +
-           result.to_string();
+           result.to_string() +
+           (hasBody() ? " {body_tokens=" + std::to_string(_body_token_count) + "}"
+                      : "");
 }
 
 std::string GEnum::to_string() {
@@ -172,6 +174,11 @@ std::string GFunction::to_string() {
     return getDeclKeyword() + " " + name() + "(" + params.to_string() + ")" +
            result.to_string() + " " +
            (code == nullptr ? "{}" : code->to_string());
+}
+
+std::string GInterface::to_string() {
+    return "type " + name() + " interface {body_tokens=" +
+           std::to_string(_body_token_count) + "}";
 }
 
 std::string GImpl::to_string() {

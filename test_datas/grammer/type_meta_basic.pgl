@@ -1,0 +1,11 @@
+package type_meta_demo;
+
+type PipeSelf pipeline (i In) (o Out) {
+  [READ_TYPE, READ_NAME, READ_BODY]
+  func createProduct() Out {}
+  func accept(f Factory, i In) {}
+}
+
+type Reader interface {
+  Accept(test Test) (ok bool, err error);
+}

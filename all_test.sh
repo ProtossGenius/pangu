@@ -27,7 +27,19 @@ test_compile () {
     done
 }
 
+test_compile_fail () {
+    echo "\033[32m ########## TEST COMPILE FAIL #########\033[0m";
+    for i in `ls test_datas/compile_fail/* | grep -v -E '.out$|.error$'`; do
+        echo "\033[32m compilering failure case $i ......\033[0m";
+        ./build/pangu compile $i > $i.out 2>&1;
+        if [ $? -eq 0 ]; then echo "\033[31m expected compile failure for $i \033[0m"; exit; fi
+        grep -F "`cat $i.error`" $i.out > /dev/null;
+        if [ $? -ne 0 ]; then echo "\033[31m compile fail output mismatch for $i \033[0m"; cat $i.out; exit; fi
+    done
+}
+
 test lexer 
 test grammer 
 test runtime
 test_compile
+test_compile_fail

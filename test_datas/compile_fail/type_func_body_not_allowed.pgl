@@ -1,0 +1,4 @@
+package bad_type_func;
+
+type Bad func(a int) int {
+}

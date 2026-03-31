@@ -225,6 +225,17 @@ class GStruct : public GVarDefContainer {
     int         typeId() const override { return 0; }
     std::string to_string() override;
 };
+class GInterface : public GTypeDef {
+  public:
+    void addBodyToken() { ++_body_token_count; }
+    void setBraceDepth(int depth) { _brace_depth = depth; }
+    int  getBraceDepth() const { return _brace_depth; }
+    std::string to_string() override;
+
+  private:
+    size_t _body_token_count = 0;
+    int    _brace_depth      = 0;
+};
 class GIgnore : public IGrammer {
   public:
     int         typeId() const override { return 0; }
@@ -239,12 +250,18 @@ class GFuncDef : public IGrammer {
         _decl_keyword = keyword;
     }
     const std::string &getDeclKeyword() const { return _decl_keyword; }
+    void                addBodyToken() { ++_body_token_count; }
+    void                setBraceDepth(int depth) { _brace_depth = depth; }
+    int                 getBraceDepth() const { return _brace_depth; }
+    bool                hasBody() const { return _body_token_count > 0; }
     virtual std::string to_string() override;
     GVarDefContainer    params;
     GVarDefContainer    result;
 
   private:
     std::string _decl_keyword = "func";
+    size_t      _body_token_count = 0;
+    int         _brace_depth      = 0;
 };
 using pgcodes::GCode;
 using pgcodes::PCode;
