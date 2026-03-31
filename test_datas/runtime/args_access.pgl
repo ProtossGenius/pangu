@@ -1,0 +1,10 @@
+package main;
+
+func main() {
+    n := args_count();
+    println(n);
+    i := 0;
+    for (i = 0; i < n; i++) {
+        println(args(i));
+    }
+}

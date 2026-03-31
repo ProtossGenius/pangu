@@ -25,7 +25,8 @@ bool emitProgramIR(const Program &program, const std::string &source_path,
                    std::string &ir_text, std::string &error);
 bool runProgramMain(const Program &program,
                     const std::string &source_path, int &exit_code,
-                    std::string &error);
+                    std::string &error,
+                    int argc = 0, const char *argv[] = nullptr);
 bool compileProgramToExecutable(const Program      &program,
                                 const std::string      &source_path,
                                 const std::string      &output_path,

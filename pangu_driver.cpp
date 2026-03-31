@@ -67,7 +67,7 @@ bool parseArgs(int argc, const char *argv[], Options &options) {
         return false;
     }
     options.input_path = argv[ 2 ];
-    return argc == 3;
+    return argc >= 3;
 }
 
 bool tryParseWithPrinter(const std::string &input_path, std::string &error) {
@@ -284,7 +284,8 @@ int emitIR(const std::string &input_path) {
     return 0;
 }
 
-int runDirect(const std::string &input_path) {
+int runDirect(const std::string &input_path, int pgl_argc,
+              const char *pgl_argv[]) {
     if (!ensureReadable(input_path)) {
         return -1;
     }
@@ -298,7 +299,8 @@ int runDirect(const std::string &input_path) {
         return -1;
     }
     int         exit_code = 0;
-    if (!llvm_backend::runProgramMain(program, input_path, exit_code, error)) {
+    if (!llvm_backend::runProgramMain(program, input_path, exit_code, error,
+                                      pgl_argc, pgl_argv)) {
         std::cerr << "run failed: " << error << std::endl;
         return -1;
     }
@@ -345,7 +347,9 @@ int run(int argc, const char *argv[]) {
     case Mode::PARSE: return runParsePipeline(options.input_path);
     case Mode::EMIT_IR: return emitIR(options.input_path);
     case Mode::COMPILE: return compileSource(options.input_path);
-    case Mode::RUN: return runDirect(options.input_path);
+    case Mode::RUN:
+        // Pass remaining args (from argv[2]) to the PGL program
+        return runDirect(options.input_path, argc - 2, argv + 2);
     }
     printUsage(std::cerr, argv[ 0 ]);
     return -1;

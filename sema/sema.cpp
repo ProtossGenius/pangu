@@ -28,6 +28,7 @@ const std::set<std::string> BUILTIN_FUNCTIONS = {
     "str_char_at", "char_to_str",
     "make_array", "array_get", "array_set",
     "make_str_array", "str_array_get", "str_array_set",
+    "args", "args_count",
 };
 
 bool isBuiltin(const std::string &name) {
@@ -40,6 +41,8 @@ size_t builtinParamCount(const std::string &name) {
         return 1;
     if (name == "read_file" || name == "char_to_str") return 1;
     if (name == "make_array" || name == "make_str_array") return 1;
+    if (name == "args") return 1;
+    if (name == "args_count") return 0;
     if (name == "str_concat" || name == "str_eq") return 2;
     if (name == "write_file" || name == "str_char_at") return 2;
     if (name == "array_get" || name == "str_array_get") return 2;
@@ -73,6 +76,16 @@ void collectArgNodes(const pgcodes::GCode              *code,
 
 size_t countArgs(const pgcodes::GCode *args_code) {
     if (args_code == nullptr) return 0;
+    // Empty arg: identifier with empty value (from `func()`)
+    if (args_code->getValueType() == pgcodes::ValueType::IDENTIFIER &&
+        args_code->getValue().empty()) {
+        return 0;
+    }
+    // Empty arg: NOT_VALUE with empty operator (from `func()` pattern 2)
+    if (args_code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+        args_code->getOper().empty()) {
+        return 0;
+    }
     std::vector<const pgcodes::GCode *> nodes;
     collectArgNodes(args_code, nodes);
     return nodes.size();

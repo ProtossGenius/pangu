@@ -89,6 +89,7 @@ class ModuleBuilder {
     }
 
     void buildAllFunctions() {
+        declareArgcArgvGlobals();
         declareStructTypes();
         declareFunctions();
         defineFunctions();
@@ -120,6 +121,20 @@ class ModuleBuilder {
         llvm::BasicBlock *break_block;
         llvm::BasicBlock *continue_block;
     };
+
+    void declareArgcArgvGlobals() {
+        _argc_global = new llvm::GlobalVariable(
+            *_module, _builder.getInt32Ty(), false,
+            llvm::GlobalVariable::InternalLinkage,
+            llvm::ConstantInt::get(_builder.getInt32Ty(), 0),
+            "__pangu_argc");
+        _argv_global = new llvm::GlobalVariable(
+            *_module, _builder.getPtrTy(), false,
+            llvm::GlobalVariable::InternalLinkage,
+            llvm::ConstantPointerNull::get(
+                llvm::PointerType::get(*_context, 0)),
+            "__pangu_argv");
+    }
 
     void declareStructTypes() {
         for (const auto &unit : _program.packages) {
@@ -185,9 +200,15 @@ class ModuleBuilder {
         }
 
         std::vector<llvm::Type *> params;
-        for (const auto &name : function.params.orderedNames()) {
-            const auto *var = function.params.getVariable(name);
-            params.push_back(getLLVMType(*var));
+        if (function.name() == "main") {
+            // main(argc i32, argv i8**)
+            params.push_back(_builder.getInt32Ty());
+            params.push_back(_builder.getPtrTy());
+        } else {
+            for (const auto &name : function.params.orderedNames()) {
+                const auto *var = function.params.getVariable(name);
+                params.push_back(getLLVMType(*var));
+            }
         }
 
         llvm::Type *return_type = _builder.getInt32Ty();
@@ -217,7 +238,18 @@ class ModuleBuilder {
             llvm::BasicBlock::Create(*_context, "entry", _current_function);
         _builder.SetInsertPoint(entry);
 
-        bindParameters(function);
+        if (function.name() == "main") {
+            // Store argc/argv from main params into globals
+            auto arg_it = _current_function->arg_begin();
+            llvm::Value *argc_val = &*arg_it++;
+            llvm::Value *argv_val = &*arg_it;
+            argc_val->setName("argc");
+            argv_val->setName("argv");
+            _builder.CreateStore(argc_val, _argc_global);
+            _builder.CreateStore(argv_val, _argv_global);
+        } else {
+            bindParameters(function);
+        }
         emitStatement(function.code.get());
         if (!_terminated) {
             _builder.CreateRet(llvm::ConstantInt::get(_builder.getInt32Ty(), 0));
@@ -1009,7 +1041,12 @@ class ModuleBuilder {
     }
 
     llvm::Value *emitIncDec(const pgcodes::GCode *code, bool is_inc) {
+        // Support prefix (++i) and postfix (i++)
         const auto *operand = code->getRight();
+        if (operand == nullptr ||
+            operand->getValueType() != pgcodes::ValueType::IDENTIFIER) {
+            operand = code->getLeft();
+        }
         if (operand == nullptr ||
             operand->getValueType() != pgcodes::ValueType::IDENTIFIER) {
             throw std::runtime_error("++/-- operand must be an identifier");
@@ -1043,6 +1080,15 @@ class ModuleBuilder {
                          std::vector<const pgcodes::GCode *> &out) {
         const auto *current = stripGrouping(code);
         if (current == nullptr) {
+            return;
+        }
+        // Empty arg from `func()` — parser may emit IDENTIFIER("") or NOT_VALUE with empty oper
+        if (current->getValueType() == pgcodes::ValueType::IDENTIFIER &&
+            current->getValue().empty()) {
+            return;
+        }
+        if (current->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            current->getOper().empty()) {
             return;
         }
         if (current->getValueType() == pgcodes::ValueType::NOT_VALUE &&
@@ -1241,6 +1287,22 @@ class ModuleBuilder {
             if (args.size() != 3)
                 throw std::runtime_error("str_array_set expects 3 arguments");
             return emitStrArraySet(args[0], args[1], args[2]);
+        }
+        if (callee == "args_count") {
+            return _builder.CreateLoad(_builder.getInt32Ty(), _argc_global,
+                                       "argc");
+        }
+        if (callee == "args") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 1)
+                throw std::runtime_error("args expects 1 argument");
+            auto *argv_ptr =
+                _builder.CreateLoad(_builder.getPtrTy(), _argv_global, "argv");
+            auto *idx64 =
+                _builder.CreateSExt(args[0], _builder.getInt64Ty(), "idx64");
+            auto *elem_ptr = _builder.CreateGEP(_builder.getPtrTy(), argv_ptr,
+                                                 {idx64}, "arg_ptr");
+            return _builder.CreateLoad(_builder.getPtrTy(), elem_ptr, "arg");
         }
         if (callee_function == nullptr) {
             throw std::runtime_error("unsupported function call: " + callee);
@@ -1612,6 +1674,8 @@ class ModuleBuilder {
     std::string                                _current_module_id;
     const std::map<std::string, std::string>  *_current_imports = nullptr;
     bool                                      _terminated = false;
+    llvm::GlobalVariable                      *_argc_global = nullptr;
+    llvm::GlobalVariable                      *_argv_global = nullptr;
 };
 
 std::string printModule(llvm::Module &module) {
@@ -1672,7 +1736,8 @@ bool emitProgramIR(const Program &program,
 
 bool runProgramMain(const Program &program,
                     const std::string      &source_path, int &exit_code,
-                    std::string &error) {
+                    std::string &error,
+                    int argc, const char *argv[]) {
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
     llvm::InitializeNativeTargetAsmParser();
@@ -1712,9 +1777,9 @@ bool runProgramMain(const Program &program,
         return false;
     }
 
-    using MainFunc = int (*)();
+    using MainFunc = int (*)(int, const char **);
     auto *entry = symbol_or_err->toPtr<MainFunc>();
-    exit_code   = entry();
+    exit_code   = entry(argc, argv);
     return true;
 }
 
