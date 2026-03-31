@@ -32,7 +32,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 include_directories(.)
 aux_source_directory(. src_files)
 
-add_executable(pangu Application.cpp)
+add_executable(pangu Application.cpp pangu_driver.cpp)
 add_executable(pangu-lexer pangu_lexer.cpp)
 add_executable(pangu-grammer pangu_grammer.cpp)
 add_executable(pangu-sema pangu_sema.cpp)
@@ -48,4 +48,3 @@ target_link_libraries(pangu runtime sema grammer pgcodes lexer pipeline)
 target_link_libraries(pangu-sema sema grammer pgcodes lexer pipeline)
 target_link_libraries(pangu-grammer grammer pgcodes lexer pipeline)
 target_link_libraries(pangu-lexer virtual_machine lexer pipeline)
-
