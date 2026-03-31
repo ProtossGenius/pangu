@@ -1,5 +1,6 @@
 #include "pangu_driver.h"
 
+#include "grammer/datas.h"
 #include "grammer/grammer.h"
 #include "lexer/lexer.h"
 #include "llvm_backend/llvm_backend.h"
@@ -7,6 +8,7 @@
 #include <fstream>
 #include <iostream>
 #include <lexer/pipelines.h>
+#include <memory>
 #include <string>
 
 namespace pangu {
@@ -69,25 +71,59 @@ bool ensureReadable(const std::string &input_path) {
     return false;
 }
 
+std::unique_ptr<grammer::GPackage> parsePackage(const std::string &input_path) {
+    std::unique_ptr<grammer::GPackage> package;
+    auto packer = [&](auto, auto pro) {
+        package.reset(static_cast<grammer::GPackage *>(pro.release()));
+    };
+    auto grm = grammer::create(packer);
+    lexer::analysis(input_path.c_str(), lexer::packNext(grm.get()));
+    return package;
+}
+
 int emitIR(const std::string &input_path) {
     if (!ensureReadable(input_path)) {
         return -1;
     }
-    std::cout << llvm_backend::emitModuleIR(input_path);
+    auto package = parsePackage(input_path);
+    if (package == nullptr) {
+        std::cerr << "parse package failed: " << input_path << std::endl;
+        return -1;
+    }
+    std::string ir_text;
+    std::string error;
+    if (!llvm_backend::emitPackageIR(*package, input_path, ir_text, error)) {
+        std::cerr << "emit ir failed: " << error << std::endl;
+        return -1;
+    }
+    std::cout << ir_text;
     return 0;
 }
 
-int reportPendingMode(Mode mode) {
-    const char *mode_name = "";
-    switch (mode) {
-    case Mode::EMIT_IR: mode_name = "emit-ir"; break;
-    case Mode::COMPILE: mode_name = "compile"; break;
-    case Mode::RUN: mode_name = "run"; break;
-    case Mode::PARSE: mode_name = "parse"; break;
+int runDirect(const std::string &input_path) {
+    if (!ensureReadable(input_path)) {
+        return -1;
     }
-    std::cerr << "mode '" << mode_name
-              << "' is planned but not implemented yet. Use 'parse' for the "
-                 "current frontend pipeline."
+    auto package = parsePackage(input_path);
+    if (package == nullptr) {
+        std::cerr << "parse package failed: " << input_path << std::endl;
+        return -1;
+    }
+    int         exit_code = 0;
+    std::string error;
+    if (!llvm_backend::runPackageMain(*package, input_path, exit_code, error)) {
+        std::cerr << "run failed: " << error << std::endl;
+        return -1;
+    }
+    return exit_code;
+}
+
+int compileSource(const std::string &input_path) {
+    if (!ensureReadable(input_path)) {
+        return -1;
+    }
+    std::cerr << "mode 'compile' is planned but not implemented yet. Current "
+                 "LLVM path supports 'emit-ir' and 'run'."
               << std::endl;
     return 2;
 }
@@ -104,8 +140,8 @@ int run(int argc, const char *argv[]) {
     switch (options.mode) {
     case Mode::PARSE: return runParsePipeline(options.input_path);
     case Mode::EMIT_IR: return emitIR(options.input_path);
-    case Mode::COMPILE:
-    case Mode::RUN: return reportPendingMode(options.mode);
+    case Mode::COMPILE: return compileSource(options.input_path);
+    case Mode::RUN: return runDirect(options.input_path);
     }
     printUsage(std::cerr, argv[ 0 ]);
     return -1;

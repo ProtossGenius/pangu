@@ -27,6 +27,13 @@ class GStructContainer {
 class GFunctionContainer {
   public:
     void addFunction(PFunction &&fun);
+    GFunction *getFunction(const std::string &name) {
+        return _functions.count(name) ? _functions[ name ].get() : nullptr;
+    }
+    const GFunction *getFunction(const std::string &name) const {
+        auto it = _functions.find(name);
+        return it == _functions.end() ? nullptr : it->second.get();
+    }
     virtual ~GFunctionContainer() {}
     void   write_string(std::ostream &ss);
     size_t size() const { return _functions.size(); }
@@ -80,6 +87,12 @@ class GPackage : public IGrammer {
     void     addImport(PImport &&imp);
     GImport *getImport(const std::string &name) {
         return _imports.count(name) ? _imports[ name ].get() : nullptr;
+    }
+    GFunction *getFunction(const std::string &name) {
+        return functions.getFunction(name);
+    }
+    const GFunction *getFunction(const std::string &name) const {
+        return functions.getFunction(name);
     }
     std::string to_string() override;
 

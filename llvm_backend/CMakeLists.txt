@@ -4,5 +4,10 @@ add_library(llvm_backend ${DIR_LIB_SRCS})
 target_include_directories(llvm_backend SYSTEM PRIVATE ${LLVM_INCLUDE_DIRS})
 target_compile_definitions(llvm_backend PRIVATE ${LLVM_DEFINITIONS})
 
-llvm_map_components_to_libnames(PANGU_LLVM_LIBS Core Support)
-target_link_libraries(llvm_backend ${PANGU_LLVM_LIBS})
+link_directories(${LLVM_LIBRARY_DIRS})
+find_library(PANGU_LLVM_SHARED
+             NAMES LLVM LLVM-19 LLVM-20
+             PATHS ${LLVM_LIBRARY_DIRS}
+             NO_DEFAULT_PATH
+             REQUIRED)
+target_link_libraries(llvm_backend ${PANGU_LLVM_SHARED})

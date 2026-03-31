@@ -52,7 +52,9 @@ class GCode : public IGrammer {
         return this;
     }
     GCode      *getLeft() { return _left.get(); }
+    const GCode *getLeft() const { return _left.get(); }
     GCode      *getRight() { return _right.get(); }
+    const GCode *getRight() const { return _right.get(); }
     GCode      *releaseLeft() { return _left.release(); }
     GCode      *releaseRight() { return _right.release(); }
     void        swapChild() { _left.swap(_right); }
@@ -60,12 +62,25 @@ class GCode : public IGrammer {
         pgassert(_value_type != ValueType::NOT_VALUE);
         return _value;
     }
+    std::string getValue() const {
+        pgassert(_value_type != ValueType::NOT_VALUE);
+        return _value;
+    }
     std::string getOper() {
         pgassert(_value_type == ValueType::NOT_VALUE);
         return _value;
     }
+    std::string getOper() const {
+        pgassert(_value_type == ValueType::NOT_VALUE);
+        return _value;
+    }
     ValueType getValueType() { return _value_type; }
+    ValueType getValueType() const { return _value_type; }
     bool      isValue() {
+        const static std::set<std::string> VALUE_SET{"(", "[", "++", "--"};
+        return _value_type != ValueType::NOT_VALUE || VALUE_SET.count(_value);
+    }
+    bool isValue() const {
         const static std::set<std::string> VALUE_SET{"(", "[", "++", "--"};
         return _value_type != ValueType::NOT_VALUE || VALUE_SET.count(_value);
     }

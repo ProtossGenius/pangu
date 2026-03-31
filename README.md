@@ -19,7 +19,7 @@ make tests
 
 ```bash
 ./build/pangu parse test_datas/grammer/func_code.pgl
-./build/pangu emit-ir test_datas/grammer/func_code.pgl
+./build/pangu emit-ir test_datas/runtime/add.pgl
+./build/pangu run test_datas/runtime/add.pgl
 ```
-
 
