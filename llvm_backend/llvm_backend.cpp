@@ -551,8 +551,12 @@ class ModuleBuilder {
             return emitAssignment(code, oper == ":=");
         }
         if (oper == "+") {
-            return _builder.CreateAdd(emitExpression(code->getLeft()),
-                                      emitExpression(code->getRight()), "addtmp");
+            auto *left  = emitExpression(code->getLeft());
+            auto *right = emitExpression(code->getRight());
+            if (left->getType()->isPointerTy() && right->getType()->isPointerTy()) {
+                return emitStrConcat({left, right});
+            }
+            return _builder.CreateAdd(left, right, "addtmp");
         }
         if (oper == "-") {
             return _builder.CreateSub(emitExpression(code->getLeft()),
@@ -824,8 +828,44 @@ class ModuleBuilder {
                                 const std::string   &oper) {
         auto *left  = emitExpression(code->getLeft());
         auto *right = emitExpression(code->getRight());
-        llvm::Value *cmp = nullptr;
 
+        // String comparison: use strcmp for == and !=
+        if (left->getType()->isPointerTy() && right->getType()->isPointerTy()) {
+            auto *cmp_result = _builder.CreateCall(getStrcmp(), {left, right},
+                                                   "strcmp");
+            llvm::Value *cmp = nullptr;
+            if (oper == "==") {
+                cmp = _builder.CreateICmpEQ(
+                    cmp_result,
+                    llvm::ConstantInt::get(_builder.getInt32Ty(), 0), "streq");
+            } else if (oper == "!=") {
+                cmp = _builder.CreateICmpNE(
+                    cmp_result,
+                    llvm::ConstantInt::get(_builder.getInt32Ty(), 0), "strne");
+            } else if (oper == "<") {
+                cmp = _builder.CreateICmpSLT(
+                    cmp_result,
+                    llvm::ConstantInt::get(_builder.getInt32Ty(), 0), "strlt");
+            } else if (oper == ">") {
+                cmp = _builder.CreateICmpSGT(
+                    cmp_result,
+                    llvm::ConstantInt::get(_builder.getInt32Ty(), 0), "strgt");
+            } else if (oper == "<=") {
+                cmp = _builder.CreateICmpSLE(
+                    cmp_result,
+                    llvm::ConstantInt::get(_builder.getInt32Ty(), 0), "strle");
+            } else if (oper == ">=") {
+                cmp = _builder.CreateICmpSGE(
+                    cmp_result,
+                    llvm::ConstantInt::get(_builder.getInt32Ty(), 0), "strge");
+            } else {
+                throw std::runtime_error(
+                    "unsupported string comparison operator: " + oper);
+            }
+            return _builder.CreateZExt(cmp, _builder.getInt32Ty(), "booltmp");
+        }
+
+        llvm::Value *cmp = nullptr;
         if (oper == "==") {
             cmp = _builder.CreateICmpEQ(left, right, "cmptmp");
         } else if (oper == "!=") {
@@ -1054,6 +1094,43 @@ class ModuleBuilder {
             _terminated = true;
             return value;
         }
+        // String builtins
+        if (callee == "str_concat") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 2)
+                throw std::runtime_error("str_concat expects 2 arguments");
+            return emitStrConcat(args);
+        }
+        if (callee == "str_len") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 1)
+                throw std::runtime_error("str_len expects 1 argument");
+            return emitStrLen(args);
+        }
+        if (callee == "str_eq") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 2)
+                throw std::runtime_error("str_eq expects 2 arguments");
+            return emitStrEq(args);
+        }
+        if (callee == "str_substr") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 3)
+                throw std::runtime_error("str_substr expects 3 arguments");
+            return emitStrSubstr(args);
+        }
+        if (callee == "int_to_str") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 1)
+                throw std::runtime_error("int_to_str expects 1 argument");
+            return emitIntToStr(args);
+        }
+        if (callee == "str_to_int") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 1)
+                throw std::runtime_error("str_to_int expects 1 argument");
+            return emitStrToInt(args);
+        }
         if (callee_function == nullptr) {
             throw std::runtime_error("unsupported function call: " + callee);
         }
@@ -1116,6 +1193,129 @@ class ModuleBuilder {
                                                   exit_args, false);
         _exit = _module->getOrInsertFunction("exit", exit_type);
         return _exit;
+    }
+
+    // C runtime helpers for string operations
+    llvm::FunctionCallee getStrlen() {
+        return _module->getOrInsertFunction(
+            "strlen",
+            llvm::FunctionType::get(_builder.getInt64Ty(),
+                                    {_builder.getPtrTy()}, false));
+    }
+
+    llvm::FunctionCallee getStrcmp() {
+        return _module->getOrInsertFunction(
+            "strcmp",
+            llvm::FunctionType::get(_builder.getInt32Ty(),
+                                    {_builder.getPtrTy(), _builder.getPtrTy()},
+                                    false));
+    }
+
+    llvm::FunctionCallee getMalloc() {
+        return _module->getOrInsertFunction(
+            "malloc",
+            llvm::FunctionType::get(_builder.getPtrTy(),
+                                    {_builder.getInt64Ty()}, false));
+    }
+
+    llvm::FunctionCallee getMemcpy() {
+        return _module->getOrInsertFunction(
+            "memcpy",
+            llvm::FunctionType::get(_builder.getPtrTy(),
+                                    {_builder.getPtrTy(), _builder.getPtrTy(),
+                                     _builder.getInt64Ty()},
+                                    false));
+    }
+
+    llvm::FunctionCallee getSnprintf() {
+        return _module->getOrInsertFunction(
+            "snprintf",
+            llvm::FunctionType::get(_builder.getInt32Ty(),
+                                    {_builder.getPtrTy(), _builder.getInt64Ty(),
+                                     _builder.getPtrTy()},
+                                    true));
+    }
+
+    llvm::FunctionCallee getAtoi() {
+        return _module->getOrInsertFunction(
+            "atoi",
+            llvm::FunctionType::get(_builder.getInt32Ty(),
+                                    {_builder.getPtrTy()}, false));
+    }
+
+    llvm::FunctionCallee getFree() {
+        return _module->getOrInsertFunction(
+            "free",
+            llvm::FunctionType::get(_builder.getVoidTy(),
+                                    {_builder.getPtrTy()}, false));
+    }
+
+    // str_concat(a, b) → new string
+    llvm::Value *emitStrConcat(const std::vector<llvm::Value *> &args) {
+        auto *a = args[0];
+        auto *b = args[1];
+        auto *len_a = _builder.CreateCall(getStrlen(), {a}, "len_a");
+        auto *len_b = _builder.CreateCall(getStrlen(), {b}, "len_b");
+        auto *total = _builder.CreateAdd(len_a, len_b, "total");
+        auto *alloc_size = _builder.CreateAdd(
+            total, llvm::ConstantInt::get(_builder.getInt64Ty(), 1), "alloc");
+        auto *buf = _builder.CreateCall(getMalloc(), {alloc_size}, "buf");
+        _builder.CreateCall(getMemcpy(), {buf, a, len_a});
+        auto *dst = _builder.CreateGEP(_builder.getInt8Ty(), buf, {len_a},
+                                       "dst");
+        auto *copy_len = _builder.CreateAdd(
+            len_b, llvm::ConstantInt::get(_builder.getInt64Ty(), 1), "cpylen");
+        _builder.CreateCall(getMemcpy(), {dst, b, copy_len});
+        return buf;
+    }
+
+    // str_len(s) → int
+    llvm::Value *emitStrLen(const std::vector<llvm::Value *> &args) {
+        auto *len64 = _builder.CreateCall(getStrlen(), {args[0]}, "len64");
+        return _builder.CreateTrunc(len64, _builder.getInt32Ty(), "len");
+    }
+
+    // str_eq(a, b) → int (1 if equal, 0 otherwise)
+    llvm::Value *emitStrEq(const std::vector<llvm::Value *> &args) {
+        auto *cmp = _builder.CreateCall(getStrcmp(), {args[0], args[1]},
+                                        "strcmp");
+        auto *eq = _builder.CreateICmpEQ(
+            cmp, llvm::ConstantInt::get(_builder.getInt32Ty(), 0), "streq");
+        return _builder.CreateZExt(eq, _builder.getInt32Ty(), "streqi");
+    }
+
+    // str_substr(s, start, len) → new string
+    llvm::Value *emitStrSubstr(const std::vector<llvm::Value *> &args) {
+        auto *s     = args[0];
+        auto *start = _builder.CreateSExt(args[1], _builder.getInt64Ty(),
+                                          "start64");
+        auto *len   = _builder.CreateSExt(args[2], _builder.getInt64Ty(),
+                                          "len64");
+        auto *alloc_size = _builder.CreateAdd(
+            len, llvm::ConstantInt::get(_builder.getInt64Ty(), 1), "alloc");
+        auto *buf = _builder.CreateCall(getMalloc(), {alloc_size}, "buf");
+        auto *src = _builder.CreateGEP(_builder.getInt8Ty(), s, {start},
+                                       "src");
+        _builder.CreateCall(getMemcpy(), {buf, src, len});
+        auto *term = _builder.CreateGEP(_builder.getInt8Ty(), buf, {len},
+                                        "term");
+        _builder.CreateStore(llvm::ConstantInt::get(_builder.getInt8Ty(), 0),
+                             term);
+        return buf;
+    }
+
+    // int_to_str(n) → new string
+    llvm::Value *emitIntToStr(const std::vector<llvm::Value *> &args) {
+        auto *buf_size = llvm::ConstantInt::get(_builder.getInt64Ty(), 32);
+        auto *buf = _builder.CreateCall(getMalloc(), {buf_size}, "buf");
+        auto *fmt = _builder.CreateGlobalStringPtr("%d");
+        _builder.CreateCall(getSnprintf(), {buf, buf_size, fmt, args[0]});
+        return buf;
+    }
+
+    // str_to_int(s) → int
+    llvm::Value *emitStrToInt(const std::vector<llvm::Value *> &args) {
+        return _builder.CreateCall(getAtoi(), {args[0]}, "atoi");
     }
 
   private:

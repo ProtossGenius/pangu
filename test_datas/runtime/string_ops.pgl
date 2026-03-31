@@ -1,0 +1,33 @@
+package main;
+
+func main() {
+    a := "hello";
+    b := " world";
+    c := str_concat(a, b);
+    println(c);
+    println(str_len(a));
+
+    d := "hello";
+    println(str_eq(a, d));
+    println(str_eq(a, b));
+
+    sub := str_substr(c, 0, 5);
+    println(sub);
+
+    n := 42;
+    s := int_to_str(n);
+    println(s);
+
+    m := str_to_int("123");
+    println(m);
+
+    e := a + b;
+    println(e);
+
+    if (a == d) {
+        println("eq");
+    }
+    if (a != b) {
+        println("ne");
+    }
+}
