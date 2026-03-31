@@ -73,10 +73,11 @@ void PipeTypeDef::accept(IPipelineFactory *factory, PData &&data) {
             ptr->setName(name);
             factory->choicePipeline(EGrammer::Struct);
             factory->pushProduct(PProduct(ptr), packStructToContainer);
-        } else if (str == "func") {
+        } else if (str == "func" || str == "pipeline") {
             factory->undealData(std::move(data));
             auto ptr = new GFuncDef();
             ptr->setName(name);
+            ptr->setDeclKeyword(str);
             factory->choicePipeline(EGrammer::TypeFunc);
             factory->pushProduct(PProduct(ptr), packFuncDefToPackage);
         } else {
@@ -386,6 +387,9 @@ void PipePackage::accept(IPipelineFactory *factory, PData &&data) {
     if (lexer::makeIdentifier("func") == *lex) {
         return factory->choicePipeline(EGrammer::Func);
     }
+    if (lexer::makeIdentifier("pipeline") == *lex) {
+        return factory->choicePipeline(EGrammer::Func);
+    }
 
     if (lex->typeId() == lexer::ELexPipeline::Space ||
         lex->typeId() == lexer::ELexPipeline::Comments ||
@@ -465,6 +469,7 @@ void PipeTypeFunc::accept(IPipelineFactory *factory, PData &&data) {
     if (topProduct->getStep() == int(FuncDefStep::FINISH)) {
         factory->undealData(std::move(data));
         factory->packProduct();
+        return;
     }
     if (lexer::ELexPipeline::Space == type) {
         if (topProduct->getStep() == int(FuncDefStep::READ_RETURN) &&
@@ -475,6 +480,12 @@ void PipeTypeFunc::accept(IPipelineFactory *factory, PData &&data) {
     }
     switch (topProduct->getStep()) {
     case int(FuncDefStep::READ_FUNC): {
+        if (lexer::ELexPipeline::Identifier != type ||
+            (str != "func" && str != "pipeline")) {
+            factory->onFail("except identifier 'func' or 'pipeline', but get " +
+                            lex->to_string());
+        }
+        topProduct->setDeclKeyword(str);
         topProduct->setStep(int(FuncDefStep::READ_PARAM));
         return;
     }
@@ -529,6 +540,13 @@ void PipeFunc::accept(IPipelineFactory *factory, PData &&data) {
 
     switch (int(topProduct->getStep())) {
     case int(FuncStep::START): {
+        if (lexer::ELexPipeline::Identifier != type ||
+            (str != "func" && str != "pipeline")) {
+            factory->onFail("PipeFunc want identifier 'func' or 'pipeline', but "
+                            "get " +
+                            lex->to_string());
+        }
+        topProduct->setDeclKeyword(str);
         topProduct->setStep(int(FuncStep::READ_NAME));
         return;
     }

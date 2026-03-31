@@ -129,12 +129,14 @@ std::string GVarDef::to_string() {
 }
 
 std::string GFuncDef::to_string() {
-    return "type " + name() + "func(" + params.to_string() + ")" +
+    const std::string keyword_split = getDeclKeyword() == "func" ? "" : " ";
+    return "type " + name() + keyword_split + getDeclKeyword() + "(" +
+           params.to_string() + ")" +
            result.to_string();
 }
 
 std::string GFunction::to_string() {
-    return "func " + name() + "(" + params.to_string() + ")" +
+    return getDeclKeyword() + " " + name() + "(" + params.to_string() + ")" +
            result.to_string() + " " +
            (code == nullptr ? "{}" : code->to_string());
 }

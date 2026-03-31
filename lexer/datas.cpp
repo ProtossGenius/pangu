@@ -62,9 +62,11 @@ int symbol_power(const std::string &s) {
 }
 
 const std::set<std::string> keywords{
-    "if",     "for",    "while",  "do",    "type", "func",
-    "struct", "class",  "switch", "goto",  "try",  "catch",
-    "public", "static", "const",  "final", "var",
+    "package", "import",  "as",      "if",     "else",   "for",
+    "while",   "do",      "type",    "func",   "return", "struct",
+    "class",   "switch",  "goto",    "try",    "catch",  "public",
+    "static",  "const",   "final",   "var",    "pipeline",
+    "impl",    "enum",    "switcher","worker",
 };
 bool is_keywords(DLex *lex) {
 

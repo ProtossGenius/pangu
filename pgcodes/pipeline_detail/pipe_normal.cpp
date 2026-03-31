@@ -57,12 +57,16 @@ void PipeNormal::on_START(IPipelineFactory *factory, PData &&data) {
     if (lexer::ELexPipeline::Space == type) {
         return;
     }
-    pgassert_msg(!lexer::is_keywords(lex),
-                 "PipeNormal should not have keyword, keyword = " + str);
     if (lexer::makeIdentifier("return") == *lex) {
         topProduct->setStep(int(Steps::PRE_VIEW_NEXT));
         factory->choicePipeline(ECodeType::Normal);
         factory->pushProduct(PProduct(new GCode()), pack_as_return);
+    } else {
+        pgassert_msg(!lexer::is_keywords(lex),
+                     "PipeNormal should not have keyword, keyword = " + str);
+    }
+    if (lexer::makeIdentifier("return") == *lex) {
+        return;
     } else if (lexer::isIdentifier(lex) || lexer::isNumber(lex) ||
                lexer::isString(lex)) {
         topProduct->setValue(lex->get(), getValueType(lex));

@@ -175,9 +175,16 @@ class GFuncDef : public IGrammer {
   public:
     int                 typeId() const override { return 4; }
     std::string         sign() { return ""; }
+    void                setDeclKeyword(const std::string &keyword) {
+        _decl_keyword = keyword;
+    }
+    const std::string &getDeclKeyword() const { return _decl_keyword; }
     virtual std::string to_string() override;
     GVarDefContainer    params;
     GVarDefContainer    result;
+
+  private:
+    std::string _decl_keyword = "func";
 };
 using pgcodes::GCode;
 using pgcodes::PCode;

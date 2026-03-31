@@ -1,0 +1,7 @@
+package pipe_demo;
+
+type PipeReader pipeline (cfg Config) (out Reader);
+
+pipeline Build(cfg Config) (out Reader) {
+    PipeReader -> PipeNormalize;
+}

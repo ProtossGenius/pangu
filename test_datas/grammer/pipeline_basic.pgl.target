@@ -1,0 +1,10 @@
+package pipe_demo
+import list(0)
+struct list (0):
+function list:(1)
+pipeline Build([(var) cfg type(Config) ])[(var) out type(Reader) ] (( _}_ ) _{_ ((( _PipeReader_ ) _->_ ( _PipeNormalize_ )) _;_ 
+))
+type func list:(1)
+type PipeReader pipeline([(var) cfg type(Config) ])[(var) out type(Reader) ]
+variable list:(0)
+
