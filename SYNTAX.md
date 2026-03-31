@@ -320,55 +320,50 @@ Supported today by `./build/pangu emit-ir`:
 - source parsing through the grammar front-end
 - recursive import loading for `stdlib/...` and relative module paths
 - generation of multiple top-level functions
-- integer parameters and a single integer return value
-- integer variables
-- integer arithmetic `+ - * /`
+- integer and string parameters, single return value
+- integer and string variables (type-inferred via `:=`)
+- integer arithmetic `+ - * / %`
 - integer comparison `== != > < >= <=`
+- logical operators `&& || !` (short-circuit)
+- prefix `++` / `--`
 - assignment / define-assignment
 - user-defined function calls
 - imported function calls through `alias.func(...)`
-- `println(<int-expr>)`
+- `println(<expr>)` — auto-detects int (%d) vs string (%s)
+- `print(<expr>)` — same as println without trailing newline
+- `exit(<int>)` — terminates with exit code
 - `if / else if / else`
+- `while (cond) { ... }`
+- `for (init; cond; step) { ... }`
 - `return`
+- string literals with escape sequences (`\n`, `\t`, `\\`, `\"`)
 
 ### Direct-run support
 
 Supported today by `./build/pangu run`:
 
-- recursive import loading for `stdlib/...` and relative module paths
-- multiple top-level functions
-- integer parameters and a single integer return value
-- integer locals
-- integer arithmetic
-- integer comparisons
-- user-defined function calls
-- imported function calls through `alias.func(...)`
-- `if / else if / else`
-- `println`
-- `return`
-
-For backend-stable code today, using a temporary variable before `return` is safer than returning a compound expression directly.
+- all features listed in LLVM IR emission above
+- uses LLVM ORC JIT for in-process execution
 
 ### Native compile support
 
 Supported today by `./build/pangu compile`:
 
-- resolve imported modules before lowering
-- emit LLVM IR for the supported runnable subset
-- include integer comparisons and `if / else if / else` lowering in that subset
-- support imported function calls through `alias.func(...)`
-- invoke system clang to produce a native executable
-- place the executable at `build/<source-stem>`
+- all features listed in LLVM IR emission above
+- invokes system clang to produce a native executable
+- places the executable at `build/<source-stem>`
 
 ### Planned but not implemented end-to-end
 
 - full type checking (types are parsed but not verified)
 - structs, enum semantics, and impl semantics in codegen
-- loop lowering
 - switch lowering
+- break / continue in loops
 - parser-only interface declarations
 - case expressions used in design files
 - full pipeline runtime semantics
+- array / slice types
+- string concatenation
 
 ### Semantic analysis
 
@@ -380,66 +375,72 @@ The `sema` module now performs the following checks before LLVM lowering:
 - **Imported function existence:** calling a function that does not exist in the imported module is reported.
 - **Variable definitions:** use of undefined variables (not declared with `:=` or as parameters) is reported.
 
-Errors are printed in the format:
+All errors use clang-style diagnostics with file:line:column, source line, and caret:
 
 ```text
-/path/to/file.pgl: error: in function 'main': undefined function 'foo'
+/path/to/file.pgl:4:13: error: undefined function 'not_exist'
+    println(not_exist(1));
+            ^~~~~~~~~
 ```
 
 ## Bootstrap assessment
 
 ## Conclusion
 
-Pangu is **not yet self-hostable**.
+Pangu is **not yet self-hostable**, but significant progress has been made.
 
-### Why it is not ready to bootstrap
+### Current capabilities
 
-1. The front-end accepts more syntax than the backend can execute.
-2. `sema/` now checks function existence, argument counts, import aliases, and variable definitions, but does not yet perform type checking or method binding.
-3. The backend still executes only a narrow integer-oriented subset, even though integer control flow is now available.
-4. Imports and package linking now work for basic function-oriented modules.
-5. Important language features used by the design files are still parser-only or still planned:
-   - enum semantics
-   - impl body semantics
-   - interface declarations
-   - richer pipeline definitions
-6. A standard library directory now exists and participates in basic imports, but it is still a minimal scaffold rather than a bootstrap-ready library surface.
+1. **Control flow:** if/else, while, for loops all work end-to-end (parse → sema → LLVM → run/compile).
+2. **Types:** int and string are supported in function signatures, variables, and expressions.
+3. **Operators:** arithmetic (+, -, *, /, %), comparison (==, !=, >, <, >=, <=), logical (&&, ||, !), increment (++, --).
+4. **Strings:** string literals with escape sequences, auto-detected in println/print.
+5. **Modules:** import system works for stdlib and relative paths with multi-package compilation.
+6. **Sema:** function/variable/import validation with clang-style diagnostics.
+7. **Builtins:** println, print, exit.
 
-### What would be required before self-hosting
+### What is still missing for self-hosting
 
-1. Complete semantic analysis:
-   - type checking (argument types, return types)
-   - enum/struct/interface checking
-   - method binding and resolution
+1. **Type system completion:**
+   - type checking in sema (argument types, return types)
+   - struct definition and field access
+   - enum values and pattern matching
+   - array/slice types
 
-2. Complete backend:
-   - full expression lowering
-   - loops and switch lowering
-   - aggregate values
-    - richer package/import linking beyond basic function calls
+2. **String operations:**
+   - concatenation
+   - length, substring, comparison
+   - string-to-int, int-to-string conversion
 
-3. Runtime and library support:
-   - basic IO
-   - string/runtime conventions
-    - richer import/module loading semantics
-   - deterministic build entrypoint
+3. **Control flow gaps:**
+   - switch/case lowering
+   - break/continue in loops
 
-4. Front-end completion for design syntax:
-   - richer `impl`
-   - `interface`
-   - full `pipeline` meta-definition syntax
-   - `case` forms shown in `examples/pglang/main.pgl`
+4. **Memory management:**
+   - heap allocation for dynamic data
+   - arrays/slices
+
+5. **IO beyond printf:**
+   - file reading (needed to read .pgl source files)
+   - command-line argument access
+
+6. **Advanced features:**
+   - struct methods (impl blocks)
+   - interface dispatch
+   - closures or function values
 
 ### Practical assessment
 
-- **Parser self-description:** partially feasible now.
-- **Compiler implementation in Pangu:** not yet feasible.
+- **Simple programs:** fully feasible — arithmetic, control flow, strings, modules all work.
+- **Text processing utility:** partially feasible — needs string operations and file IO.
+- **Compiler implementation in Pangu:** not yet feasible — needs struct, string ops, file IO.
 - **Real bootstrap chain:** not yet feasible.
 
-The most realistic near-term milestone is:
+### Nearest milestones toward bootstrap
 
-1. finish `sema`,
-2. lower loops, switch, and aggregates through LLVM,
-3. extend `stdlib/` and import handling beyond the current basic function-call model,
-4. expand the standard library until the compiler can depend on it,
-5. then reassess bootstrap.
+1. Add string operations (concat, length, comparison)
+2. Add struct definition + field access
+3. Add array/slice type with indexing
+4. Add file IO builtins (read_file, write_file)
+5. Add switch/case lowering
+6. Then the language can express a simple recursive-descent parser
