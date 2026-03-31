@@ -154,6 +154,9 @@ class ModuleBuilder {
         if (type->name() == "int") {
             return _builder.getInt32Ty();
         }
+        if (type->name() == "string") {
+            return _builder.getPtrTy();
+        }
         throw std::runtime_error("unsupported variable type: " + type->name());
     }
 
@@ -596,11 +599,33 @@ class ModuleBuilder {
                 throw std::runtime_error("unknown identifier: " +
                                          code->getValue());
             }
-            return _builder.CreateLoad(_builder.getInt32Ty(), it->second,
+            auto *alloca_type = it->second->getAllocatedType();
+            return _builder.CreateLoad(alloca_type, it->second,
                                        code->getValue());
         }
-        case pgcodes::ValueType::STRING:
-            throw std::runtime_error("string is not supported in LLVM backend");
+        case pgcodes::ValueType::STRING: {
+            std::string raw = code->getValue();
+            // Strip surrounding quotes if present
+            if (raw.size() >= 2 && raw.front() == '"' && raw.back() == '"') {
+                raw = raw.substr(1, raw.size() - 2);
+            }
+            // Process escape sequences
+            std::string processed;
+            for (size_t i = 0; i < raw.size(); ++i) {
+                if (raw[i] == '\\' && i + 1 < raw.size()) {
+                    switch (raw[i + 1]) {
+                    case 'n': processed += '\n'; ++i; break;
+                    case 't': processed += '\t'; ++i; break;
+                    case '\\': processed += '\\'; ++i; break;
+                    case '"': processed += '"'; ++i; break;
+                    default: processed += raw[i]; break;
+                    }
+                } else {
+                    processed += raw[i];
+                }
+            }
+            return _builder.CreateGlobalStringPtr(processed, "str");
+        }
         case pgcodes::ValueType::NOT_VALUE: break;
         }
         throw std::runtime_error("unexpected empty value");
@@ -639,6 +664,8 @@ class ModuleBuilder {
         }
 
         const std::string name = left->getValue();
+        auto *value = emitExpression(code->getRight());
+
         llvm::AllocaInst  *slot = nullptr;
         auto               it   = _variables.find(name);
         if (it == _variables.end()) {
@@ -646,13 +673,12 @@ class ModuleBuilder {
                 throw std::runtime_error("assign to undefined identifier: " +
                                          name);
             }
-            slot             = createVariableSlot(name, _builder.getInt32Ty());
+            slot             = createVariableSlot(name, value->getType());
             _variables[name] = slot;
         } else {
             slot = it->second;
         }
 
-        auto *value = emitExpression(code->getRight());
         _builder.CreateStore(value, slot);
         return value;
     }
@@ -746,9 +772,17 @@ class ModuleBuilder {
                 throw std::runtime_error(
                     "println currently supports exactly one argument");
             }
-            auto *fmt = _builder.CreateGlobalStringPtr("%d\n");
-            _builder.CreateCall(getPrintf(), {fmt, args.front()});
-            return args.front();
+            auto *arg = args.front();
+            if (arg->getType()->isPointerTy()) {
+                // String argument: print as %s\n
+                auto *fmt = _builder.CreateGlobalStringPtr("%s\n");
+                _builder.CreateCall(getPrintf(), {fmt, arg});
+            } else {
+                // Integer argument: print as %d\n
+                auto *fmt = _builder.CreateGlobalStringPtr("%d\n");
+                _builder.CreateCall(getPrintf(), {fmt, arg});
+            }
+            return arg;
         }
         if (callee == "return") {
             auto args = emitCallArgs(args_code);
