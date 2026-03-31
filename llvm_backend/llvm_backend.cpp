@@ -206,6 +206,12 @@ class ModuleBuilder {
         if (oper == "if") {
             return emitIfStatement(code);
         }
+        if (oper == "while") {
+            return emitWhileStatement(code);
+        }
+        if (oper == "for") {
+            return emitForStatement(code);
+        }
         return emitExpression(code);
     }
 
@@ -275,6 +281,121 @@ class ModuleBuilder {
         } else {
             _terminated = true;
         }
+        return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+    }
+
+    // ── while (cond) { body } ────────────────────────────────────────
+    llvm::Value *emitWhileStatement(const pgcodes::GCode *code) {
+        auto *function = _current_function;
+
+        auto *cond_block =
+            llvm::BasicBlock::Create(*_context, "while.cond", function);
+        auto *body_block = llvm::BasicBlock::Create(*_context, "while.body");
+        auto *end_block  = llvm::BasicBlock::Create(*_context, "while.end");
+
+        _builder.CreateBr(cond_block);
+
+        // Condition block
+        _builder.SetInsertPoint(cond_block);
+        auto *condition = emitConditionValue(code->getLeft());
+        _builder.CreateCondBr(condition, body_block, end_block);
+
+        // Body block
+        function->insert(function->end(), body_block);
+        _builder.SetInsertPoint(body_block);
+        _terminated = false;
+        emitStatement(code->getRight());
+        if (!_terminated &&
+            _builder.GetInsertBlock()->getTerminator() == nullptr) {
+            _builder.CreateBr(cond_block);
+        }
+
+        // End block
+        function->insert(function->end(), end_block);
+        _builder.SetInsertPoint(end_block);
+        _terminated = false;
+        return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+    }
+
+    // ── for (init; cond; step) { body } ──────────────────────────────
+    // The header (code->getLeft()) may be wrapped in a `(...)` grouping.
+    // Inner content is `;`-separated: init ; cond ; step
+    llvm::Value *emitForStatement(const pgcodes::GCode *code) {
+        auto *function = _current_function;
+        const auto *header = code->getLeft();
+
+        // Unwrap `(` grouping if present
+        if (header != nullptr &&
+            header->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            header->getOper() == "(") {
+            header = header->getRight();
+        }
+
+        // Decompose the for-header: init ; cond ; step
+        // GCode `;` is left-associative: `;`(`;`(init, cond), step)
+        const pgcodes::GCode *init_code = nullptr;
+        const pgcodes::GCode *cond_code = nullptr;
+        const pgcodes::GCode *step_code = nullptr;
+
+        if (header != nullptr &&
+            header->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            header->getOper() == ";") {
+            step_code = header->getRight();
+            const auto *init_cond = header->getLeft();
+            if (init_cond != nullptr &&
+                init_cond->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                init_cond->getOper() == ";") {
+                init_code = init_cond->getLeft();
+                cond_code = init_cond->getRight();
+            } else {
+                init_code = init_cond;
+            }
+        }
+
+        // Emit init
+        if (init_code != nullptr) {
+            emitExpression(init_code);
+        }
+
+        auto *cond_block =
+            llvm::BasicBlock::Create(*_context, "for.cond", function);
+        auto *body_block = llvm::BasicBlock::Create(*_context, "for.body");
+        auto *step_block = llvm::BasicBlock::Create(*_context, "for.step");
+        auto *end_block  = llvm::BasicBlock::Create(*_context, "for.end");
+
+        _builder.CreateBr(cond_block);
+
+        // Condition
+        _builder.SetInsertPoint(cond_block);
+        if (cond_code != nullptr) {
+            auto *condition = emitConditionValue(cond_code);
+            _builder.CreateCondBr(condition, body_block, end_block);
+        } else {
+            _builder.CreateBr(body_block); // infinite loop
+        }
+
+        // Body
+        function->insert(function->end(), body_block);
+        _builder.SetInsertPoint(body_block);
+        _terminated = false;
+        emitStatement(code->getRight());
+        if (!_terminated &&
+            _builder.GetInsertBlock()->getTerminator() == nullptr) {
+            _builder.CreateBr(step_block);
+        }
+
+        // Step
+        function->insert(function->end(), step_block);
+        _builder.SetInsertPoint(step_block);
+        if (step_code != nullptr) {
+            emitExpression(step_code);
+        }
+        _builder.CreateBr(cond_block);
+
+        // End
+        function->insert(function->end(), end_block);
+        _builder.SetInsertPoint(end_block);
+        _terminated = false;
         return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
     }
 
@@ -413,6 +534,9 @@ class ModuleBuilder {
             emitStatement(code);
             return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
         }
+        if (oper == "++" || oper == "--") {
+            return emitIncDec(code, oper == "++");
+        }
         throw std::runtime_error("unsupported operator in LLVM backend: " +
                                  oper);
     }
@@ -531,6 +655,25 @@ class ModuleBuilder {
         auto *value = emitExpression(code->getRight());
         _builder.CreateStore(value, slot);
         return value;
+    }
+
+    llvm::Value *emitIncDec(const pgcodes::GCode *code, bool is_inc) {
+        const auto *operand = code->getRight();
+        if (operand == nullptr ||
+            operand->getValueType() != pgcodes::ValueType::IDENTIFIER) {
+            throw std::runtime_error("++/-- operand must be an identifier");
+        }
+        const std::string &name = operand->getValue();
+        auto it = _variables.find(name);
+        if (it == _variables.end()) {
+            throw std::runtime_error("++/-- on undefined variable: " + name);
+        }
+        auto *current = _builder.CreateLoad(_builder.getInt32Ty(), it->second);
+        auto *one     = llvm::ConstantInt::get(_builder.getInt32Ty(), 1);
+        auto *result  = is_inc ? _builder.CreateAdd(current, one, "inc")
+                               : _builder.CreateSub(current, one, "dec");
+        _builder.CreateStore(result, it->second);
+        return result;
     }
 
     const pgcodes::GCode *stripGrouping(const pgcodes::GCode *code) {
