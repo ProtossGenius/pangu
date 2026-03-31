@@ -387,60 +387,52 @@ All errors use clang-style diagnostics with file:line:column, source line, and c
 
 ## Conclusion
 
-Pangu is **not yet self-hostable**, but significant progress has been made.
+Pangu is **approaching self-hostability**. Most foundational capabilities are in place.
 
 ### Current capabilities
 
 1. **Control flow:** if/else, while, for loops all work end-to-end (parse → sema → LLVM → run/compile).
-2. **Types:** int and string are supported in function signatures, variables, and expressions.
-3. **Operators:** arithmetic (+, -, *, /, %), comparison (==, !=, >, <, >=, <=), logical (&&, ||, !), increment (++, --).
-4. **Strings:** string literals with escape sequences, auto-detected in println/print.
-5. **Modules:** import system works for stdlib and relative paths with multi-package compilation.
-6. **Sema:** function/variable/import validation with clang-style diagnostics.
-7. **Builtins:** println, print, exit.
+2. **Types:** int, string, and user-defined structs are supported.
+3. **Operators:** arithmetic (+, -, *, /, %), comparison (==, !=, >, <, >=, <=), logical (&&, ||, !), increment (++, --). String operands auto-dispatch to strcmp/concat.
+4. **Strings:** literals with escapes, concatenation (`+`), length, substring, comparison, char access, int↔string conversion.
+5. **Structs:** definition, construction (`Point{x: 1, y: 2}`), field access (`p.x`), pass as function params and return values.
+6. **Arrays:** int arrays (`make_array`, `array_get`, `array_set`) and string arrays (`make_str_array`, `str_array_get`, `str_array_set`).
+7. **File I/O:** `read_file(path)` and `write_file(path, content)`.
+8. **Character ops:** `str_char_at(s, i)` and `char_to_str(code)`.
+9. **Modules:** import system works for stdlib and relative paths with multi-package compilation.
+10. **Sema:** function/variable/import/struct validation with clang-style diagnostics.
+11. **Builtins:** println, print, exit, plus all string/array/file ops above.
 
 ### What is still missing for self-hosting
 
-1. **Type system completion:**
+1. **Type system gaps:**
    - type checking in sema (argument types, return types)
-   - struct definition and field access
    - enum values and pattern matching
-   - array/slice types
 
-2. **String operations:**
-   - concatenation
-   - length, substring, comparison
-   - string-to-int, int-to-string conversion
-
-3. **Control flow gaps:**
-   - switch/case lowering
+2. **Control flow gaps:**
+   - switch/case lowering (parser needs `case:` support)
    - break/continue in loops
 
-4. **Memory management:**
-   - heap allocation for dynamic data
-   - arrays/slices
-
-5. **IO beyond printf:**
-   - file reading (needed to read .pgl source files)
-   - command-line argument access
-
-6. **Advanced features:**
+3. **Advanced features:**
    - struct methods (impl blocks)
    - interface dispatch
    - closures or function values
+   - command-line argument access
 
 ### Practical assessment
 
-- **Simple programs:** fully feasible — arithmetic, control flow, strings, modules all work.
-- **Text processing utility:** partially feasible — needs string operations and file IO.
-- **Compiler implementation in Pangu:** not yet feasible — needs struct, string ops, file IO.
-- **Real bootstrap chain:** not yet feasible.
+- **Simple programs:** fully feasible — arithmetic, control flow, strings, structs, arrays, modules all work.
+- **Text processing utility:** fully feasible — string ops, file IO, arrays all available.
+- **Simple compiler (lexer + parser):** feasible — can read files, iterate chars, build token arrays, construct AST with structs, generate output. Missing switch/case (use if/else chains instead).
+- **Full bootstrap chain:** close but needs break/continue, command-line args, and more robust error handling.
 
 ### Nearest milestones toward bootstrap
 
-1. Add string operations (concat, length, comparison)
-2. Add struct definition + field access
-3. Add array/slice type with indexing
-4. Add file IO builtins (read_file, write_file)
-5. Add switch/case lowering
-6. Then the language can express a simple recursive-descent parser
+1. ~~Add string operations~~ ✅
+2. ~~Add struct definition + field access~~ ✅
+3. ~~Add array/slice type with indexing~~ ✅
+4. ~~Add file IO builtins~~ ✅
+5. Add switch/case lowering (requires parser extension for `case:`)
+6. Add break/continue support in loops
+7. Add command-line argument access (`args()` builtin)
+8. Write a minimal PGL lexer in PGL itself as proof-of-concept
