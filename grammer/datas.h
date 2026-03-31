@@ -35,6 +35,7 @@ class GFunctionContainer {
         auto it = _functions.find(name);
         return it == _functions.end() ? nullptr : it->second.get();
     }
+    const std::map<std::string, PFunction> &items() const { return _functions; }
     virtual ~GFunctionContainer() {}
     void   write_string(std::ostream &ss);
     size_t size() const { return _functions.size(); }
@@ -67,6 +68,14 @@ class GTypeDefContainer {
 class GVarDefContainer : public IGrammer {
   public:
     void addVariable(PVarDef &&var);
+    GVarDef *getVariable(const std::string &name) {
+        return _vars.count(name) ? _vars[ name ].get() : nullptr;
+    }
+    const GVarDef *getVariable(const std::string &name) const {
+        auto it = _vars.find(name);
+        return it == _vars.end() ? nullptr : it->second.get();
+    }
+    const std::vector<std::string> &orderedNames() const { return _ordered_names; }
     void write_string(std::ostream &ss, const std::string &splitStr);
     virtual std::string integrityTest() override { return ""; }
     virtual int         typeId() const override { return 0; }
@@ -82,6 +91,7 @@ class GVarDefContainer : public IGrammer {
     void swap(GVarDefContainer &rhs) {
         _vars.swap(rhs._vars);
         _no_type_vars.swap(rhs._no_type_vars);
+        _ordered_names.swap(rhs._ordered_names);
     }
 
   protected:
@@ -89,6 +99,7 @@ class GVarDefContainer : public IGrammer {
 
   private:
     std::set<std::string> _no_type_vars;
+    std::vector<std::string> _ordered_names;
 };
 
 class GImpl : public IGrammer {
@@ -188,6 +199,7 @@ class GVarDef : public IGrammer {
     void setDetail(const std::string &detail) { _detail = detail; }
     const std::string &getDetail() { return _detail; }
     GType             *getType() { return _type.get(); }
+    const GType       *getType() const { return _type.get(); }
     std::string        integrityTest() override;
     std::string        to_string() override;
 

@@ -10,6 +10,7 @@
 #include <lexer/pipelines.h>
 #include <memory>
 #include <string>
+#include <cstdlib>
 
 namespace pangu {
 namespace driver {
@@ -71,6 +72,20 @@ bool ensureReadable(const std::string &input_path) {
     return false;
 }
 
+std::string moduleNameFromPath(const std::string &input_path) {
+    const std::string::size_type slash_pos = input_path.find_last_of("/\\");
+    const std::string            file_name =
+        slash_pos == std::string::npos ? input_path
+                                       : input_path.substr(slash_pos + 1);
+    const std::string::size_type dot_pos = file_name.find_last_of('.');
+    return dot_pos == std::string::npos ? file_name
+                                        : file_name.substr(0, dot_pos);
+}
+
+bool ensureBuildDir() {
+    return std::system("mkdir -p build") == 0;
+}
+
 std::unique_ptr<grammer::GPackage> parsePackage(const std::string &input_path) {
     std::unique_ptr<grammer::GPackage> package;
     auto packer = [&](auto, auto pro) {
@@ -122,10 +137,24 @@ int compileSource(const std::string &input_path) {
     if (!ensureReadable(input_path)) {
         return -1;
     }
-    std::cerr << "mode 'compile' is planned but not implemented yet. Current "
-                 "LLVM path supports 'emit-ir' and 'run'."
-              << std::endl;
-    return 2;
+    if (!ensureBuildDir()) {
+        std::cerr << "can not create build directory" << std::endl;
+        return -1;
+    }
+    auto package = parsePackage(input_path);
+    if (package == nullptr) {
+        std::cerr << "parse package failed: " << input_path << std::endl;
+        return -1;
+    }
+    const std::string output_path = "build/" + moduleNameFromPath(input_path);
+    std::string       error;
+    if (!llvm_backend::compilePackageToExecutable(*package, input_path,
+                                                  output_path, error)) {
+        std::cerr << "compile failed: " << error << std::endl;
+        return -1;
+    }
+    std::cout << output_path << std::endl;
+    return 0;
 }
 
 } // namespace

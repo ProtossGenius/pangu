@@ -37,6 +37,7 @@ class INameProduct : public pglang::IProduct {
 
   public:
     std::string name() { return _name; }
+    std::string name() const { return _name; }
     void        setName(const std::string &name) { _name = name; }
 
   protected:

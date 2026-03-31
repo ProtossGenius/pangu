@@ -62,6 +62,7 @@ void GVarDefContainer::addVariable(PVarDef &&var) {
     if (_vars.count(var->name())) {
         throw std::runtime_error("existed varaiable : " + var->name());
     }
+    _ordered_names.push_back(var->name());
     if (var->getType()->empty()) {
         _no_type_vars.insert(var->name());
     } else if (!_no_type_vars.empty()) {
@@ -76,12 +77,12 @@ void GVarDefContainer::addVariable(PVarDef &&var) {
 void GVarDefContainer::write_string(std::ostream      &ss,
                                     const std::string &splitStr) {
     bool first = true;
-    for (auto &it : _vars) {
+    for (const auto &name : _ordered_names) {
         if (!first) {
             ss << splitStr;
         }
         first = false;
-        ss << it.second->to_string();
+        ss << _vars.at(name)->to_string();
     }
 }
 
