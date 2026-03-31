@@ -1,0 +1,7 @@
+package main;
+
+import "stdlib/core/not_found" as missing;
+
+func main() {
+    println(1);
+}

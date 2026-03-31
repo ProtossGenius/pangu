@@ -21,6 +21,7 @@ make tests
 ./build/pangu parse test_datas/grammer/func_code.pgl
 ./build/pangu emit-ir test_datas/runtime/add.pgl
 ./build/pangu run test_datas/runtime/add.pgl
+./build/pangu run test_datas/runtime/import_stdlib.pgl
 ./build/pangu compile test_datas/compile/call_func.pgl
 ./build/call_func
 ```
@@ -37,6 +38,11 @@ Bootstrap-oriented PGL standard library files now live under `stdlib/`.
 - `stdlib/prelude.pgl`
 - `stdlib/core/io.pgl`
 - `stdlib/core/math.pgl`
+
+Current import loading supports:
+
+- `import "stdlib/core/math" as math;`
+- relative module paths such as `import "../modules/helper" as helper;`
 
 ## Syntax
 

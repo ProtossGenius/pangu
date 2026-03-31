@@ -2,6 +2,7 @@
 
 #include "grammer/declare.h"
 #include "grammer/enums.h"
+#include "lexer/datas.h"
 #include "pgcodes/datas.h"
 #include "pipeline/datas.h"
 #include "pipeline/pipeline.h"
@@ -137,6 +138,7 @@ class GPackage : public IGrammer {
     GImport *getImport(const std::string &name) {
         return _imports.count(name) ? _imports[ name ].get() : nullptr;
     }
+    const std::map<std::string, PImport> &imports() const { return _imports; }
     GFunction *getFunction(const std::string &name) {
         return functions.getFunction(name);
     }
@@ -159,14 +161,19 @@ class GPackage : public IGrammer {
 class GImport : public IGrammer {
   public:
     int                typeId() const override { return EGrammer::Import; }
-    const std::string &getPackage() { return _package; }
+    const std::string &getPackage() const { return _package; }
     void               setPackage(const std::string &pkg) { _package = pkg; }
     void               setAlias(const std::string &name) { setName(name); }
-    std::string        alias() { return name(); }
+    std::string        alias() const { return name(); }
+    void               setLocation(const lexer::SourceLocation &location) {
+        _location = location;
+    }
+    const lexer::SourceLocation &location() const { return _location; }
     std::string        to_string() override;
 
   protected:
-    std::string _package;
+    std::string           _package;
+    lexer::SourceLocation _location;
 };
 class GType : public IGrammer {
   public:

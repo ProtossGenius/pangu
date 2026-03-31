@@ -1,0 +1,6 @@
+package helper;
+
+func add2(a int) int {
+    b := a + 2;
+    return b;
+}

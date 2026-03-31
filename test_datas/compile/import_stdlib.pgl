@@ -1,0 +1,7 @@
+package main;
+
+import "stdlib/core/math" as math;
+
+func main() {
+    println(math.add1(2));
+}

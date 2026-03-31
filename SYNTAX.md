@@ -318,6 +318,7 @@ Supported by `./build/pangu parse`:
 Supported today by `./build/pangu emit-ir`:
 
 - source parsing through the grammar front-end
+- recursive import loading for `stdlib/...` and relative module paths
 - generation of multiple top-level functions
 - integer parameters and a single integer return value
 - integer variables
@@ -325,6 +326,7 @@ Supported today by `./build/pangu emit-ir`:
 - integer comparison `== != > < >= <=`
 - assignment / define-assignment
 - user-defined function calls
+- imported function calls through `alias.func(...)`
 - `println(<int-expr>)`
 - `if / else if / else`
 - `return`
@@ -333,12 +335,14 @@ Supported today by `./build/pangu emit-ir`:
 
 Supported today by `./build/pangu run`:
 
+- recursive import loading for `stdlib/...` and relative module paths
 - multiple top-level functions
 - integer parameters and a single integer return value
 - integer locals
 - integer arithmetic
 - integer comparisons
 - user-defined function calls
+- imported function calls through `alias.func(...)`
 - `if / else if / else`
 - `println`
 - `return`
@@ -349,21 +353,38 @@ For backend-stable code today, using a temporary variable before `return` is saf
 
 Supported today by `./build/pangu compile`:
 
+- resolve imported modules before lowering
 - emit LLVM IR for the supported runnable subset
 - include integer comparisons and `if / else if / else` lowering in that subset
+- support imported function calls through `alias.func(...)`
 - invoke system clang to produce a native executable
 - place the executable at `build/<source-stem>`
 
 ### Planned but not implemented end-to-end
 
-- semantic analysis and type checking
-- import resolution / module loading
+- full type checking (types are parsed but not verified)
 - structs, enum semantics, and impl semantics in codegen
 - loop lowering
 - switch lowering
 - parser-only interface declarations
 - case expressions used in design files
 - full pipeline runtime semantics
+
+### Semantic analysis
+
+The `sema` module now performs the following checks before LLVM lowering:
+
+- **Function existence:** calls to undefined functions are reported.
+- **Argument count:** mismatch between actual and formal parameter count is reported.
+- **Import alias validity:** `alias.func()` calls with unknown aliases are reported.
+- **Imported function existence:** calling a function that does not exist in the imported module is reported.
+- **Variable definitions:** use of undefined variables (not declared with `:=` or as parameters) is reported.
+
+Errors are printed in the format:
+
+```text
+/path/to/file.pgl: error: in function 'main': undefined function 'foo'
+```
 
 ## Bootstrap assessment
 
@@ -374,35 +395,33 @@ Pangu is **not yet self-hostable**.
 ### Why it is not ready to bootstrap
 
 1. The front-end accepts more syntax than the backend can execute.
-2. `sema/` is still effectively empty, so there is no real type checking, symbol resolution, or method binding.
+2. `sema/` now checks function existence, argument counts, import aliases, and variable definitions, but does not yet perform type checking or method binding.
 3. The backend still executes only a narrow integer-oriented subset, even though integer control flow is now available.
-4. Imports and package linking are not implemented, so standard library files cannot yet participate in real program builds.
+4. Imports and package linking now work for basic function-oriented modules.
 5. Important language features used by the design files are still parser-only or still planned:
    - enum semantics
    - impl body semantics
    - interface declarations
    - richer pipeline definitions
-   - module/import loading
-6. A standard library directory now exists, but it is only a scaffold and is not yet integrated into module loading or compilation.
+6. A standard library directory now exists and participates in basic imports, but it is still a minimal scaffold rather than a bootstrap-ready library surface.
 
 ### What would be required before self-hosting
 
 1. Complete semantic analysis:
-   - symbol tables
-   - package scope
-   - function/type resolution
+   - type checking (argument types, return types)
    - enum/struct/interface checking
+   - method binding and resolution
 
 2. Complete backend:
    - full expression lowering
    - loops and switch lowering
    - aggregate values
-   - package/import linking
+    - richer package/import linking beyond basic function calls
 
 3. Runtime and library support:
    - basic IO
    - string/runtime conventions
-   - import/module loading
+    - richer import/module loading semantics
    - deterministic build entrypoint
 
 4. Front-end completion for design syntax:
@@ -421,6 +440,6 @@ The most realistic near-term milestone is:
 
 1. finish `sema`,
 2. lower loops, switch, and aggregates through LLVM,
-3. connect `stdlib/` to real import/module loading,
+3. extend `stdlib/` and import handling beyond the current basic function-call model,
 4. expand the standard library until the compiler can depend on it,
 5. then reassess bootstrap.

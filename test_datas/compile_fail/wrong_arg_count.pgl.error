@@ -1,0 +1,1 @@
+/home/sream/workspace/pangu/test_datas/compile_fail/wrong_arg_count.pgl: error: in function 'main': function 'add' expects 2 argument(s), got 1

@@ -1,0 +1,1 @@
+/home/sream/workspace/pangu/test_datas/compile_fail/undefined_function.pgl: error: in function 'main': undefined function 'not_exist'

@@ -379,6 +379,7 @@ void PipeImport::accept(IPipelineFactory *factory, PData &&data) {
             factory->onFail("package path shouldn't end with '/'");
         }
         topProduct->setPackage(str);
+        topProduct->setLocation(lex->location());
         topProduct->setStep(int(ImportStep::WAIT_ALAIS));
         return;
     }

@@ -30,6 +30,32 @@ namespace pangu {
 namespace llvm_backend {
 namespace {
 
+std::string sanitizeSymbolComponent(const std::string &text) {
+    std::string sanitized;
+    for (char ch : text) {
+        if ((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+            (ch >= '0' && ch <= '9')) {
+            sanitized.push_back(ch);
+        } else {
+            sanitized.push_back('_');
+        }
+    }
+    return sanitized;
+}
+
+std::string functionKey(const std::string &module_id, const std::string &name) {
+    return module_id + "::" + name;
+}
+
+std::string llvmFunctionName(const std::string &entry_module_id,
+                             const std::string &module_id,
+                             const std::string &name) {
+    if (module_id == entry_module_id && name == "main") {
+        return "main";
+    }
+    return "__pangu_" + sanitizeSymbolComponent(module_id) + "__" + name;
+}
+
 std::string moduleNameFromPath(const std::string &source_path) {
     const std::string::size_type slash_pos = source_path.find_last_of("/\\");
     const std::string            file_name =
@@ -54,19 +80,19 @@ std::string quotePath(const std::string &path) {
 
 class ModuleBuilder {
   public:
-    ModuleBuilder(const grammer::GPackage &package,
-                  const std::string       &source_path)
+    ModuleBuilder(const Program &program, const std::string &source_path)
         : _context(new llvm::LLVMContext())
         , _module(new llvm::Module(moduleNameFromPath(source_path), *_context))
         , _builder(*_context)
-        , _package(package) {
+        , _program(program) {
         _module->setSourceFileName(source_path);
     }
 
     void buildAllFunctions() {
         declareFunctions();
         defineFunctions();
-        if (_declared_functions.count("main") == 0) {
+        if (_declared_functions.count(
+                functionKey(_program.entry_module_id, "main")) == 0) {
             throw std::runtime_error("main function not found");
         }
     }
@@ -79,18 +105,25 @@ class ModuleBuilder {
 
   private:
     void declareFunctions() {
-        for (const auto &it : _package.functions.items()) {
-            const auto *function = it.second.get();
-            auto       *type     = makeFunctionType(*function);
-            _declared_functions[ function->name() ] = llvm::Function::Create(
-                type, llvm::Function::ExternalLinkage, function->name(),
-                *_module);
+        for (const auto &unit : _program.packages) {
+            for (const auto &it : unit.package->functions.items()) {
+                const auto *function = it.second.get();
+                auto       *type     = makeFunctionType(*function);
+                _declared_functions[ functionKey(unit.module_id, function->name()) ] =
+                    llvm::Function::Create(
+                        type, llvm::Function::ExternalLinkage,
+                        llvmFunctionName(_program.entry_module_id, unit.module_id,
+                                         function->name()),
+                        *_module);
+            }
         }
     }
 
     void defineFunctions() {
-        for (const auto &it : _package.functions.items()) {
-            defineFunction(*it.second);
+        for (const auto &unit : _program.packages) {
+            for (const auto &it : unit.package->functions.items()) {
+                defineFunction(unit, *it.second);
+            }
         }
     }
 
@@ -124,8 +157,11 @@ class ModuleBuilder {
         throw std::runtime_error("unsupported variable type: " + type->name());
     }
 
-    void defineFunction(const grammer::GFunction &function) {
-        _current_function = _declared_functions.at(function.name());
+    void defineFunction(const PackageUnit &unit, const grammer::GFunction &function) {
+        _current_module_id   = unit.module_id;
+        _current_imports     = &unit.import_alias_to_module;
+        _current_function =
+            _declared_functions.at(functionKey(unit.module_id, function.name()));
         _variables.clear();
         _terminated = false;
 
@@ -260,6 +296,38 @@ class ModuleBuilder {
         return true;
     }
 
+    bool extractQualifiedCall(const pgcodes::GCode *code, std::string &module_alias,
+                              std::string &callee,
+                              const pgcodes::GCode *&args_code) {
+        if (code == nullptr || code->getValueType() != pgcodes::ValueType::NOT_VALUE ||
+            code->getOper() != ".") {
+            return false;
+        }
+        const auto *left  = code->getLeft();
+        const auto *right = code->getRight();
+        if (left == nullptr || right == nullptr ||
+            left->getValueType() != pgcodes::ValueType::IDENTIFIER) {
+            return false;
+        }
+        module_alias = left->getValue();
+
+        if (right->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            right->getOper() == "(" && right->getLeft() != nullptr &&
+            right->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+            callee    = right->getLeft()->getValue();
+            args_code = right->getRight();
+            return true;
+        }
+
+        if (right->getValueType() == pgcodes::ValueType::IDENTIFIER &&
+            isSuffixCallNode(right->getRight())) {
+            callee    = right->getValue();
+            args_code = right->getRight()->getRight();
+            return true;
+        }
+        return false;
+    }
+
     bool containsReturnPrefix(const pgcodes::GCode *code) {
         if (code == nullptr) {
             return false;
@@ -301,7 +369,7 @@ class ModuleBuilder {
             std::string          callee;
             const pgcodes::GCode *args_code = nullptr;
             if (extractSuffixCall(code, callee, args_code)) {
-                return emitCall(callee, args_code);
+                return emitCall(resolveCurrentFunction(callee), callee, args_code);
             }
             return emitValue(code);
         }
@@ -332,6 +400,14 @@ class ModuleBuilder {
         }
         if (oper == "(") {
             return emitParenOrCall(code);
+        }
+        if (oper == ".") {
+            std::string          module_alias;
+            std::string          callee;
+            const pgcodes::GCode *args_code = nullptr;
+            if (extractQualifiedCall(code, module_alias, callee, args_code)) {
+                return emitQualifiedCall(module_alias, callee, args_code);
+            }
         }
         if (oper == "{") {
             emitStatement(code);
@@ -495,7 +571,31 @@ class ModuleBuilder {
         return args;
     }
 
-    llvm::Value *emitCall(const std::string &callee,
+    llvm::Function *resolveCurrentFunction(const std::string &callee) {
+        const std::string key = functionKey(_current_module_id, callee);
+        auto              it  = _declared_functions.find(key);
+        if (it == _declared_functions.end()) {
+            return nullptr;
+        }
+        return it->second;
+    }
+
+    llvm::Function *resolveImportedFunction(const std::string &module_alias,
+                                            const std::string &callee) {
+        if (_current_imports == nullptr || _current_imports->count(module_alias) == 0) {
+            return nullptr;
+        }
+        const std::string key =
+            functionKey(_current_imports->at(module_alias), callee);
+        auto it = _declared_functions.find(key);
+        if (it == _declared_functions.end()) {
+            return nullptr;
+        }
+        return it->second;
+    }
+
+    llvm::Value *emitCall(llvm::Function *callee_function,
+                          const std::string &callee,
                           const pgcodes::GCode *args_code) {
         if (callee == "println") {
             auto args = emitCallArgs(args_code);
@@ -516,12 +616,23 @@ class ModuleBuilder {
             _terminated = true;
             return value;
         }
-        if (_declared_functions.count(callee) == 0) {
+        if (callee_function == nullptr) {
             throw std::runtime_error("unsupported function call: " + callee);
         }
         auto args = emitCallArgs(args_code);
-        return _builder.CreateCall(_declared_functions.at(callee), args,
-                                   callee + ".call");
+        return _builder.CreateCall(callee_function, args,
+                                    callee + ".call");
+    }
+
+    llvm::Value *emitQualifiedCall(const std::string &module_alias,
+                                   const std::string &callee,
+                                   const pgcodes::GCode *args_code) {
+        auto *callee_function = resolveImportedFunction(module_alias, callee);
+        if (callee_function == nullptr) {
+            throw std::runtime_error("unsupported imported function call: " +
+                                     module_alias + "." + callee);
+        }
+        return emitCall(callee_function, module_alias + "." + callee, args_code);
     }
 
     llvm::Value *emitParenOrCall(const pgcodes::GCode *code) {
@@ -530,7 +641,8 @@ class ModuleBuilder {
             throw std::runtime_error("call expression misses callee");
         }
         if (left->getValueType() == pgcodes::ValueType::IDENTIFIER) {
-            return emitCall(left->getValue(), code->getRight());
+            return emitCall(resolveCurrentFunction(left->getValue()),
+                            left->getValue(), code->getRight());
         }
         if (left->getValueType() == pgcodes::ValueType::NOT_VALUE &&
             left->getOper() == ")") {
@@ -561,11 +673,13 @@ class ModuleBuilder {
     std::unique_ptr<llvm::LLVMContext> _context;
     std::unique_ptr<llvm::Module>      _module;
     llvm::IRBuilder<>                  _builder;
-    const grammer::GPackage           &_package;
+    const Program                     &_program;
     llvm::Function                    *_current_function = nullptr;
     llvm::FunctionCallee               _printf;
     std::map<std::string, llvm::Function *>    _declared_functions;
     std::map<std::string, llvm::AllocaInst *>  _variables;
+    std::string                                _current_module_id;
+    const std::map<std::string, std::string>  *_current_imports = nullptr;
     bool                                      _terminated = false;
 };
 
@@ -576,13 +690,13 @@ std::string printModule(llvm::Module &module) {
     return ir_text;
 }
 
-bool buildPackageModule(const grammer::GPackage &package,
+bool buildProgramModule(const Program &program,
                         const std::string       &source_path,
                         std::unique_ptr<llvm::LLVMContext> &context,
                         std::unique_ptr<llvm::Module>      &module,
                         std::string                        &error) {
     try {
-        ModuleBuilder builder(package, source_path);
+        ModuleBuilder builder(program, source_path);
         builder.buildAllFunctions();
         context = builder.releaseContext();
         module  = builder.releaseModule();
@@ -613,19 +727,19 @@ std::string emitModuleIR(const std::string &source_path) {
     return printModule(module);
 }
 
-bool emitPackageIR(const grammer::GPackage &package,
+bool emitProgramIR(const Program &program,
                    const std::string       &source_path, std::string &ir_text,
                    std::string &error) {
     std::unique_ptr<llvm::LLVMContext> context;
     std::unique_ptr<llvm::Module>      module;
-    if (!buildPackageModule(package, source_path, context, module, error)) {
+    if (!buildProgramModule(program, source_path, context, module, error)) {
         return false;
     }
     ir_text = printModule(*module);
     return true;
 }
 
-bool runPackageMain(const grammer::GPackage &package,
+bool runProgramMain(const Program &program,
                     const std::string      &source_path, int &exit_code,
                     std::string &error) {
     llvm::InitializeNativeTarget();
@@ -634,7 +748,7 @@ bool runPackageMain(const grammer::GPackage &package,
 
     std::unique_ptr<llvm::LLVMContext> context;
     std::unique_ptr<llvm::Module>      module;
-    if (!buildPackageModule(package, source_path, context, module, error)) {
+    if (!buildProgramModule(program, source_path, context, module, error)) {
         return false;
     }
 
@@ -673,12 +787,12 @@ bool runPackageMain(const grammer::GPackage &package,
     return true;
 }
 
-bool compilePackageToExecutable(const grammer::GPackage &package,
+bool compileProgramToExecutable(const Program            &program,
                                 const std::string      &source_path,
                                 const std::string      &output_path,
                                 std::string            &error) {
     std::string ir_text;
-    if (!emitPackageIR(package, source_path, ir_text, error)) {
+    if (!emitProgramIR(program, source_path, ir_text, error)) {
         return false;
     }
 

@@ -1,0 +1,7 @@
+package main;
+
+import "../modules/helper" as helper;
+
+func main() {
+    println(helper.add2(3));
+}

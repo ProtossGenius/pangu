@@ -1,0 +1,3 @@
+/home/sream/workspace/pangu/test_datas/compile_fail/missing_import.pgl:3:8: error: can not resolve import 'stdlib/core/not_found'
+import "stdlib/core/not_found" as missing;
+       ^
