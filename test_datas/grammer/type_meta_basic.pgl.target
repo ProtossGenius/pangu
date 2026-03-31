@@ -1,0 +1,10 @@
+package type_meta_demo
+import list(0)
+struct list (0):
+function list:(0)
+type func list:(1)
+type PipeSelf pipeline([(var) i type(In) ])[(var) o type(Out) ] {body_tokens=25}
+type def list:(1)
+type Reader interface {body_tokens=13}
+variable list:(0)
+

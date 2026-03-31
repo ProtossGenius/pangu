@@ -109,6 +109,9 @@ void IPipelineFactory::status(std::ostream &ss) {
     ss << "packer_stack.size = " << _packer_stack.size() << endl;
 }
 IPipelineFactory::~IPipelineFactory() {
+    if (std::uncaught_exceptions() > 0) {
+        return;
+    }
     if (!_pipeline_stack.empty()) {
         std::cerr << "error: " << name() << " _pipeline_stack not empty."
                   << std::endl;

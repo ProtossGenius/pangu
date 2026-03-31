@@ -655,6 +655,10 @@ void PipeTypeFunc::accept(IPipelineFactory *factory, PData &&data) {
             (makeSpace("\n") == *lex)) {
             factory->packProduct();
         }
+        if (topProduct->getStep() == int(FuncDefStep::READ_BODY_HEADER) &&
+            (makeSpace("\n") == *lex) && topProduct->getDeclKeyword() == "func") {
+            factory->packProduct();
+        }
         return;
     }
     switch (topProduct->getStep()) {
@@ -702,6 +706,11 @@ void PipeTypeFunc::accept(IPipelineFactory *factory, PData &&data) {
         return;
     }
     case int(FuncDefStep::READ_BODY_HEADER): {
+        if (topProduct->getDeclKeyword() == "func" && makeSymbol("{") != *lex) {
+            factory->undealData(std::move(data));
+            factory->packProduct();
+            return;
+        }
         if (makeSymbol(";") == *lex) {
             factory->packProduct();
             return;

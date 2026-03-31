@@ -148,14 +148,14 @@ type LexType enum {
 
 ### Function type and pipeline type declaration
 
-Implemented as declaration syntax.
+Implemented as declaration syntax, and `type ... pipeline` now also has a parser-only body form.
 
 ```ebnf
 type-func-decl =
   "type" identifier "func" param-list [ result-list ] ";" ;
 
 type-pipeline-decl =
-  "type" identifier "pipeline" param-list [ result-list ] ";" ;
+  "type" identifier "pipeline" param-list [ result-list ] ( ";" | raw-brace-block ) ;
 ```
 
 Examples:
@@ -163,11 +163,29 @@ Examples:
 ```pgl
 type TestFunc1 func (a int, b int, c string) int ;
 type PLexer pipeline(c char)(o Lex);
+type PipeSelf pipeline(i In)(o Out) { ... }
 ```
 
 Note:
 
-- `type X pipeline (...) (...) { ... }` appears in design comments, but is still `Planned`.
+- `type X func (...) ... { ... }` is still rejected with a readable parse error.
+
+### Interface type
+
+Implemented as parser-only body capture.
+
+```ebnf
+type-interface-decl =
+  "type" identifier "interface" raw-brace-block ;
+```
+
+Example:
+
+```pgl
+type Reader interface {
+  Accept(test Test) (bool, error);
+}
+```
 
 ### Top-level function and top-level pipeline
 
@@ -250,6 +268,9 @@ The current code-tree parser supports a broad expression syntax used by existing
 - index form: `a[i]`
 - ternary form in samples: `cond ? a : b`
 - `if / else if / else`
+- `while`
+- `for`
+- `switch(expr) { ... }`
 - `return`
 - brace blocks
 
@@ -261,6 +282,9 @@ b = 3 * 4 * (1 + 5);
 println(a + b);
 if (a == 1) return;
 if (a > 1) { return 2; } else { return 3; }
+while (a < 3) { a = a + 1; }
+for (i := 0; i < 2; ++i) { println(i); }
+switch (a) {}
 ```
 
 ## Execution support matrix
@@ -274,11 +298,12 @@ Supported by `./build/pangu parse`:
 - `type ... struct`
 - `type ... enum`
 - `type ... func`
-- `type ... pipeline` declaration
+- `type ... pipeline` declaration and parser-only body form
+- `type ... interface`
 - top-level `func`
 - top-level `pipeline`
 - top-level `impl`
-- arithmetic / comparison / assignment / call / `if` / `else if` / `else` / `return` code trees
+- arithmetic / comparison / assignment / call / `if` / `else if` / `else` / `while` / `for` / `switch` / `return` code trees
 
 ### LLVM IR emission
 
@@ -328,7 +353,7 @@ Supported today by `./build/pangu compile`:
 - structs, enum semantics, and impl semantics in codegen
 - loop lowering
 - switch lowering
-- interface declarations
+- parser-only interface declarations
 - case expressions used in design files
 - full pipeline runtime semantics
 
