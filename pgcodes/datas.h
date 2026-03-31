@@ -84,6 +84,11 @@ class GCode : public IGrammer {
         const static std::set<std::string> VALUE_SET{"(", "[", "++", "--"};
         return _value_type != ValueType::NOT_VALUE || VALUE_SET.count(_value);
     }
+    bool isPlaceholder() const {
+        return _value.empty() && _value_type == ValueType::NOT_VALUE &&
+               _left.get() == nullptr && _right.get() != nullptr;
+    }
+    void adoptRightAsSelf();
 
   private:
     std::string _value;

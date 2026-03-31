@@ -61,14 +61,16 @@ void PipeNormal::on_START(IPipelineFactory *factory, PData &&data) {
         topProduct->setStep(int(Steps::PRE_VIEW_NEXT));
         factory->choicePipeline(ECodeType::Normal);
         factory->pushProduct(PProduct(new GCode()), pack_as_return);
-    } else {
-        pgassert_msg(!lexer::is_keywords(lex),
-                     "PipeNormal should not have keyword, keyword = " + str);
-    }
-    if (lexer::makeIdentifier("return") == *lex) {
         return;
-    } else if (lexer::isIdentifier(lex) || lexer::isNumber(lex) ||
-               lexer::isString(lex)) {
+    }
+    if (lexer::is_keywords(lex)) {
+        factory->undealData(std::move(data));
+        factory->waitChoisePipeline();
+        topProduct->setStep(int(Steps::PRE_VIEW_NEXT));
+        return;
+    }
+    if (lexer::isIdentifier(lex) || lexer::isNumber(lex) ||
+        lexer::isString(lex)) {
         topProduct->setValue(lex->get(), getValueType(lex));
         topProduct->setStep(int(Steps::PRE_VIEW_NEXT));
     } else if (lexer::isSymbol(lex)) {
@@ -131,6 +133,15 @@ void PipeNormal::on_PRE_VIEW_NEXT(IPipelineFactory *factory, PData &&data) {
     GET_TOP(factory, GCode);
     // ignore space.
     if (lexer::ELexPipeline::Space == type) {
+        return;
+    }
+    if (topProduct->isPlaceholder()) {
+        topProduct->adoptRightAsSelf();
+    }
+    if (topProduct->getValueType() == ValueType::NOT_VALUE &&
+        topProduct->getOper() == "if") {
+        factory->undealData(std::move(data));
+        factory->packProduct();
         return;
     }
     pgassert_msg(isSymbol(lex), lex->to_string());

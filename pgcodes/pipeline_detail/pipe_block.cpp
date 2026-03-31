@@ -40,7 +40,6 @@ void PipeBlock::on_START(IPipelineFactory *factory, PData &&data) {
         } else if (lexer::makeSymbol("[") == *lex) {
             topProduct->setLeft(make_symbol_code("]"));
         }
-
         factory->choicePipeline(ECodeType::Normal);
         return;
     }

@@ -1,0 +1,17 @@
+package main;
+
+func choose(a int) int {
+    if (a == 1) {
+        return 10;
+    } else if (a > 1) {
+        return 20;
+    } else {
+        return 30;
+    }
+}
+
+func main() {
+    println(choose(0));
+    println(choose(1));
+    println(choose(2));
+}

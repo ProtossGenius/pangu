@@ -243,6 +243,7 @@ The current code-tree parser supports a broad expression syntax used by existing
 
 - assignment: `=`, `:=`
 - arithmetic: `+`, `-`, `*`, `/`
+- integer comparison: `==`, `!=`, `>`, `<`, `>=`, `<=`
 - precedence and parentheses
 - prefix/postfix `++`, `--`
 - function call form: `f(x, y)`
@@ -259,6 +260,7 @@ a := 1;
 b = 3 * 4 * (1 + 5);
 println(a + b);
 if (a == 1) return;
+if (a > 1) { return 2; } else { return 3; }
 ```
 
 ## Execution support matrix
@@ -276,7 +278,7 @@ Supported by `./build/pangu parse`:
 - top-level `func`
 - top-level `pipeline`
 - top-level `impl`
-- arithmetic / assignment / call / `if` / `return` code trees
+- arithmetic / comparison / assignment / call / `if` / `else if` / `else` / `return` code trees
 
 ### LLVM IR emission
 
@@ -287,9 +289,11 @@ Supported today by `./build/pangu emit-ir`:
 - integer parameters and a single integer return value
 - integer variables
 - integer arithmetic `+ - * /`
+- integer comparison `== != > < >= <=`
 - assignment / define-assignment
 - user-defined function calls
 - `println(<int-expr>)`
+- `if / else if / else`
 - `return`
 
 ### Direct-run support
@@ -300,7 +304,9 @@ Supported today by `./build/pangu run`:
 - integer parameters and a single integer return value
 - integer locals
 - integer arithmetic
+- integer comparisons
 - user-defined function calls
+- `if / else if / else`
 - `println`
 - `return`
 
@@ -311,6 +317,7 @@ For backend-stable code today, using a temporary variable before `return` is saf
 Supported today by `./build/pangu compile`:
 
 - emit LLVM IR for the supported runnable subset
+- include integer comparisons and `if / else if / else` lowering in that subset
 - invoke system clang to produce a native executable
 - place the executable at `build/<source-stem>`
 
@@ -335,7 +342,7 @@ Pangu is **not yet self-hostable**.
 
 1. The front-end accepts more syntax than the backend can execute.
 2. `sema/` is still effectively empty, so there is no real type checking, symbol resolution, or method binding.
-3. The backend still executes only a narrow integer-oriented subset.
+3. The backend still executes only a narrow integer-oriented subset, even though integer control flow is now available.
 4. Imports and package linking are not implemented, so standard library files cannot yet participate in real program builds.
 5. Important language features used by the design files are still parser-only or still planned:
    - enum semantics
@@ -355,7 +362,7 @@ Pangu is **not yet self-hostable**.
 
 2. Complete backend:
    - full expression lowering
-   - control flow
+   - loops and switch lowering
    - aggregate values
    - package/import linking
 
@@ -380,7 +387,7 @@ Pangu is **not yet self-hostable**.
 The most realistic near-term milestone is:
 
 1. finish `sema`,
-2. lower control flow and aggregates through LLVM,
+2. lower loops, switch, and aggregates through LLVM,
 3. connect `stdlib/` to real import/module loading,
 4. expand the standard library until the compiler can depend on it,
 5. then reassess bootstrap.

@@ -167,7 +167,79 @@ class ModuleBuilder {
             emitStatement(code->getLeft());
             return emitStatement(code->getRight());
         }
+        if (oper == "if") {
+            return emitIfStatement(code);
+        }
         return emitExpression(code);
+    }
+
+    bool isComparisonOperator(const std::string &oper) const {
+        return oper == "==" || oper == "!=" || oper == ">" || oper == "<" ||
+               oper == ">=" || oper == "<=";
+    }
+
+    llvm::Value *emitConditionValue(const pgcodes::GCode *code) {
+        auto *value = emitExpression(code);
+        if (value->getType()->isIntegerTy(1)) {
+            return value;
+        }
+        if (!value->getType()->isIntegerTy()) {
+            throw std::runtime_error("if condition must be integer-compatible");
+        }
+        return _builder.CreateICmpNE(
+            value, llvm::ConstantInt::get(value->getType(), 0), "ifcond");
+    }
+
+    llvm::Value *emitIfStatement(const pgcodes::GCode *code) {
+        const auto *branch = code->getRight();
+        if (branch == nullptr ||
+            branch->getValueType() != pgcodes::ValueType::NOT_VALUE ||
+            branch->getOper() != ":") {
+            throw std::runtime_error("if node misses branch payload");
+        }
+
+        auto *condition = emitConditionValue(code->getLeft());
+        auto *function  = _current_function;
+
+        auto *then_block =
+            llvm::BasicBlock::Create(*_context, "if.then", function);
+        auto *else_block = llvm::BasicBlock::Create(*_context, "if.else");
+        auto *merge_block = llvm::BasicBlock::Create(*_context, "if.end");
+        const bool has_else = branch->getRight() != nullptr;
+
+        _builder.CreateCondBr(condition, then_block,
+                              has_else ? else_block : merge_block);
+
+        _builder.SetInsertPoint(then_block);
+        _terminated = false;
+        emitStatement(branch->getLeft());
+        const bool then_terminated =
+            _terminated || _builder.GetInsertBlock()->getTerminator() != nullptr;
+        if (!then_terminated) {
+            _builder.CreateBr(merge_block);
+        }
+
+        bool else_terminated = false;
+        if (has_else) {
+            function->insert(function->end(), else_block);
+            _builder.SetInsertPoint(else_block);
+            _terminated = false;
+            emitStatement(branch->getRight());
+            else_terminated = _terminated ||
+                              _builder.GetInsertBlock()->getTerminator() != nullptr;
+            if (!else_terminated) {
+                _builder.CreateBr(merge_block);
+            }
+        }
+
+        if (!then_terminated || !has_else || !else_terminated) {
+            function->insert(function->end(), merge_block);
+            _builder.SetInsertPoint(merge_block);
+            _terminated = false;
+        } else {
+            _terminated = true;
+        }
+        return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
     }
 
     bool isSuffixCallNode(const pgcodes::GCode *code) {
@@ -255,6 +327,9 @@ class ModuleBuilder {
                                        emitExpression(code->getRight()),
                                        "divtmp");
         }
+        if (isComparisonOperator(oper)) {
+            return emitComparison(code, oper);
+        }
         if (oper == "(") {
             return emitParenOrCall(code);
         }
@@ -295,6 +370,9 @@ class ModuleBuilder {
                 emitReturnExpressionTree(code->getLeft()),
                 emitReturnExpressionTree(code->getRight()), "retdiv");
         }
+        if (isComparisonOperator(oper)) {
+            return emitComparison(code, oper);
+        }
         if (oper == "(") {
             if (code->getLeft() != nullptr &&
                 code->getLeft()->getValueType() == pgcodes::ValueType::NOT_VALUE &&
@@ -326,6 +404,31 @@ class ModuleBuilder {
         case pgcodes::ValueType::NOT_VALUE: break;
         }
         throw std::runtime_error("unexpected empty value");
+    }
+
+    llvm::Value *emitComparison(const pgcodes::GCode *code,
+                                const std::string   &oper) {
+        auto *left  = emitExpression(code->getLeft());
+        auto *right = emitExpression(code->getRight());
+        llvm::Value *cmp = nullptr;
+
+        if (oper == "==") {
+            cmp = _builder.CreateICmpEQ(left, right, "cmptmp");
+        } else if (oper == "!=") {
+            cmp = _builder.CreateICmpNE(left, right, "cmptmp");
+        } else if (oper == ">") {
+            cmp = _builder.CreateICmpSGT(left, right, "cmptmp");
+        } else if (oper == "<") {
+            cmp = _builder.CreateICmpSLT(left, right, "cmptmp");
+        } else if (oper == ">=") {
+            cmp = _builder.CreateICmpSGE(left, right, "cmptmp");
+        } else if (oper == "<=") {
+            cmp = _builder.CreateICmpSLE(left, right, "cmptmp");
+        } else {
+            throw std::runtime_error("unsupported comparison operator: " + oper);
+        }
+
+        return _builder.CreateZExt(cmp, _builder.getInt32Ty(), "booltmp");
     }
 
     llvm::Value *emitAssignment(const pgcodes::GCode *code, bool define_new) {

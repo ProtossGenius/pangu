@@ -17,5 +17,15 @@ void GCode::write_string(std::ostream &os) {
     }
     os << ")";
 }
+
+void GCode::adoptRightAsSelf() {
+    pgassert(isPlaceholder());
+    GCode *right = _right.release();
+    _value       = right->_value;
+    _value_type  = right->_value_type;
+    _left        = std::move(right->_left);
+    _right       = std::move(right->_right);
+    delete right;
+}
 } // namespace pgcodes
 } // namespace pangu
