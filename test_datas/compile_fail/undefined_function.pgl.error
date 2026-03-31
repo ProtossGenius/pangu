@@ -1,1 +1,3 @@
-/home/sream/workspace/pangu/test_datas/compile_fail/undefined_function.pgl: error: in function 'main': undefined function 'not_exist'
+/home/sream/workspace/pangu/test_datas/compile_fail/undefined_function.pgl:4:13: error: undefined function 'not_exist'
+    println(not_exist(1));
+            ^~~~~~~~~

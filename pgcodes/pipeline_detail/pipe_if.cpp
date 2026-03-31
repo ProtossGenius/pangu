@@ -28,6 +28,7 @@ void PipeIf::on_START(IPipelineFactory *factory, PData &&data) {
         factory->onFail("in step START, should get identifier 'if'");
     }
     topProduct->setOper("if");
+    topProduct->setLocation(lex->location());
     topProduct->setStep(int(Steps::WAIT_CONDITION));
     return;
 }

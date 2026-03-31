@@ -1,2 +1,6 @@
-/home/sream/workspace/pangu/test_datas/compile_fail/undefined_variable.pgl: error: in function 'main': undefined variable 'a'
-/home/sream/workspace/pangu/test_datas/compile_fail/undefined_variable.pgl: error: in function 'main': undefined variable 'a'
+/home/sream/workspace/pangu/test_datas/compile_fail/undefined_variable.pgl:4:5: error: undefined variable 'a'
+    a = 1;
+    ^
+/home/sream/workspace/pangu/test_datas/compile_fail/undefined_variable.pgl:5:13: error: undefined variable 'a'
+    println(a);
+            ^

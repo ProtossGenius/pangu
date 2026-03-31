@@ -32,6 +32,7 @@ void PipeBlock::on_START(IPipelineFactory *factory, PData &&data) {
     if (lexer::makeSymbol("{") == *lex || lexer::makeSymbol("(") == *lex ||
         lexer::makeSymbol("[") == *lex) {
         topProduct->setOper(str);
+        topProduct->setLocation(lex->location());
         topProduct->setStep(int(Steps::WAIT_FINISH));
         if (lexer::makeSymbol("{") == *lex) {
             topProduct->setLeft(make_symbol_code("}"));

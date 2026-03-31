@@ -59,6 +59,7 @@ void PipeNormal::on_START(IPipelineFactory *factory, PData &&data) {
     }
     if (lexer::makeIdentifier("return") == *lex) {
         topProduct->setStep(int(Steps::PRE_VIEW_NEXT));
+        topProduct->setLocation(lex->location());
         factory->choicePipeline(ECodeType::Normal);
         factory->pushProduct(PProduct(new GCode()), pack_as_return);
         return;
@@ -72,9 +73,11 @@ void PipeNormal::on_START(IPipelineFactory *factory, PData &&data) {
     if (lexer::isIdentifier(lex) || lexer::isNumber(lex) ||
         lexer::isString(lex)) {
         topProduct->setValue(lex->get(), getValueType(lex));
+        topProduct->setLocation(lex->location());
         topProduct->setStep(int(Steps::PRE_VIEW_NEXT));
     } else if (lexer::isSymbol(lex)) {
         topProduct->setOper(lex->get());
+        topProduct->setLocation(lex->location());
         topProduct->setStep(int(Steps::WAIT_RIGHT));
     } else {
         factory->onFail("except identifier or symbol , but get " +
@@ -93,6 +96,7 @@ void PipeNormal::on_WAIT_MID_OPER(IPipelineFactory *factory, PData &&data) {
         factory->onFail("except symbol, but get : " + lex->to_string());
     }
     topProduct->setOper(lex->get());
+    topProduct->setLocation(lex->location());
     if (str == "++" || str == "--") {
         factory->packProduct();
         return;
@@ -118,6 +122,7 @@ void PipeNormal::on_WAIT_RIGHT(IPipelineFactory *factory, PData &&data) {
         lexer::isString(lex)) {
         auto code = new GCode();
         code->setValue(lex->get(), getValueType(lex));
+        code->setLocation(lex->location());
         topProduct->setRight(code);
         topProduct->setStep(int(Steps::PRE_VIEW_NEXT));
         return;
@@ -158,6 +163,7 @@ void PipeNormal::on_PRE_VIEW_NEXT(IPipelineFactory *factory, PData &&data) {
         }
         GCode *newTop = new GCode();
         newTop->setOper(str);
+        newTop->setLocation(lex->location());
         newTop->setStep(int(Steps::WAIT_RIGHT));
         auto oldTop = factory->swapTopProduct(newTop);
         newTop->setLeft(static_cast<GCode *>(oldTop.release()));
@@ -166,6 +172,7 @@ void PipeNormal::on_PRE_VIEW_NEXT(IPipelineFactory *factory, PData &&data) {
 
     auto code = new GCode();
     code->setOper(str);
+    code->setLocation(lex->location());
     code->setLeft(topProduct->releaseRight());
     if (str == "++" || str == "--") {
         topProduct->setRight(code);

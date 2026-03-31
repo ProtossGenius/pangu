@@ -1,1 +1,3 @@
-/home/sream/workspace/pangu/test_datas/compile_fail/bad_import_alias.pgl: error: in function 'main': undefined import alias 'bad_alias'
+/home/sream/workspace/pangu/test_datas/compile_fail/bad_import_alias.pgl:4:13: error: undefined import alias 'bad_alias'
+    println(bad_alias.func1(1));
+            ^~~~~~~~~

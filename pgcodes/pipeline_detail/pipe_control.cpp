@@ -66,6 +66,7 @@ void PipeWhile::on_START(IPipelineFactory *factory, PData &&data) {
         factory->onFail("in step START, should get identifier 'while'");
     }
     topProduct->setOper("while");
+    topProduct->setLocation(lex->location());
     topProduct->setStep(int(Steps::WAIT_CONDITION));
 }
 void PipeWhile::on_WAIT_CONDITION(IPipelineFactory *factory, PData &&data) {
@@ -94,6 +95,7 @@ void PipeFor::on_START(IPipelineFactory *factory, PData &&data) {
         factory->onFail("in step START, should get identifier 'for'");
     }
     topProduct->setOper("for");
+    topProduct->setLocation(lex->location());
     topProduct->setStep(int(Steps::WAIT_HEADER));
 }
 void PipeFor::on_WAIT_HEADER(IPipelineFactory *factory, PData &&data) {
@@ -122,6 +124,7 @@ void PipeSwitch::on_START(IPipelineFactory *factory, PData &&data) {
         factory->onFail("in step START, should get identifier 'switch'");
     }
     topProduct->setOper("switch");
+    topProduct->setLocation(lex->location());
     topProduct->setStep(int(Steps::WAIT_CONDITION));
 }
 void PipeSwitch::on_WAIT_CONDITION(IPipelineFactory *factory, PData &&data) {

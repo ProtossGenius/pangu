@@ -1,4 +1,5 @@
 #pragma once
+#include "lexer/datas.h"
 #include "pipeline/assert.h"
 #include "pipeline/datas.h"
 #include "pipeline/pipeline.h"
@@ -35,6 +36,14 @@ class GCode : public IGrammer {
         _value = val;
         return this;
     }
+
+    GCode *setLocation(const lexer::SourceLocation &loc) {
+        if (!_location.valid()) {
+            _location = loc;
+        }
+        return this;
+    }
+    const lexer::SourceLocation &location() const { return _location; }
 
     GCode *setLeft(GCode *left) {
         pgassert_msg(_left.get() == nullptr,
@@ -95,6 +104,7 @@ class GCode : public IGrammer {
     ValueType   _value_type = ValueType::NOT_VALUE;
     PCode       _left;
     PCode       _right;
+    lexer::SourceLocation _location;
 };
 } // namespace pgcodes
 } // namespace pangu

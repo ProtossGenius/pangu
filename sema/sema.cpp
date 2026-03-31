@@ -171,13 +171,13 @@ class ProgramChecker {
             const std::string &name = code->getValue();
             // Check for suffix call: `name(args...)`
             if (isSuffixCallNode(code->getRight())) {
-                checkLocalCall(name, code->getRight()->getRight());
+                checkLocalCall(code, name, code->getRight()->getRight());
             } else if (code->getRight() != nullptr) {
                 // Not a call, recurse on right (might be a chain).
-                checkIdentifierRef(name);
+                checkIdentifierRef(code, name);
                 checkExpression(code->getRight());
             } else {
-                checkIdentifierRef(name);
+                checkIdentifierRef(code, name);
             }
             return;
         }
@@ -204,7 +204,7 @@ class ProgramChecker {
             // Assignment: left must be already defined.
             if (code->getLeft() != nullptr &&
                 code->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER) {
-                checkIdentifierRef(code->getLeft()->getValue());
+                checkIdentifierRef(code->getLeft(), code->getLeft()->getValue());
             }
             checkExpression(code->getRight());
             return;
@@ -213,7 +213,8 @@ class ProgramChecker {
             // Parenthesized expr or call.
             if (code->getLeft() != nullptr &&
                 code->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER) {
-                checkLocalCall(code->getLeft()->getValue(), code->getRight());
+                checkLocalCall(code->getLeft(), code->getLeft()->getValue(),
+                               code->getRight());
             } else {
                 checkExpression(code->getLeft());
                 checkExpression(code->getRight());
@@ -240,7 +241,8 @@ class ProgramChecker {
         }
     }
 
-    void checkLocalCall(const std::string &name,
+    void checkLocalCall(const pgcodes::GCode *node,
+                        const std::string &name,
                         const pgcodes::GCode *args_code) {
         // `return` is handled as a special prefix, not a real call.
         if (name == "return") {
@@ -248,14 +250,16 @@ class ProgramChecker {
             return;
         }
 
+        const auto &loc = node->location();
+        size_t name_width = name.size();
         size_t actual_args = countArgs(args_code);
 
         if (isBuiltin(name)) {
             size_t expected = builtinParamCount(name);
             if (actual_args != expected) {
-                emitError("builtin '" + name + "' expects " +
+                emitError(loc, "builtin '" + name + "' expects " +
                           std::to_string(expected) + " argument(s), got " +
-                          std::to_string(actual_args));
+                          std::to_string(actual_args), name_width);
             }
             checkCallArgs(args_code);
             return;
@@ -266,14 +270,15 @@ class ProgramChecker {
         if (mod_it == _module_functions.end()) return;
         auto func_it = mod_it->second.find(name);
         if (func_it == mod_it->second.end()) {
-            emitError("undefined function '" + name + "'");
+            emitError(loc, "undefined function '" + name + "'", name_width);
             checkCallArgs(args_code);
             return;
         }
         if (actual_args != func_it->second.param_count) {
-            emitError("function '" + name + "' expects " +
+            emitError(loc, "function '" + name + "' expects " +
                       std::to_string(func_it->second.param_count) +
-                      " argument(s), got " + std::to_string(actual_args));
+                      " argument(s), got " + std::to_string(actual_args),
+                      name_width);
         }
         checkCallArgs(args_code);
     }
@@ -315,15 +320,19 @@ class ProgramChecker {
             return;
         }
 
-        checkImportedCall(alias, callee, args_code);
+        checkImportedCall(left, alias, callee, args_code);
     }
 
-    void checkImportedCall(const std::string &alias,
+    void checkImportedCall(const pgcodes::GCode *alias_node,
+                           const std::string &alias,
                            const std::string &callee,
                            const pgcodes::GCode *args_code) {
+        const auto &loc = alias_node->location();
+        // Highlight width covers "alias.callee"
+        size_t hw = alias.size() + 1 + callee.size();
         if (_current_imports == nullptr ||
             _current_imports->count(alias) == 0) {
-            emitError("undefined import alias '" + alias + "'");
+            emitError(loc, "undefined import alias '" + alias + "'", alias.size());
             checkCallArgs(args_code);
             return;
         }
@@ -331,29 +340,30 @@ class ProgramChecker {
         const std::string &target_module = _current_imports->at(alias);
         auto mod_it = _module_functions.find(target_module);
         if (mod_it == _module_functions.end()) {
-            emitError("imported module for alias '" + alias +
-                      "' has no function table");
+            emitError(loc, "imported module for alias '" + alias +
+                      "' has no function table", alias.size());
             checkCallArgs(args_code);
             return;
         }
         auto func_it = mod_it->second.find(callee);
         if (func_it == mod_it->second.end()) {
-            emitError("undefined function '" + callee +
-                      "' in imported module '" + alias + "'");
+            emitError(loc, "undefined function '" + callee +
+                      "' in imported module '" + alias + "'", hw);
             checkCallArgs(args_code);
             return;
         }
 
         size_t actual_args = countArgs(args_code);
         if (actual_args != func_it->second.param_count) {
-            emitError("function '" + alias + "." + callee + "' expects " +
+            emitError(loc, "function '" + alias + "." + callee + "' expects " +
                       std::to_string(func_it->second.param_count) +
-                      " argument(s), got " + std::to_string(actual_args));
+                      " argument(s), got " + std::to_string(actual_args), hw);
         }
         checkCallArgs(args_code);
     }
 
-    void checkIdentifierRef(const std::string &name) {
+    void checkIdentifierRef(const pgcodes::GCode *node,
+                            const std::string &name) {
         // Skip keywords that appear as identifiers in GCode.
         if (name == "return" || name == "true" || name == "false" ||
             name == "nil" || name == "null") {
@@ -373,22 +383,28 @@ class ProgramChecker {
             return;
         }
         if (_defined_vars.count(name) == 0) {
-            emitError("undefined variable '" + name + "'");
+            emitError(node->location(), "undefined variable '" + name + "'",
+                      name.size());
         }
     }
 
-    void emitError(const std::string &detail) {
-        // Find current source path.
-        std::string source_path;
-        for (const auto &unit : _program.packages) {
-            if (unit.module_id == _current_module_id) {
-                source_path = unit.source_path;
-                break;
+    void emitError(const lexer::SourceLocation &loc, const std::string &detail,
+                   size_t highlight_width = 1) {
+        if (loc.valid()) {
+            _result.addError(
+                lexer::formatDiagnostic(loc, detail, highlight_width));
+        } else {
+            std::string source_path;
+            for (const auto &unit : _program.packages) {
+                if (unit.module_id == _current_module_id) {
+                    source_path = unit.source_path;
+                    break;
+                }
             }
+            std::string prefix = source_path.empty() ? "" : source_path + ": ";
+            _result.addError(prefix + "error: in function '" +
+                             _current_func_name + "': " + detail);
         }
-        std::string prefix = source_path.empty() ? "" : source_path + ": ";
-        _result.addError(prefix + "error: in function '" + _current_func_name +
-                         "': " + detail);
     }
 
     const llvm_backend::Program                &_program;
