@@ -1157,6 +1157,43 @@ class ModuleBuilder {
                 throw std::runtime_error("char_to_str expects 1 argument");
             return emitCharToStr(args[0]);
         }
+        // Array builtins
+        if (callee == "make_array") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 1)
+                throw std::runtime_error("make_array expects 1 argument (size)");
+            return emitMakeArray(args[0]);
+        }
+        if (callee == "array_get") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 2)
+                throw std::runtime_error("array_get expects 2 arguments");
+            return emitArrayGet(args[0], args[1]);
+        }
+        if (callee == "array_set") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 3)
+                throw std::runtime_error("array_set expects 3 arguments");
+            return emitArraySet(args[0], args[1], args[2]);
+        }
+        if (callee == "make_str_array") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 1)
+                throw std::runtime_error("make_str_array expects 1 argument");
+            return emitMakeStrArray(args[0]);
+        }
+        if (callee == "str_array_get") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 2)
+                throw std::runtime_error("str_array_get expects 2 arguments");
+            return emitStrArrayGet(args[0], args[1]);
+        }
+        if (callee == "str_array_set") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 3)
+                throw std::runtime_error("str_array_set expects 3 arguments");
+            return emitStrArraySet(args[0], args[1], args[2]);
+        }
         if (callee_function == nullptr) {
             throw std::runtime_error("unsupported function call: " + callee);
         }
@@ -1449,6 +1486,66 @@ class ModuleBuilder {
         _builder.CreateStore(llvm::ConstantInt::get(_builder.getInt8Ty(), 0),
                              term);
         return buf;
+    }
+
+    // make_array(size) → ptr to int32 array (calloc'd, zero-initialized)
+    llvm::Value *emitMakeArray(llvm::Value *size) {
+        auto calloc_fn = _module->getOrInsertFunction(
+            "calloc",
+            llvm::FunctionType::get(_builder.getPtrTy(),
+                                    {_builder.getInt64Ty(), _builder.getInt64Ty()},
+                                    false));
+        auto *size64 = _builder.CreateSExt(size, _builder.getInt64Ty(), "sz64");
+        auto *elem_size = llvm::ConstantInt::get(_builder.getInt64Ty(), 4);
+        return _builder.CreateCall(calloc_fn, {size64, elem_size}, "arr");
+    }
+
+    // array_get(arr, i) → int32
+    llvm::Value *emitArrayGet(llvm::Value *arr, llvm::Value *idx) {
+        auto *idx64 = _builder.CreateSExt(idx, _builder.getInt64Ty(), "idx64");
+        auto *ptr = _builder.CreateGEP(_builder.getInt32Ty(), arr, {idx64},
+                                       "elem_ptr");
+        return _builder.CreateLoad(_builder.getInt32Ty(), ptr, "elem");
+    }
+
+    // array_set(arr, i, val) → val
+    llvm::Value *emitArraySet(llvm::Value *arr, llvm::Value *idx,
+                              llvm::Value *val) {
+        auto *idx64 = _builder.CreateSExt(idx, _builder.getInt64Ty(), "idx64");
+        auto *ptr = _builder.CreateGEP(_builder.getInt32Ty(), arr, {idx64},
+                                       "elem_ptr");
+        _builder.CreateStore(val, ptr);
+        return val;
+    }
+
+    // make_str_array(size) → ptr to string (ptr) array
+    llvm::Value *emitMakeStrArray(llvm::Value *size) {
+        auto calloc_fn = _module->getOrInsertFunction(
+            "calloc",
+            llvm::FunctionType::get(_builder.getPtrTy(),
+                                    {_builder.getInt64Ty(), _builder.getInt64Ty()},
+                                    false));
+        auto *size64 = _builder.CreateSExt(size, _builder.getInt64Ty(), "sz64");
+        auto *elem_size = llvm::ConstantInt::get(_builder.getInt64Ty(), 8);
+        return _builder.CreateCall(calloc_fn, {size64, elem_size}, "sarr");
+    }
+
+    // str_array_get(arr, i) → string (ptr)
+    llvm::Value *emitStrArrayGet(llvm::Value *arr, llvm::Value *idx) {
+        auto *idx64 = _builder.CreateSExt(idx, _builder.getInt64Ty(), "idx64");
+        auto *ptr = _builder.CreateGEP(_builder.getPtrTy(), arr, {idx64},
+                                       "selem_ptr");
+        return _builder.CreateLoad(_builder.getPtrTy(), ptr, "selem");
+    }
+
+    // str_array_set(arr, i, val) → val
+    llvm::Value *emitStrArraySet(llvm::Value *arr, llvm::Value *idx,
+                                 llvm::Value *val) {
+        auto *idx64 = _builder.CreateSExt(idx, _builder.getInt64Ty(), "idx64");
+        auto *ptr = _builder.CreateGEP(_builder.getPtrTy(), arr, {idx64},
+                                       "selem_ptr");
+        _builder.CreateStore(val, ptr);
+        return val;
     }
 
   private:
