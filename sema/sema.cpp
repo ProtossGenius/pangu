@@ -94,6 +94,11 @@ class ProgramChecker {
                 table[name] = {name, func->params.size()};
             }
             _module_functions[unit.module_id] = std::move(table);
+
+            // Collect struct type names
+            for (const auto &it : unit.package->structs.items()) {
+                _struct_names.insert(it.first);
+            }
         }
     }
 
@@ -172,7 +177,15 @@ class ProgramChecker {
             // Check for suffix call: `name(args...)`
             if (isSuffixCallNode(code->getRight())) {
                 checkLocalCall(code, name, code->getRight()->getRight());
-            } else if (code->getRight() != nullptr) {
+            }
+            // Struct literal (suffix form): StructName{field: val, ...}
+            else if (code->getRight() != nullptr &&
+                     code->getRight()->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                     code->getRight()->getOper() == "{" &&
+                     _struct_names.count(name) != 0) {
+                checkStructLiteral(code->getRight()->getRight());
+            }
+            else if (code->getRight() != nullptr) {
                 // Not a call, recurse on right (might be a chain).
                 checkIdentifierRef(code, name);
                 checkExpression(code->getRight());
@@ -215,6 +228,18 @@ class ProgramChecker {
                 code->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER) {
                 checkLocalCall(code->getLeft(), code->getLeft()->getValue(),
                                code->getRight());
+            } else {
+                checkExpression(code->getLeft());
+                checkExpression(code->getRight());
+            }
+            return;
+        }
+        if (oper == "{") {
+            // Struct literal: { left=StructName, right=field:val,... }
+            if (code->getLeft() != nullptr &&
+                code->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER &&
+                _struct_names.count(code->getLeft()->getValue()) != 0) {
+                checkStructLiteral(code->getRight());
             } else {
                 checkExpression(code->getLeft());
                 checkExpression(code->getRight());
@@ -288,7 +313,15 @@ class ProgramChecker {
         const auto *right = code->getRight();
         if (left == nullptr || right == nullptr) return;
 
-        // Only handle `alias.func(...)` pattern.
+        // Field access: expr.field (right is plain identifier, no call suffix)
+        if (right->getValueType() == pgcodes::ValueType::IDENTIFIER &&
+            !isSuffixCallNode(right->getRight())) {
+            // Validate the left side expression; field name itself is not a variable
+            checkExpression(left);
+            return;
+        }
+
+        // Import-qualified call: alias.func(...)
         if (left->getValueType() != pgcodes::ValueType::IDENTIFIER) {
             checkExpression(left);
             checkExpression(right);
@@ -372,6 +405,8 @@ class ProgramChecker {
         // Skip builtins (they're called, not referenced as variables usually,
         // but handle gracefully).
         if (isBuiltin(name)) return;
+        // Skip struct type names.
+        if (_struct_names.count(name) != 0) return;
         // Skip function names (they might appear as identifiers in some AST shapes).
         auto mod_it = _module_functions.find(_current_module_id);
         if (mod_it != _module_functions.end() &&
@@ -385,6 +420,26 @@ class ProgramChecker {
         if (_defined_vars.count(name) == 0) {
             emitError(node->location(), "undefined variable '" + name + "'",
                       name.size());
+        }
+    }
+
+    // Check struct literal field values (skip field names, only check value expressions).
+    void checkStructLiteral(const pgcodes::GCode *body) {
+        if (body == nullptr) return;
+        // body is a tree of comma-separated `:` nodes: field: value, field: value
+        if (body->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            body->getOper() == ",") {
+            checkStructLiteral(body->getLeft());
+            checkStructLiteral(body->getRight());
+        } else if (body->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                   body->getOper() == ":") {
+            // Left is field name (skip), right is value expression (check)
+            if (body->getRight() != nullptr) {
+                checkExpression(body->getRight());
+            }
+        } else {
+            // Single expression (shouldn't happen in well-formed struct literal)
+            checkExpression(body);
         }
     }
 
@@ -414,6 +469,7 @@ class ProgramChecker {
     std::string                                 _current_func_name;
     const std::map<std::string, std::string>   *_current_imports = nullptr;
     std::set<std::string>                       _defined_vars;
+    std::set<std::string>                       _struct_names;
 };
 
 } // namespace

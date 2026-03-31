@@ -22,6 +22,7 @@ class GStructContainer {
     virtual ~GStructContainer() {}
     void   write_string(std::ostream &ss);
     size_t size() const { return _structs.size(); }
+    const std::map<std::string, PStruct> &items() const { return _structs; }
 
   protected:
     std::map<std::string, PStruct> _structs;

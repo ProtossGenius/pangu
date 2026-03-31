@@ -89,6 +89,7 @@ class ModuleBuilder {
     }
 
     void buildAllFunctions() {
+        declareStructTypes();
         declareFunctions();
         defineFunctions();
         if (_declared_functions.count(
@@ -104,6 +105,52 @@ class ModuleBuilder {
     std::unique_ptr<llvm::Module> releaseModule() { return std::move(_module); }
 
   private:
+    // Struct field metadata for codegen
+    struct StructFieldInfo {
+        std::string name;
+        size_t      index;
+    };
+    struct StructInfo {
+        llvm::StructType                    *llvm_type;
+        std::vector<StructFieldInfo>         fields;
+        std::map<std::string, size_t>        field_index; // name → index
+    };
+
+    void declareStructTypes() {
+        for (const auto &unit : _program.packages) {
+            for (const auto &it : unit.package->structs.items()) {
+                const auto *gs = it.second.get();
+                const std::string struct_name = gs->name();
+
+                std::vector<llvm::Type *> field_types;
+                StructInfo info;
+                size_t idx = 0;
+                for (const auto &fname : gs->orderedNames()) {
+                    const auto *var = gs->getVariable(fname);
+                    auto *ftype = resolveTypeName(var->getType()->name());
+                    field_types.push_back(ftype);
+                    info.fields.push_back(StructFieldInfo{fname, idx});
+                    info.field_index[fname] = idx;
+                    ++idx;
+                }
+                auto *stype = llvm::StructType::create(
+                    *_context, field_types, "struct." + struct_name);
+                info.llvm_type = stype;
+                _struct_types[struct_name] = std::move(info);
+            }
+        }
+    }
+
+    llvm::Type *resolveTypeName(const std::string &name) {
+        if (name == "int")    return _builder.getInt32Ty();
+        if (name == "string") return _builder.getPtrTy();
+        auto it = _struct_types.find(name);
+        if (it != _struct_types.end()) {
+            return it->second.llvm_type;
+        }
+        throw std::runtime_error("unsupported type: " + name);
+    }
+
     void declareFunctions() {
         for (const auto &unit : _program.packages) {
             for (const auto &it : unit.package->functions.items()) {
@@ -150,14 +197,7 @@ class ModuleBuilder {
     }
 
     llvm::Type *getLLVMType(const grammer::GVarDef &var) {
-        const auto *type = var.getType();
-        if (type->name() == "int") {
-            return _builder.getInt32Ty();
-        }
-        if (type->name() == "string") {
-            return _builder.getPtrTy();
-        }
-        throw std::runtime_error("unsupported variable type: " + type->name());
+        return resolveTypeName(var.getType()->name());
     }
 
     void defineFunction(const PackageUnit &unit, const grammer::GFunction &function) {
@@ -495,6 +535,14 @@ class ModuleBuilder {
             if (extractSuffixCall(code, callee, args_code)) {
                 return emitCall(resolveCurrentFunction(callee), callee, args_code);
             }
+            // Struct literal (suffix form): StructName{field: val, ...}
+            if (code->getRight() != nullptr &&
+                code->getRight()->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                code->getRight()->getOper() == "{" &&
+                _struct_types.count(code->getValue()) != 0) {
+                return emitStructLiteral(code->getValue(),
+                                         code->getRight()->getRight());
+            }
             return emitValue(code);
         }
 
@@ -551,8 +599,17 @@ class ModuleBuilder {
             if (extractQualifiedCall(code, module_alias, callee, args_code)) {
                 return emitQualifiedCall(module_alias, callee, args_code);
             }
+            // Field access: expr.field
+            return emitFieldAccess(code);
         }
         if (oper == "{") {
+            // Struct literal: {left=StructName, right=field:val,...}
+            if (code->getLeft() != nullptr &&
+                code->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER &&
+                _struct_types.count(code->getLeft()->getValue()) != 0) {
+                return emitStructLiteral(code->getLeft()->getValue(),
+                                         code->getRight());
+            }
             emitStatement(code);
             return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
         }
@@ -648,6 +705,119 @@ class ModuleBuilder {
         case pgcodes::ValueType::NOT_VALUE: break;
         }
         throw std::runtime_error("unexpected empty value");
+    }
+
+    // ── Struct support ─────────────────────────────────────────────
+
+    // Emit StructName{field: val, field: val, ...}
+    llvm::Value *emitStructLiteral(const std::string &struct_name,
+                                   const pgcodes::GCode *fields_code) {
+        auto it = _struct_types.find(struct_name);
+        if (it == _struct_types.end()) {
+            throw std::runtime_error("unknown struct type: " + struct_name);
+        }
+        const auto &info = it->second;
+        auto *stype = info.llvm_type;
+
+        // Allocate on stack
+        auto *alloca = createVariableSlot(struct_name + ".tmp", stype);
+
+        // Collect field assignments from the comma/colon tree
+        std::vector<std::pair<std::string, const pgcodes::GCode *>> assignments;
+        collectFieldAssignments(fields_code, assignments);
+
+        // Store each field
+        for (const auto &[fname, val_code] : assignments) {
+            auto fi = info.field_index.find(fname);
+            if (fi == info.field_index.end()) {
+                throw std::runtime_error("struct '" + struct_name +
+                                         "' has no field '" + fname + "'");
+            }
+            auto *gep = _builder.CreateStructGEP(stype, alloca, fi->second,
+                                                  fname + ".ptr");
+            auto *val = emitExpression(val_code);
+            _builder.CreateStore(val, gep);
+        }
+
+        // Load and return the whole struct value
+        return _builder.CreateLoad(stype, alloca, struct_name + ".val");
+    }
+
+    void collectFieldAssignments(
+        const pgcodes::GCode *code,
+        std::vector<std::pair<std::string, const pgcodes::GCode *>> &out) {
+        if (code == nullptr) return;
+        // Strip grouping
+        if (code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            code->getOper() == "(" && code->getLeft() != nullptr &&
+            code->getLeft()->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            code->getLeft()->getOper() == ")") {
+            collectFieldAssignments(code->getRight(), out);
+            return;
+        }
+        // Comma-separated
+        if (code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            code->getOper() == ",") {
+            collectFieldAssignments(code->getLeft(), out);
+            collectFieldAssignments(code->getRight(), out);
+            return;
+        }
+        // Single field: field: value
+        if (code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            code->getOper() == ":") {
+            if (code->getLeft() != nullptr &&
+                code->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+                out.emplace_back(code->getLeft()->getValue(), code->getRight());
+            }
+            return;
+        }
+    }
+
+    // Emit expr.field — returns the field value
+    llvm::Value *emitFieldAccess(const pgcodes::GCode *code) {
+        const auto *left  = code->getLeft();
+        const auto *right = code->getRight();
+
+        if (left == nullptr || right == nullptr ||
+            left->getValueType() != pgcodes::ValueType::IDENTIFIER ||
+            right->getValueType() != pgcodes::ValueType::IDENTIFIER) {
+            throw std::runtime_error("unsupported field access expression");
+        }
+
+        const std::string &var_name   = left->getValue();
+        const std::string &field_name = right->getValue();
+
+        // Find the variable
+        auto var_it = _variables.find(var_name);
+        if (var_it == _variables.end()) {
+            throw std::runtime_error("unknown variable: " + var_name);
+        }
+
+        auto *alloca = var_it->second;
+        auto *alloca_type = alloca->getAllocatedType();
+
+        // Resolve struct info from the LLVM type
+        const StructInfo *sinfo = nullptr;
+        for (const auto &[sname, si] : _struct_types) {
+            if (si.llvm_type == alloca_type) {
+                sinfo = &si;
+                break;
+            }
+        }
+        if (sinfo == nullptr) {
+            throw std::runtime_error("variable '" + var_name +
+                                     "' is not a struct type");
+        }
+
+        auto fi = sinfo->field_index.find(field_name);
+        if (fi == sinfo->field_index.end()) {
+            throw std::runtime_error("struct has no field '" + field_name + "'");
+        }
+
+        auto *gep = _builder.CreateStructGEP(sinfo->llvm_type, alloca,
+                                              fi->second, field_name + ".ptr");
+        auto *field_type = sinfo->llvm_type->getElementType(fi->second);
+        return _builder.CreateLoad(field_type, gep, field_name);
     }
 
     llvm::Value *emitComparison(const pgcodes::GCode *code,
@@ -958,6 +1128,7 @@ class ModuleBuilder {
     llvm::FunctionCallee               _exit;
     std::map<std::string, llvm::Function *>    _declared_functions;
     std::map<std::string, llvm::AllocaInst *>  _variables;
+    std::map<std::string, StructInfo>          _struct_types;
     std::string                                _current_module_id;
     const std::map<std::string, std::string>  *_current_imports = nullptr;
     bool                                      _terminated = false;

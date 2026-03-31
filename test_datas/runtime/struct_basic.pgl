@@ -1,0 +1,23 @@
+package main;
+
+type Point struct {
+    x int;
+    y int;
+}
+
+func makePoint(a int, b int) Point {
+    return Point{x: a, y: b};
+}
+
+func printPoint(p Point) {
+    println(p.x);
+    println(p.y);
+}
+
+func main() {
+    p := Point{x: 10, y: 20};
+    println(p.x);
+    println(p.y);
+    q := makePoint(100, 200);
+    printPoint(q);
+}
