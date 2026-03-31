@@ -841,15 +841,39 @@ class ModuleBuilder {
             }
             auto *arg = args.front();
             if (arg->getType()->isPointerTy()) {
-                // String argument: print as %s\n
                 auto *fmt = _builder.CreateGlobalStringPtr("%s\n");
                 _builder.CreateCall(getPrintf(), {fmt, arg});
             } else {
-                // Integer argument: print as %d\n
                 auto *fmt = _builder.CreateGlobalStringPtr("%d\n");
                 _builder.CreateCall(getPrintf(), {fmt, arg});
             }
             return arg;
+        }
+        if (callee == "print") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 1) {
+                throw std::runtime_error(
+                    "print currently supports exactly one argument");
+            }
+            auto *arg = args.front();
+            if (arg->getType()->isPointerTy()) {
+                auto *fmt = _builder.CreateGlobalStringPtr("%s");
+                _builder.CreateCall(getPrintf(), {fmt, arg});
+            } else {
+                auto *fmt = _builder.CreateGlobalStringPtr("%d");
+                _builder.CreateCall(getPrintf(), {fmt, arg});
+            }
+            return arg;
+        }
+        if (callee == "exit") {
+            auto args = emitCallArgs(args_code);
+            auto *code = args.empty()
+                             ? llvm::ConstantInt::get(_builder.getInt32Ty(), 0)
+                             : args.front();
+            _builder.CreateCall(getExit(), {code});
+            _builder.CreateUnreachable();
+            _terminated = true;
+            return code;
         }
         if (callee == "return") {
             auto args = emitCallArgs(args_code);
@@ -913,6 +937,17 @@ class ModuleBuilder {
         return _printf;
     }
 
+    llvm::FunctionCallee getExit() {
+        if (_exit) {
+            return _exit;
+        }
+        llvm::Type *exit_args[] = {_builder.getInt32Ty()};
+        auto *exit_type = llvm::FunctionType::get(_builder.getVoidTy(),
+                                                  exit_args, false);
+        _exit = _module->getOrInsertFunction("exit", exit_type);
+        return _exit;
+    }
+
   private:
     std::unique_ptr<llvm::LLVMContext> _context;
     std::unique_ptr<llvm::Module>      _module;
@@ -920,6 +955,7 @@ class ModuleBuilder {
     const Program                     &_program;
     llvm::Function                    *_current_function = nullptr;
     llvm::FunctionCallee               _printf;
+    llvm::FunctionCallee               _exit;
     std::map<std::string, llvm::Function *>    _declared_functions;
     std::map<std::string, llvm::AllocaInst *>  _variables;
     std::string                                _current_module_id;

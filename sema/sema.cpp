@@ -20,14 +20,14 @@ struct FunctionSig {
 using FunctionTable = std::map<std::string, FunctionSig>;
 using ModuleTable   = std::map<std::string, FunctionTable>;
 
-const std::set<std::string> BUILTIN_FUNCTIONS = {"println"};
+const std::set<std::string> BUILTIN_FUNCTIONS = {"println", "print", "exit"};
 
 bool isBuiltin(const std::string &name) {
     return BUILTIN_FUNCTIONS.count(name) != 0;
 }
 
 size_t builtinParamCount(const std::string &name) {
-    if (name == "println") return 1;
+    if (name == "println" || name == "print" || name == "exit") return 1;
     return 0;
 }
 
