@@ -505,9 +505,18 @@ class ModuleBuilder {
         if (code == nullptr) {
             return false;
         }
+        // Pattern 1: return(args) as suffix call
         std::string          callee;
         const pgcodes::GCode *args_code = nullptr;
         if (extractSuffixCall(code, callee, args_code) && callee == "return") {
+            return true;
+        }
+        // Pattern 2: `(` operator with left=return identifier
+        if (code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            code->getOper() == "(" &&
+            code->getLeft() != nullptr &&
+            code->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER &&
+            code->getLeft()->getValue() == "return") {
             return true;
         }
         return containsReturnPrefix(code->getLeft()) ||
@@ -518,12 +527,21 @@ class ModuleBuilder {
         if (code == nullptr) {
             return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
         }
+        // Pattern 1: return(args) as suffix call
         std::string          callee;
         const pgcodes::GCode *args_code = nullptr;
         if (extractSuffixCall(code, callee, args_code) && callee == "return") {
             auto args = emitCallArgs(args_code);
             return args.empty() ? llvm::ConstantInt::get(_builder.getInt32Ty(), 0)
                                 : args.front();
+        }
+        // Pattern 2: `(` operator with left=return identifier
+        if (code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            code->getOper() == "(" &&
+            code->getLeft() != nullptr &&
+            code->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER &&
+            code->getLeft()->getValue() == "return") {
+            return emitExpression(code->getRight());
         }
         return emitExpression(code);
     }
@@ -666,10 +684,17 @@ class ModuleBuilder {
             return emitComparison(code, oper);
         }
         if (oper == "(") {
+            // Grouping parentheses: left is `)` placeholder
             if (code->getLeft() != nullptr &&
                 code->getLeft()->getValueType() == pgcodes::ValueType::NOT_VALUE &&
                 code->getLeft()->getOper() == ")") {
                 return emitReturnExpressionTree(code->getRight());
+            }
+            // Pattern 2: `return(expr)` — `(` with left=return
+            if (code->getLeft() != nullptr &&
+                code->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER &&
+                code->getLeft()->getValue() == "return") {
+                return emitExpression(code->getRight());
             }
             return emitParenOrCall(code);
         }
@@ -1238,8 +1263,9 @@ class ModuleBuilder {
 
     llvm::Value *emitParenOrCall(const pgcodes::GCode *code) {
         const auto *left = code->getLeft();
+        // Grouping parentheses with no left: just evaluate the right side
         if (left == nullptr) {
-            throw std::runtime_error("call expression misses callee");
+            return emitExpression(code->getRight());
         }
         if (left->getValueType() == pgcodes::ValueType::IDENTIFIER) {
             return emitCall(resolveCurrentFunction(left->getValue()),

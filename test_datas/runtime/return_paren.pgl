@@ -1,0 +1,20 @@
+package main;
+
+func add1(x int) int {
+    return(x + 1);
+}
+
+func double(x int) int {
+    return (x * 2);
+}
+
+func identity(x int) int {
+    b := x;
+    return(b);
+}
+
+func main() {
+    println(add1(5));
+    println(double(7));
+    println(identity(42));
+}
