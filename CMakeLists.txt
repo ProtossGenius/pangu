@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.8)
 project(pangu)
+find_package(LLVM REQUIRED CONFIG)
+message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 set(CXX_FLAGS
         -g
         # -DVALGRIND
@@ -44,7 +46,8 @@ add_subdirectory(pgcodes)
 add_subdirectory(grammer)
 add_subdirectory(sema)
 add_subdirectory(runtime)
-target_link_libraries(pangu runtime sema grammer pgcodes lexer pipeline)
+add_subdirectory(llvm_backend)
+target_link_libraries(pangu runtime sema grammer pgcodes lexer pipeline llvm_backend)
 target_link_libraries(pangu-sema sema grammer pgcodes lexer pipeline)
 target_link_libraries(pangu-grammer grammer pgcodes lexer pipeline)
 target_link_libraries(pangu-lexer virtual_machine lexer pipeline)

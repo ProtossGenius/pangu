@@ -15,5 +15,11 @@ make linux
 make tests
 ```
 
+## Driver modes
+
+```bash
+./build/pangu parse test_datas/grammer/func_code.pgl
+./build/pangu emit-ir test_datas/grammer/func_code.pgl
+```
 
 

@@ -2,7 +2,9 @@
 
 #include "grammer/grammer.h"
 #include "lexer/lexer.h"
+#include "llvm_backend/llvm_backend.h"
 
+#include <fstream>
 #include <iostream>
 #include <lexer/pipelines.h>
 #include <string>
@@ -58,6 +60,23 @@ int runParsePipeline(const std::string &input_path) {
     return 0;
 }
 
+bool ensureReadable(const std::string &input_path) {
+    std::ifstream input(input_path);
+    if (input.good()) {
+        return true;
+    }
+    std::cerr << "can not read input file: " << input_path << std::endl;
+    return false;
+}
+
+int emitIR(const std::string &input_path) {
+    if (!ensureReadable(input_path)) {
+        return -1;
+    }
+    std::cout << llvm_backend::emitModuleIR(input_path);
+    return 0;
+}
+
 int reportPendingMode(Mode mode) {
     const char *mode_name = "";
     switch (mode) {
@@ -84,7 +103,7 @@ int run(int argc, const char *argv[]) {
 
     switch (options.mode) {
     case Mode::PARSE: return runParsePipeline(options.input_path);
-    case Mode::EMIT_IR:
+    case Mode::EMIT_IR: return emitIR(options.input_path);
     case Mode::COMPILE:
     case Mode::RUN: return reportPendingMode(options.mode);
     }
