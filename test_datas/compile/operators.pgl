@@ -1,0 +1,19 @@
+package main;
+
+func main() {
+    println(10 % 3);
+    a := 1;
+    b := 2;
+    if (a == 1 && b == 2) {
+        println(100);
+    }
+    if (a == 0 || b == 2) {
+        println(200);
+    }
+    if (a == 0 && b == 2) {
+        println(300);
+    }
+    if (a == 0 || b == 0) {
+        println(400);
+    }
+}

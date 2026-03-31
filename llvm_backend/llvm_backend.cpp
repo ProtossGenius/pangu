@@ -519,6 +519,25 @@ class ModuleBuilder {
                                        emitExpression(code->getRight()),
                                        "divtmp");
         }
+        if (oper == "%") {
+            return _builder.CreateSRem(emitExpression(code->getLeft()),
+                                       emitExpression(code->getRight()),
+                                       "modtmp");
+        }
+        if (oper == "&&") {
+            return emitLogicalAnd(code);
+        }
+        if (oper == "||") {
+            return emitLogicalOr(code);
+        }
+        if (oper == "!") {
+            auto *val = emitExpression(code->getRight());
+            if (val->getType()->isIntegerTy(1)) {
+                return _builder.CreateNot(val, "nottmp");
+            }
+            return _builder.CreateICmpEQ(
+                val, llvm::ConstantInt::get(val->getType(), 0), "nottmp");
+        }
         if (isComparisonOperator(oper)) {
             return emitComparison(code, oper);
         }
@@ -654,6 +673,54 @@ class ModuleBuilder {
         }
 
         return _builder.CreateZExt(cmp, _builder.getInt32Ty(), "booltmp");
+    }
+
+    // Short-circuit &&: if LHS is false, skip RHS
+    llvm::Value *emitLogicalAnd(const pgcodes::GCode *code) {
+        auto *function = _current_function;
+        auto *rhs_block   = llvm::BasicBlock::Create(*_context, "and.rhs");
+        auto *merge_block = llvm::BasicBlock::Create(*_context, "and.end");
+
+        auto *lhs = emitConditionValue(code->getLeft());
+        auto *lhs_bb = _builder.GetInsertBlock();
+        _builder.CreateCondBr(lhs, rhs_block, merge_block);
+
+        function->insert(function->end(), rhs_block);
+        _builder.SetInsertPoint(rhs_block);
+        auto *rhs = emitConditionValue(code->getRight());
+        auto *rhs_bb = _builder.GetInsertBlock();
+        _builder.CreateBr(merge_block);
+
+        function->insert(function->end(), merge_block);
+        _builder.SetInsertPoint(merge_block);
+        auto *phi = _builder.CreatePHI(_builder.getInt1Ty(), 2, "and.result");
+        phi->addIncoming(llvm::ConstantInt::getFalse(*_context), lhs_bb);
+        phi->addIncoming(rhs, rhs_bb);
+        return _builder.CreateZExt(phi, _builder.getInt32Ty(), "andtmp");
+    }
+
+    // Short-circuit ||: if LHS is true, skip RHS
+    llvm::Value *emitLogicalOr(const pgcodes::GCode *code) {
+        auto *function = _current_function;
+        auto *rhs_block   = llvm::BasicBlock::Create(*_context, "or.rhs");
+        auto *merge_block = llvm::BasicBlock::Create(*_context, "or.end");
+
+        auto *lhs = emitConditionValue(code->getLeft());
+        auto *lhs_bb = _builder.GetInsertBlock();
+        _builder.CreateCondBr(lhs, merge_block, rhs_block);
+
+        function->insert(function->end(), rhs_block);
+        _builder.SetInsertPoint(rhs_block);
+        auto *rhs = emitConditionValue(code->getRight());
+        auto *rhs_bb = _builder.GetInsertBlock();
+        _builder.CreateBr(merge_block);
+
+        function->insert(function->end(), merge_block);
+        _builder.SetInsertPoint(merge_block);
+        auto *phi = _builder.CreatePHI(_builder.getInt1Ty(), 2, "or.result");
+        phi->addIncoming(llvm::ConstantInt::getTrue(*_context), lhs_bb);
+        phi->addIncoming(rhs, rhs_bb);
+        return _builder.CreateZExt(phi, _builder.getInt32Ty(), "ortmp");
     }
 
     llvm::Value *emitAssignment(const pgcodes::GCode *code, bool define_new) {
