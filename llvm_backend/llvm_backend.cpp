@@ -115,6 +115,11 @@ class ModuleBuilder {
         std::vector<StructFieldInfo>         fields;
         std::map<std::string, size_t>        field_index; // name → index
     };
+    // Loop context for break/continue
+    struct LoopContext {
+        llvm::BasicBlock *break_block;
+        llvm::BasicBlock *continue_block;
+    };
 
     void declareStructTypes() {
         for (const auto &unit : _program.packages) {
@@ -347,7 +352,9 @@ class ModuleBuilder {
         function->insert(function->end(), body_block);
         _builder.SetInsertPoint(body_block);
         _terminated = false;
+        _loop_stack.push_back({end_block, cond_block});
         emitStatement(code->getRight());
+        _loop_stack.pop_back();
         if (!_terminated &&
             _builder.GetInsertBlock()->getTerminator() == nullptr) {
             _builder.CreateBr(cond_block);
@@ -421,7 +428,9 @@ class ModuleBuilder {
         function->insert(function->end(), body_block);
         _builder.SetInsertPoint(body_block);
         _terminated = false;
+        _loop_stack.push_back({end_block, step_block});
         emitStatement(code->getRight());
+        _loop_stack.pop_back();
         if (!_terminated &&
             _builder.GetInsertBlock()->getTerminator() == nullptr) {
             _builder.CreateBr(step_block);
@@ -674,14 +683,28 @@ class ModuleBuilder {
             return llvm::ConstantInt::get(_builder.getInt32Ty(),
                                           std::stoi(code->getValue()));
         case pgcodes::ValueType::IDENTIFIER: {
-            auto it = _variables.find(code->getValue());
+            const auto &name = code->getValue();
+            // break/continue are keywords that appear as identifiers
+            if (name == "break") {
+                if (_loop_stack.empty())
+                    throw std::runtime_error("break outside of loop");
+                _builder.CreateBr(_loop_stack.back().break_block);
+                _terminated = true;
+                return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+            }
+            if (name == "continue") {
+                if (_loop_stack.empty())
+                    throw std::runtime_error("continue outside of loop");
+                _builder.CreateBr(_loop_stack.back().continue_block);
+                _terminated = true;
+                return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+            }
+            auto it = _variables.find(name);
             if (it == _variables.end()) {
-                throw std::runtime_error("unknown identifier: " +
-                                         code->getValue());
+                throw std::runtime_error("unknown identifier: " + name);
             }
             auto *alloca_type = it->second->getAllocatedType();
-            return _builder.CreateLoad(alloca_type, it->second,
-                                       code->getValue());
+            return _builder.CreateLoad(alloca_type, it->second, name);
         }
         case pgcodes::ValueType::STRING: {
             std::string raw = code->getValue();
@@ -1559,6 +1582,7 @@ class ModuleBuilder {
     std::map<std::string, llvm::Function *>    _declared_functions;
     std::map<std::string, llvm::AllocaInst *>  _variables;
     std::map<std::string, StructInfo>          _struct_types;
+    std::vector<LoopContext>                    _loop_stack;
     std::string                                _current_module_id;
     const std::map<std::string, std::string>  *_current_imports = nullptr;
     bool                                      _terminated = false;

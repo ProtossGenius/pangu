@@ -1,0 +1,23 @@
+package main;
+
+func main() {
+    i := 0;
+    while (i < 100) {
+        if (i == 5) {
+            break;
+        }
+        println(i);
+        i = i + 1;
+    }
+
+    j := 0;
+    for (j = 0; j < 10; ++j) {
+        if (j == 3) {
+            continue;
+        }
+        if (j == 7) {
+            break;
+        }
+        println(j);
+    }
+}

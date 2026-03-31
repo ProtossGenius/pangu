@@ -416,7 +416,8 @@ class ProgramChecker {
                             const std::string &name) {
         // Skip keywords that appear as identifiers in GCode.
         if (name == "return" || name == "true" || name == "false" ||
-            name == "nil" || name == "null") {
+            name == "nil" || name == "null" ||
+            name == "break" || name == "continue") {
             return;
         }
         // Skip builtins (they're called, not referenced as variables usually,
