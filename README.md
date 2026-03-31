@@ -23,3 +23,6 @@ make tests
 ./build/pangu run test_datas/runtime/add.pgl
 ```
 
+## Syntax
+
+See `SYNTAX.md` for the current grammar, execution support matrix, and bootstrap assessment.
