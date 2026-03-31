@@ -11,6 +11,7 @@ Grm(Function);
 Grm(FuncDef);
 Grm(Type);
 Grm(TypeDef);
+Grm(Impl);
 Grm(VarDef);
 Grm(Import);
 Grm(VarContainer);

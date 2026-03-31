@@ -44,6 +44,17 @@ void GTypeFunctContainer::write_string(std::ostream &ss) {
         ss << it.second->to_string() << endl;
     }
 }
+void GTypeDefContainer::addTypeDef(PTypeDef &&type_def) {
+    if (_type_defs.count(type_def->name())) {
+        throw std::runtime_error("existed typedef:" + type_def->name());
+    }
+    _type_defs[ type_def->name() ] = std::move(type_def);
+}
+void GTypeDefContainer::write_string(std::ostream &ss) {
+    for (auto &it : _type_defs) {
+        ss << it.second->to_string() << endl;
+    }
+}
 void GVarDefContainer::addVariable(PVarDef &&var) {
     if (var->name().empty()) {
         throw std::runtime_error("varibale name() can't be empty.");
@@ -95,6 +106,14 @@ std::string GPackage::to_string() {
     functions.write_string(ss);
     ss << "type func list:(" << function_defs.size() << ")" << endl;
     function_defs.write_string(ss);
+    if (type_defs.size() > 0) {
+        ss << "type def list:(" << type_defs.size() << ")" << endl;
+        type_defs.write_string(ss);
+    }
+    if (impls.size() > 0) {
+        ss << "impl list:(" << impls.size() << ")" << endl;
+        impls.write_string(ss);
+    }
     ss << "variable list:(" << vars.size() << ")" << endl;
     vars.write_string(ss, "\n");
     return ss.str();
@@ -135,10 +154,45 @@ std::string GFuncDef::to_string() {
            result.to_string();
 }
 
+std::string GEnum::to_string() {
+    std::stringstream ss;
+    ss << "type " << name() << " enum {";
+    for (size_t i = 0; i < _items.size(); ++i) {
+        if (i != 0) {
+            ss << ", ";
+        }
+        ss << _items[ i ];
+    }
+    ss << "}";
+    return ss.str();
+}
+
 std::string GFunction::to_string() {
     return getDeclKeyword() + " " + name() + "(" + params.to_string() + ")" +
            result.to_string() + " " +
            (code == nullptr ? "{}" : code->to_string());
+}
+
+std::string GImpl::to_string() {
+    std::stringstream ss;
+    ss << "impl " << name() << " " << _base;
+    for (const auto &modifier : _modifiers) {
+        ss << " " << modifier;
+    }
+    ss << " {body_tokens=" << _body_token_count << "}";
+    return ss.str();
+}
+
+void GImplContainer::addImpl(PImpl &&impl) {
+    if (_impls.count(impl->name())) {
+        throw std::runtime_error("existed impl:" + impl->name());
+    }
+    _impls[ impl->name() ] = std::move(impl);
+}
+void GImplContainer::write_string(std::ostream &ss) {
+    for (auto &it : _impls) {
+        ss << it.second->to_string() << endl;
+    }
 }
 } // namespace grammer
 } // namespace pangu

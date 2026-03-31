@@ -9,6 +9,8 @@ void packStructToContainer(IPipelineFactory *factory, PProduct &&pro);
 void packFuncDefToContainer(IPipelineFactory *factory, PProduct &&pro);
 void packFuncDefToPackage(IPipelineFactory *factory, PProduct &&pro);
 void packFuncToPackage(IPipelineFactory *factory, PProduct &&pro);
+void packTypeDefToPackage(IPipelineFactory *factory, PProduct &&pro);
+void packImplToPackage(IPipelineFactory *factory, PProduct &&pro);
 void packVarToContainer(IPipelineFactory *factory, PProduct &&pro);
 } // namespace grammer
 } // namespace pangu

@@ -11,6 +11,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <vector>
 namespace pangu {
 namespace grammer {
 typedef pglang::INameProduct IGrammer;
@@ -53,6 +54,16 @@ class GTypeFunctContainer {
     std::map<std::string, PFuncDef> _functions;
 };
 
+class GTypeDefContainer {
+  public:
+    void addTypeDef(PTypeDef &&type_def);
+    void write_string(std::ostream &ss);
+    size_t size() const { return _type_defs.size(); }
+
+  private:
+    std::map<std::string, PTypeDef> _type_defs;
+};
+
 class GVarDefContainer : public IGrammer {
   public:
     void addVariable(PVarDef &&var);
@@ -80,6 +91,33 @@ class GVarDefContainer : public IGrammer {
     std::set<std::string> _no_type_vars;
 };
 
+class GImpl : public IGrammer {
+  public:
+    int typeId() const override { return 0; }
+    void setBase(const std::string &base) { _base = base; }
+    void addModifier(const std::string &modifier) { _modifiers.push_back(modifier); }
+    void addBodyToken() { ++_body_token_count; }
+    void setBraceDepth(int depth) { _brace_depth = depth; }
+    int  getBraceDepth() const { return _brace_depth; }
+    std::string to_string() override;
+
+  private:
+    std::string              _base;
+    std::vector<std::string> _modifiers;
+    size_t                   _body_token_count = 0;
+    int                      _brace_depth      = 0;
+};
+
+class GImplContainer {
+  public:
+    void addImpl(PImpl &&impl);
+    void write_string(std::ostream &ss);
+    size_t size() const { return _impls.size(); }
+
+  private:
+    std::map<std::string, PImpl> _impls;
+};
+
 // package package_name;
 class GPackage : public IGrammer {
   public:
@@ -98,7 +136,9 @@ class GPackage : public IGrammer {
 
     GFunctionContainer  functions;
     GTypeFunctContainer function_defs;
+    GTypeDefContainer   type_defs;
     GStructContainer    structs;
+    GImplContainer      impls;
     GVarDefContainer    vars;
 
   private:
@@ -159,6 +199,14 @@ class GTypeDef : public IGrammer {
   public:
     virtual int         typeId() const override { return 0; }
     virtual std::string to_string() override { return "typedef: " + name(); }
+};
+class GEnum : public GTypeDef {
+  public:
+    void addItem(const std::string &item) { _items.push_back(item); }
+    std::string to_string() override;
+
+  private:
+    std::vector<std::string> _items;
 };
 class GStruct : public GVarDefContainer {
   public:

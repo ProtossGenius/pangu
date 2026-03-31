@@ -1,0 +1,15 @@
+package syntax_demo;
+
+type LexType enum {
+  STRING,
+  NUMBER,
+}
+
+impl Lexer Switcher {
+  []
+  func create() Lex { return Lex{}; }
+}
+
+impl NumberLexer Lexer worker {
+  [AFTER_POINT]
+}

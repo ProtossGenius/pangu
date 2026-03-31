@@ -8,7 +8,9 @@ enum EGrammer {
     Import,      // import ... as ...;
     TypeDef,     // type xxx struct {xx}
     Struct,      // type xxx struct {xx}
+    Enum,        // type xxx enum {A, B}
     Variable,    // pkg.type name
+    Impl,        // impl Foo Bar {...}
     Ignore,      // ignore input.
     VarArray,    // for func ( --var array-- )
     TypeFunc,    // type func(...) ...

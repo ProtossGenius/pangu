@@ -73,6 +73,11 @@ void PipeTypeDef::accept(IPipelineFactory *factory, PData &&data) {
             ptr->setName(name);
             factory->choicePipeline(EGrammer::Struct);
             factory->pushProduct(PProduct(ptr), packStructToContainer);
+        } else if (str == "enum") {
+            auto ptr = new GEnum();
+            ptr->setName(name);
+            factory->choicePipeline(EGrammer::Enum);
+            factory->pushProduct(PProduct(ptr), packTypeDefToPackage);
         } else if (str == "func" || str == "pipeline") {
             factory->undealData(std::move(data));
             auto ptr = new GFuncDef();
@@ -88,6 +93,45 @@ void PipeTypeDef::accept(IPipelineFactory *factory, PData &&data) {
 
     default:
         factory->onFail("unexcept TypeDefStep, code = " +
+                        std::to_string(topProduct->getStep()));
+    }
+}
+enum class EnumStep {
+    WAIT_BODY = 0,
+    READ_ITEM,
+};
+void PipeEnum::createProduct(IPipelineFactory *factory) {}
+void PipeEnum::accept(IPipelineFactory *factory, PData &&data) {
+    GET_LEX(data);
+    GET_TOP(factory, GEnum);
+    if (lexer::ELexPipeline::Comments == type || lexer::ELexPipeline::Space == type) {
+        return;
+    }
+    switch (topProduct->getStep()) {
+    case int(EnumStep::WAIT_BODY): {
+        if (makeSymbol("{") != *lex) {
+            factory->onFail("enum need '{', but get " + lex->to_string());
+        }
+        topProduct->setStep(int(EnumStep::READ_ITEM));
+        return;
+    }
+    case int(EnumStep::READ_ITEM): {
+        if (makeSymbol(",") == *lex) {
+            return;
+        }
+        if (makeSymbol("}") == *lex) {
+            factory->packProduct();
+            return;
+        }
+        if (lexer::ELexPipeline::Identifier != type) {
+            factory->onFail("enum item need identifier, but get " +
+                            lex->to_string());
+        }
+        topProduct->addItem(str);
+        return;
+    }
+    default:
+        factory->onFail("unexcept enum step code : " +
                         std::to_string(topProduct->getStep()));
     }
 }
@@ -390,6 +434,9 @@ void PipePackage::accept(IPipelineFactory *factory, PData &&data) {
     if (lexer::makeIdentifier("pipeline") == *lex) {
         return factory->choicePipeline(EGrammer::Func);
     }
+    if (lexer::makeIdentifier("impl") == *lex) {
+        return factory->choicePipeline(EGrammer::Impl);
+    }
 
     if (lex->typeId() == lexer::ELexPipeline::Space ||
         lex->typeId() == lexer::ELexPipeline::Comments ||
@@ -404,6 +451,85 @@ void PipeIgnore::createProduct(IPipelineFactory *factory) {
 }
 void PipeIgnore::accept(IPipelineFactory *factory, PData &&data) {
     factory->packProduct();
+}
+
+enum class ImplStep {
+    READ_IMPL = 0,
+    READ_NAME,
+    READ_BASE,
+    READ_BODY_HEADER,
+    READ_BODY,
+};
+void PipeImpl::createProduct(IPipelineFactory *factory) {
+    factory->pushProduct(PProduct(new GImpl()), packImplToPackage);
+}
+void PipeImpl::accept(IPipelineFactory *factory, PData &&data) {
+    GET_LEX(data);
+    GET_TOP(factory, GImpl);
+    if (lexer::ELexPipeline::Comments == type || lexer::ELexPipeline::Space == type) {
+        return;
+    }
+    switch (topProduct->getStep()) {
+    case int(ImplStep::READ_IMPL): {
+        if (makeIdentifier("impl") != *lex) {
+            factory->onFail("except identifier 'impl', but get " +
+                            lex->to_string());
+        }
+        topProduct->setStep(int(ImplStep::READ_NAME));
+        return;
+    }
+    case int(ImplStep::READ_NAME): {
+        if (lexer::ELexPipeline::Identifier != type) {
+            factory->onFail("impl need target name, but get " +
+                            lex->to_string());
+        }
+        topProduct->setName(str);
+        topProduct->setStep(int(ImplStep::READ_BASE));
+        return;
+    }
+    case int(ImplStep::READ_BASE): {
+        if (lexer::ELexPipeline::Identifier != type) {
+            factory->onFail("impl need base type, but get " + lex->to_string());
+        }
+        topProduct->setBase(str);
+        topProduct->setStep(int(ImplStep::READ_BODY_HEADER));
+        return;
+    }
+    case int(ImplStep::READ_BODY_HEADER): {
+        if (lexer::ELexPipeline::Identifier == type) {
+            topProduct->addModifier(str);
+            return;
+        }
+        if (makeSymbol("{") != *lex) {
+            factory->onFail("impl need '{', but get " + lex->to_string());
+        }
+        topProduct->setBraceDepth(1);
+        topProduct->setStep(int(ImplStep::READ_BODY));
+        return;
+    }
+    case int(ImplStep::READ_BODY): {
+        if (makeSymbol("{") == *lex) {
+            topProduct->setBraceDepth(topProduct->getBraceDepth() + 1);
+            topProduct->addBodyToken();
+            return;
+        }
+        if (makeSymbol("}") == *lex) {
+            const int next_depth = topProduct->getBraceDepth() - 1;
+            if (next_depth == 0) {
+                factory->packProduct();
+                return;
+            }
+            topProduct->setBraceDepth(next_depth);
+            topProduct->addBodyToken();
+            return;
+        }
+        topProduct->addBodyToken();
+        return;
+    }
+    default:
+        factory->onFail("unexcept impl step code : " +
+                        std::to_string(topProduct->getStep()));
+    }
 }
 
 void PipeVarArray::createProduct(IPipelineFactory *factory) {}

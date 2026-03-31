@@ -42,6 +42,16 @@ void packFuncToPackage(IPipelineFactory *factory, PProduct &&pro) {
     top->functions.addFunction(PFunction(ptr));
 }
 
+void packTypeDefToPackage(IPipelineFactory *factory, PProduct &&pro) {
+    auto top = static_cast<GPackage *>(factory->getTopProduct());
+    top->type_defs.addTypeDef(PTypeDef(static_cast<GTypeDef *>(pro.release())));
+}
+
+void packImplToPackage(IPipelineFactory *factory, PProduct &&pro) {
+    auto top = static_cast<GPackage *>(factory->getTopProduct());
+    top->impls.addImpl(PImpl(static_cast<GImpl *>(pro.release())));
+}
+
 void packVarToContainer(IPipelineFactory *factory, PProduct &&pro) {
     auto ptr = static_cast<GVarDef *>(pro.release());
     auto top = static_cast<GVarDefContainer *>(factory->getTopProduct());
