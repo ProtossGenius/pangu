@@ -137,13 +137,26 @@ class ModuleBuilder {
     }
 
     void declareStructTypes() {
+        // Pass 1: create opaque struct types so forward references work
         for (const auto &unit : _program.packages) {
             for (const auto &it : unit.package->structs.items()) {
                 const auto *gs = it.second.get();
                 const std::string struct_name = gs->name();
+                auto *stype =
+                    llvm::StructType::create(*_context, "struct." + struct_name);
+                StructInfo info;
+                info.llvm_type = stype;
+                _struct_types[struct_name] = std::move(info);
+            }
+        }
+        // Pass 2: fill in field types and indices
+        for (const auto &unit : _program.packages) {
+            for (const auto &it : unit.package->structs.items()) {
+                const auto *gs = it.second.get();
+                const std::string struct_name = gs->name();
+                auto &info = _struct_types[struct_name];
 
                 std::vector<llvm::Type *> field_types;
-                StructInfo info;
                 size_t idx = 0;
                 for (const auto &fname : gs->orderedNames()) {
                     const auto *var = gs->getVariable(fname);
@@ -153,10 +166,7 @@ class ModuleBuilder {
                     info.field_index[fname] = idx;
                     ++idx;
                 }
-                auto *stype = llvm::StructType::create(
-                    *_context, field_types, "struct." + struct_name);
-                info.llvm_type = stype;
-                _struct_types[struct_name] = std::move(info);
+                info.llvm_type->setBody(field_types);
             }
         }
     }
@@ -836,50 +846,24 @@ class ModuleBuilder {
                 return emitFieldAccess(code);
             }
 
-            // Left has return prefix, e.g. return(p).x or return(mod).func()
-            // Extract the base expression by stripping the return wrapper
-            const pgcodes::GCode *base_expr = nullptr;
-            if (left &&
-                left->getValueType() == pgcodes::ValueType::NOT_VALUE &&
-                left->getOper() == "(" && left->getLeft() &&
-                left->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER &&
-                left->getLeft()->getValue() == "return") {
-                base_expr = left->getRight();
-            }
-            if (!base_expr) {
-                throw std::runtime_error(
-                    "complex return expression in field/method access");
-            }
+            // Left has return prefix — recurse to strip it and get the value
+            auto *base_val = emitReturnExpressionTree(left);
 
             // Check for qualified call: return(module).func(args)
-            if (base_expr->getValueType() == pgcodes::ValueType::IDENTIFIER) {
-                std::string callee;
-                const pgcodes::GCode *args_code = nullptr;
-                if (right &&
-                    right->getValueType() == pgcodes::ValueType::NOT_VALUE &&
-                    right->getOper() == "(" && right->getLeft() &&
-                    right->getLeft()->getValueType() ==
-                        pgcodes::ValueType::IDENTIFIER) {
-                    callee    = right->getLeft()->getValue();
-                    args_code = right->getRight();
-                    return emitQualifiedCall(base_expr->getValue(), callee,
-                                             args_code);
-                }
-                if (right &&
-                    right->getValueType() == pgcodes::ValueType::IDENTIFIER &&
-                    isSuffixCallNode(right->getRight())) {
-                    callee    = right->getValue();
-                    args_code = right->getRight()->getRight();
-                    return emitQualifiedCall(base_expr->getValue(), callee,
-                                             args_code);
-                }
+            if (base_val->getType()->isIntegerTy() ||
+                base_val->getType()->isPointerTy()) {
+                // Not a struct — might be a qualified call that was
+                // already handled inside the recursive call
             }
 
-            // Field access: emit base expression, use extractvalue
-            auto *base_val = emitExpression(base_expr);
+            // Try extractvalue for struct field access
             if (right &&
                 right->getValueType() == pgcodes::ValueType::IDENTIFIER) {
                 const std::string &field_name = right->getValue();
+
+                // Check for qualified call pattern where right is a call
+                // This handles return(module).func(args) when right has suffix
+                // But first try struct field
                 auto *struct_type =
                     llvm::dyn_cast<llvm::StructType>(base_val->getType());
                 if (struct_type) {
@@ -1047,51 +1031,72 @@ class ModuleBuilder {
         }
     }
 
-    // Emit expr.field — returns the field value
-    llvm::Value *emitFieldAccess(const pgcodes::GCode *code) {
+    // Resolve a '.' chain into a GEP pointer and the field's LLVM type.
+    // Supports nested access: a.b.c
+    struct FieldGEP {
+        llvm::Value *ptr;
+        llvm::Type  *type;
+    };
+
+    FieldGEP resolveFieldGEP(const pgcodes::GCode *code) {
         const auto *left  = code->getLeft();
         const auto *right = code->getRight();
-
-        if (left == nullptr || right == nullptr ||
-            left->getValueType() != pgcodes::ValueType::IDENTIFIER ||
+        if (right == nullptr ||
             right->getValueType() != pgcodes::ValueType::IDENTIFIER) {
+            throw std::runtime_error("field name must be an identifier");
+        }
+        const std::string &field_name = right->getValue();
+
+        llvm::Value *base_ptr  = nullptr;
+        llvm::Type  *base_type = nullptr;
+
+        if (left->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+            // Simple case: var.field
+            auto var_it = _variables.find(left->getValue());
+            if (var_it == _variables.end()) {
+                throw std::runtime_error("unknown variable: " +
+                                         left->getValue());
+            }
+            base_ptr  = var_it->second;
+            base_type = var_it->second->getAllocatedType();
+        } else if (left->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                   left->getOper() == ".") {
+            // Nested case: expr.inner.field — recurse
+            auto inner = resolveFieldGEP(left);
+            base_ptr   = inner.ptr;
+            base_type  = inner.type;
+        } else {
             throw std::runtime_error("unsupported field access expression");
         }
 
-        const std::string &var_name   = left->getValue();
-        const std::string &field_name = right->getValue();
-
-        // Find the variable
-        auto var_it = _variables.find(var_name);
-        if (var_it == _variables.end()) {
-            throw std::runtime_error("unknown variable: " + var_name);
-        }
-
-        auto *alloca = var_it->second;
-        auto *alloca_type = alloca->getAllocatedType();
-
-        // Resolve struct info from the LLVM type
         const StructInfo *sinfo = nullptr;
         for (const auto &[sname, si] : _struct_types) {
-            if (si.llvm_type == alloca_type) {
+            if (si.llvm_type == base_type) {
                 sinfo = &si;
                 break;
             }
         }
         if (sinfo == nullptr) {
-            throw std::runtime_error("variable '" + var_name +
-                                     "' is not a struct type");
+            throw std::runtime_error("not a struct type for field access");
         }
 
         auto fi = sinfo->field_index.find(field_name);
         if (fi == sinfo->field_index.end()) {
-            throw std::runtime_error("struct has no field '" + field_name + "'");
+            throw std::runtime_error("struct has no field '" + field_name +
+                                     "'");
         }
 
-        auto *gep = _builder.CreateStructGEP(sinfo->llvm_type, alloca,
+        auto *gep = _builder.CreateStructGEP(sinfo->llvm_type, base_ptr,
                                               fi->second, field_name + ".ptr");
-        auto *field_type = sinfo->llvm_type->getElementType(fi->second);
-        return _builder.CreateLoad(field_type, gep, field_name);
+        auto *ftype = sinfo->llvm_type->getElementType(fi->second);
+        return {gep, ftype};
+    }
+
+    // Emit expr.field — returns the field value (supports nested access)
+    llvm::Value *emitFieldAccess(const pgcodes::GCode *code) {
+        auto fg = resolveFieldGEP(code);
+        return _builder.CreateLoad(fg.type, fg.ptr,
+                                   code->getRight()->getValue());
     }
 
     llvm::Value *emitComparison(const pgcodes::GCode *code,
@@ -1205,6 +1210,17 @@ class ModuleBuilder {
 
     llvm::Value *emitAssignment(const pgcodes::GCode *code, bool define_new) {
         const auto *left = code->getLeft();
+
+        // Handle struct field assignment: expr.field = value
+        if (left != nullptr &&
+            left->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            left->getOper() == ".") {
+            auto *value = emitExpression(code->getRight());
+            auto  fg    = resolveFieldGEP(left);
+            _builder.CreateStore(value, fg.ptr);
+            return value;
+        }
+
         if (left == nullptr ||
             left->getValueType() != pgcodes::ValueType::IDENTIFIER) {
             throw std::runtime_error("assignment left value must be identifier");
