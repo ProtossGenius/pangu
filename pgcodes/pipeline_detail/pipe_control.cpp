@@ -140,5 +140,63 @@ void PipeSwitch::on_FINISH(IPipelineFactory *factory, PData &&data) {
     finishKeywordStatement(factory, std::move(data));
 }
 
+// --- Case pipeline ---
+// Handles `case VALUE: { ... }` and `default: { ... }`
+// AST: oper="case", left=VALUE (or null for default), right=body
+
+bool PipeCase::ignoreStepDeal(IPipelineFactory *factory, PData &data) {
+    return false;
+}
+void PipeCase::on_START(IPipelineFactory *factory, PData &&data) {
+    GET_LEX(data);
+    GET_TOP(factory, GCode);
+    if (lexer::ELexPipeline::Space == type) {
+        return;
+    }
+    if (lexer::makeIdentifier("default") == *lex) {
+        topProduct->setOper("case");
+        topProduct->setLocation(lex->location());
+        // default has no value, skip to WAIT_COLON
+        topProduct->setStep(int(Steps::WAIT_COLON));
+        return;
+    }
+    if (lexer::makeIdentifier("case") != *lex) {
+        factory->onFail("in step START, should get 'case' or 'default'");
+    }
+    topProduct->setOper("case");
+    topProduct->setLocation(lex->location());
+    topProduct->setStep(int(Steps::WAIT_VALUE));
+}
+void PipeCase::on_WAIT_VALUE(IPipelineFactory *factory, PData &&data) {
+    GET_LEX(data);
+    GET_TOP(factory, GCode);
+    if (lexer::ELexPipeline::Space == type) {
+        return;
+    }
+    // Parse the case value expression using Normal pipeline
+    factory->undealData(std::move(data));
+    topProduct->setStep(int(Steps::WAIT_COLON));
+    factory->choicePipeline(ECodeType::Normal);
+    factory->pushProduct(PProduct(new GCode()), pack_as_left);
+}
+void PipeCase::on_WAIT_COLON(IPipelineFactory *factory, PData &&data) {
+    GET_LEX(data);
+    GET_TOP(factory, GCode);
+    if (lexer::ELexPipeline::Space == type) {
+        return;
+    }
+    if (str != ":") {
+        factory->onFail("expected ':' after case value, got '" + str + "'");
+    }
+    topProduct->setStep(int(Steps::WAIT_ACTION));
+}
+void PipeCase::on_WAIT_ACTION(IPipelineFactory *factory, PData &&data) {
+    GET_TOP(factory, GCode);
+    parseKeywordAction(factory, topProduct, std::move(data), int(Steps::FINISH));
+}
+void PipeCase::on_FINISH(IPipelineFactory *factory, PData &&data) {
+    finishKeywordStatement(factory, std::move(data));
+}
+
 } // namespace pgcodes
 } // namespace pangu

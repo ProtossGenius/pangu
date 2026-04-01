@@ -1,0 +1,34 @@
+package main;
+
+func main() {
+    x := 2;
+    switch(x) {
+        case 1: {
+            println(10);
+        }
+        case 2: {
+            println(20);
+        }
+        case 3: {
+            println(30);
+        }
+        default: {
+            println(0);
+        }
+    }
+    y := 99;
+    switch(y) {
+        case 1: {
+            println(1);
+        }
+        default: {
+            println(-1);
+        }
+    }
+    z := 1;
+    switch(z) {
+        case 1: {
+            println(100);
+        }
+    }
+}

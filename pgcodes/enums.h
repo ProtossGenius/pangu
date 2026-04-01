@@ -13,6 +13,7 @@ enum ECodeType {
     Normal,
     Ignore,
     Block, // {...}
+    Case,
 };
 }
 } // namespace pangu

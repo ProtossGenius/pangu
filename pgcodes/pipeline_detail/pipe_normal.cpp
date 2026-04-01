@@ -144,7 +144,7 @@ void PipeNormal::on_PRE_VIEW_NEXT(IPipelineFactory *factory, PData &&data) {
         topProduct->adoptRightAsSelf();
     }
     if (topProduct->getValueType() == ValueType::NOT_VALUE &&
-        topProduct->getOper() == "if") {
+        lexer::keywords.count(topProduct->getOper()) > 0) {
         factory->undealData(std::move(data));
         factory->packProduct();
         return;

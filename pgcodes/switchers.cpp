@@ -49,6 +49,11 @@ void CodesSwitcher::onChoice() {
         return _factory->choicePipeline(ECodeType::Switch);
     }
 
+    if (lexer::makeIdentifier("case") == *lex ||
+        lexer::makeIdentifier("default") == *lex) {
+        return _factory->choicePipeline(ECodeType::Case);
+    }
+
     _factory->choicePipeline(ECodeType::Normal);
 }
 

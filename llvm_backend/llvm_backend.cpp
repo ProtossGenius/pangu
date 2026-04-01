@@ -292,6 +292,9 @@ class ModuleBuilder {
         if (oper == "for") {
             return emitForStatement(code);
         }
+        if (oper == "switch") {
+            return emitSwitchStatement(code);
+        }
         return emitExpression(code);
     }
 
@@ -480,6 +483,110 @@ class ModuleBuilder {
         function->insert(function->end(), end_block);
         _builder.SetInsertPoint(end_block);
         _terminated = false;
+        return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+    }
+
+    // ── switch(expr) { case V: {...} ... default: {...} } ────────────
+    void collectCaseNodes(const pgcodes::GCode *code,
+                          std::vector<const pgcodes::GCode *> &cases) {
+        if (code == nullptr) return;
+        if (code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            code->getOper() == ";") {
+            collectCaseNodes(code->getLeft(), cases);
+            collectCaseNodes(code->getRight(), cases);
+            return;
+        }
+        if (code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            code->getOper() == "{") {
+            collectCaseNodes(code->getRight(), cases);
+            return;
+        }
+        if (code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            code->getOper() == "case") {
+            cases.push_back(code);
+            return;
+        }
+    }
+
+    llvm::Value *emitSwitchStatement(const pgcodes::GCode *code) {
+        auto *function = _current_function;
+
+        // Evaluate the switch condition
+        auto *cond_value = emitExpression(code->getLeft());
+        if (!cond_value->getType()->isIntegerTy()) {
+            throw std::runtime_error("switch condition must be an integer");
+        }
+
+        // Collect case nodes from the body
+        std::vector<const pgcodes::GCode *> cases;
+        collectCaseNodes(code->getRight(), cases);
+
+        auto *end_block = llvm::BasicBlock::Create(*_context, "switch.end");
+        auto *default_block = end_block; // falls through to end if no default
+
+        // Create basic blocks for each case
+        std::vector<llvm::BasicBlock *> case_blocks;
+        const pgcodes::GCode *default_case = nullptr;
+        for (size_t i = 0; i < cases.size(); ++i) {
+            if (cases[i]->getLeft() == nullptr) {
+                // default case
+                auto *bb = llvm::BasicBlock::Create(
+                    *_context, "switch.default");
+                case_blocks.push_back(bb);
+                default_block = bb;
+                default_case = cases[i];
+            } else {
+                auto *bb = llvm::BasicBlock::Create(
+                    *_context, "switch.case." + std::to_string(i));
+                case_blocks.push_back(bb);
+            }
+        }
+
+        // Create LLVM switch instruction
+        auto *switch_inst = _builder.CreateSwitch(
+            cond_value, default_block,
+            static_cast<unsigned>(cases.size()));
+
+        // Add cases and emit bodies
+        bool all_terminated = true;
+        for (size_t i = 0; i < cases.size(); ++i) {
+            if (cases[i]->getLeft() != nullptr) {
+                auto *case_val = emitExpression(cases[i]->getLeft());
+                auto *const_val = llvm::dyn_cast<llvm::ConstantInt>(case_val);
+                if (const_val == nullptr) {
+                    throw std::runtime_error(
+                        "switch case value must be a constant integer");
+                }
+                switch_inst->addCase(const_val, case_blocks[i]);
+            }
+
+            function->insert(function->end(), case_blocks[i]);
+            _builder.SetInsertPoint(case_blocks[i]);
+            _terminated = false;
+
+            // Emit case body — unwrap the `{` block
+            const auto *body = cases[i]->getRight();
+            emitStatement(body);
+
+            bool block_terminated =
+                _terminated ||
+                _builder.GetInsertBlock()->getTerminator() != nullptr;
+            if (!block_terminated) {
+                _builder.CreateBr(end_block);
+            }
+            if (!block_terminated) {
+                all_terminated = false;
+            }
+        }
+
+        // If there are no cases or not all terminated, we need the end block
+        if (!all_terminated || cases.empty()) {
+            function->insert(function->end(), end_block);
+            _builder.SetInsertPoint(end_block);
+            _terminated = false;
+        } else {
+            _terminated = true;
+        }
         return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
     }
 
