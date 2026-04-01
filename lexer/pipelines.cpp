@@ -222,6 +222,12 @@ bool tryEscape(std::string &str, int flashPos, char lastChar) {
 }
 void PipeString::accept(IPipelineFactory *factory, PData &&data) {
     GET_CHAR(data);
+    // Handle empty string: opening quote stored, next char is same quote
+    if (str.size() == 1 && str[0] == c) {
+        str = "";
+        factory->packProduct();
+        return;
+    }
     if (str.size() > 1) {
         auto len = str.size();
         if (str[ len - 1 ] == '\\') {

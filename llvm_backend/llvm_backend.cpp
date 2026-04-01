@@ -1723,9 +1723,8 @@ class ModuleBuilder {
         auto *s     = args[0];
         auto *start = _builder.CreateSExt(args[1], _builder.getInt64Ty(),
                                           "start64");
-        auto *end   = _builder.CreateSExt(args[2], _builder.getInt64Ty(),
-                                          "end64");
-        auto *len   = _builder.CreateSub(end, start, "len64");
+        auto *len   = _builder.CreateSExt(args[2], _builder.getInt64Ty(),
+                                          "len64");
         auto *alloc_size = _builder.CreateAdd(
             len, llvm::ConstantInt::get(_builder.getInt64Ty(), 1), "alloc");
         auto *buf = _builder.CreateCall(getMalloc(), {alloc_size}, "buf");

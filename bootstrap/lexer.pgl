@@ -1,0 +1,373 @@
+package main;
+
+// ============================================================
+// Pangu Bootstrap Lexer
+// Token types: 0=EOF, 1=KEYWORD, 2=IDENT, 3=NUMBER, 4=STRING, 5=SYMBOL
+// ============================================================
+
+// ----- Character classification -----
+
+func is_alpha(c int) int {
+    if (c >= 'a' && c <= 'z') { return 1; }
+    if (c >= 'A' && c <= 'Z') { return 1; }
+    if (c == '_' || c == '$') { return 1; }
+    return 0;
+}
+
+func is_digit(c int) int {
+    if (c >= '0' && c <= '9') { return 1; }
+    return 0;
+}
+
+func is_alnum(c int) int {
+    if (is_alpha(c) == 1) { return 1; }
+    if (is_digit(c) == 1) { return 1; }
+    return 0;
+}
+
+func is_space(c int) int {
+    if (c == ' ' || c == '\t' || c == '\n' || c == '\r') { return 1; }
+    return 0;
+}
+
+func is_keyword(s string) int {
+    if (s == "package" || s == "import" || s == "as") { return 1; }
+    if (s == "if" || s == "else" || s == "for" || s == "while" || s == "do") { return 1; }
+    if (s == "type" || s == "func" || s == "return" || s == "struct") { return 1; }
+    if (s == "class" || s == "switch" || s == "case" || s == "default") { return 1; }
+    if (s == "goto" || s == "try" || s == "catch") { return 1; }
+    if (s == "public" || s == "static" || s == "const" || s == "final" || s == "var") { return 1; }
+    if (s == "pipeline" || s == "impl" || s == "enum" || s == "interface") { return 1; }
+    if (s == "switcher" || s == "worker") { return 1; }
+    if (s == "break" || s == "continue") { return 1; }
+    return 0;
+}
+
+// ----- Token storage helpers -----
+
+func add_token(types string, values string, lines string, cols string,
+               count int, ttype int, tval string, tline int, tcol int) int {
+    array_set(types, count, ttype);
+    str_array_set(values, count, tval);
+    array_set(lines, count, tline);
+    array_set(cols, count, tcol);
+    return count + 1;
+}
+
+// ----- Escape character resolution -----
+
+func resolve_escape(c int) int {
+    if (c == 'n') { return 10; }
+    if (c == 't') { return 9; }
+    if (c == 'r') { return 13; }
+    if (c == '0') { return 0; }
+    if (c == 92) { return 92; }
+    if (c == 39) { return 39; }
+    if (c == 34) { return 34; }
+    if (c == 'a') { return 7; }
+    if (c == 'b') { return 8; }
+    if (c == 'f') { return 12; }
+    if (c == 'v') { return 11; }
+    if (c == 'e') { return 27; }
+    return c;
+}
+
+// ----- Multi-char operator check -----
+// Returns 1 if two-char operator, 0 if not
+
+func try_two_char_op(c1 int, c2 int) int {
+    if (c2 == '=') {
+        if (c1 == '=' || c1 == '!' || c1 == '<' || c1 == '>') { return 1; }
+        if (c1 == '+' || c1 == '-' || c1 == '*' || c1 == '/') { return 1; }
+        if (c1 == '%' || c1 == '&' || c1 == '|' || c1 == '^') { return 1; }
+        if (c1 == ':') { return 1; }
+    }
+    if (c1 == '&' && c2 == '&') { return 1; }
+    if (c1 == '|' && c2 == '|') { return 1; }
+    if (c1 == '+' && c2 == '+') { return 1; }
+    if (c1 == '-' && c2 == '-') { return 1; }
+    if (c1 == '-' && c2 == '>') { return 1; }
+    if (c1 == ':' && c2 == ':') { return 1; }
+    if (c1 == '<' && c2 == '<') { return 1; }
+    if (c1 == '>' && c2 == '>') { return 1; }
+    return 0;
+}
+
+// ============================================================
+// Main tokenizer
+// source: the PGL source code string
+// types/values/lines/cols: parallel arrays (pass as string for ptr)
+// Returns: token count
+// ============================================================
+
+func tokenize(source string,
+              types string, values string, lines string, cols string) int {
+    src_len := str_len(source);
+    count := 0;
+    pos := 0;
+    line := 1;
+    col := 1;
+
+    while (pos < src_len) {
+        c := str_char_at(source, pos);
+
+        // ----- Whitespace -----
+        if (is_space(c) == 1) {
+            if (c == '\n') {
+                line = line + 1;
+                col = 1;
+            } else {
+                col = col + 1;
+            }
+            pos = pos + 1;
+        }
+        // ----- Comments -----
+        else if (c == '/' && pos + 1 < src_len && str_char_at(source, pos + 1) == '/') {
+            pos = pos + 2;
+            col = col + 2;
+            while (pos < src_len && str_char_at(source, pos) != '\n') {
+                pos = pos + 1;
+            }
+        }
+        else if (c == '/' && pos + 1 < src_len && str_char_at(source, pos + 1) == '*') {
+            pos = pos + 2;
+            col = col + 2;
+            while (pos + 1 < src_len) {
+                cc := str_char_at(source, pos);
+                if (cc == '*' && str_char_at(source, pos + 1) == '/') {
+                    pos = pos + 2;
+                    col = col + 2;
+                    break;
+                }
+                if (cc == '\n') {
+                    line = line + 1;
+                    col = 1;
+                } else {
+                    col = col + 1;
+                }
+                pos = pos + 1;
+            }
+        }
+        // ----- Numbers -----
+        else if (is_digit(c) == 1) {
+            start := pos;
+            start_col := col;
+            // Check hex: 0x...
+            if (c == '0' && pos + 1 < src_len) {
+                c2 := str_char_at(source, pos + 1);
+                if (c2 == 'x' || c2 == 'X') {
+                    pos = pos + 2;
+                    col = col + 2;
+                    while (pos < src_len) {
+                        ch := str_char_at(source, pos);
+                        if (is_digit(ch) == 1 || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F') || ch == '_') {
+                            pos = pos + 1;
+                            col = col + 1;
+                        } else {
+                            break;
+                        }
+                    }
+                    val := str_substr(source, start, pos - start);
+                    count = add_token(types, values, lines, cols, count, 3, val, line, start_col);
+                    continue;
+                }
+            }
+            // Decimal / float
+            while (pos < src_len) {
+                ch := str_char_at(source, pos);
+                if (is_digit(ch) == 1 || ch == '_') {
+                    pos = pos + 1;
+                    col = col + 1;
+                } else {
+                    break;
+                }
+            }
+            if (pos < src_len && str_char_at(source, pos) == '.') {
+                pos = pos + 1;
+                col = col + 1;
+                while (pos < src_len && is_digit(str_char_at(source, pos)) == 1) {
+                    pos = pos + 1;
+                    col = col + 1;
+                }
+            }
+            val := str_substr(source, start, pos - start);
+            count = add_token(types, values, lines, cols, count, 3, val, line, start_col);
+        }
+        // ----- Identifiers / Keywords -----
+        else if (is_alpha(c) == 1) {
+            start := pos;
+            start_col := col;
+            while (pos < src_len && is_alnum(str_char_at(source, pos)) == 1) {
+                pos = pos + 1;
+                col = col + 1;
+            }
+            val := str_substr(source, start, pos - start);
+            if (is_keyword(val) == 1) {
+                count = add_token(types, values, lines, cols, count, 1, val, line, start_col);
+            } else {
+                count = add_token(types, values, lines, cols, count, 2, val, line, start_col);
+            }
+        }
+        // ----- String literal (double quote) -----
+        // Use 34 for double-quote char, 92 for backslash
+        else if (c == 34) {
+            start_col := col;
+            pos = pos + 1;
+            col = col + 1;
+            val := "";
+            while (pos < src_len && str_char_at(source, pos) != 34) {
+                ch := str_char_at(source, pos);
+                if (ch == 92 && pos + 1 < src_len) {
+                    val = str_concat(val, char_to_str(ch));
+                    pos = pos + 1;
+                    col = col + 1;
+                    val = str_concat(val, char_to_str(str_char_at(source, pos)));
+                    pos = pos + 1;
+                    col = col + 1;
+                } else {
+                    if (ch == '\n') {
+                        line = line + 1;
+                        col = 1;
+                    } else {
+                        col = col + 1;
+                    }
+                    val = str_concat(val, char_to_str(ch));
+                    pos = pos + 1;
+                }
+            }
+            if (pos < src_len) {
+                pos = pos + 1;
+                col = col + 1;
+            }
+            count = add_token(types, values, lines, cols, count, 4, val, line, start_col);
+        }
+        // ----- Backtick string -----
+        else if (c == '`') {
+            start_col := col;
+            pos = pos + 1;
+            col = col + 1;
+            val := "";
+            while (pos < src_len && str_char_at(source, pos) != '`') {
+                ch := str_char_at(source, pos);
+                if (ch == '\n') {
+                    line = line + 1;
+                    col = 1;
+                } else {
+                    col = col + 1;
+                }
+                val = str_concat(val, char_to_str(ch));
+                pos = pos + 1;
+            }
+            if (pos < src_len) {
+                pos = pos + 1;
+                col = col + 1;
+            }
+            count = add_token(types, values, lines, cols, count, 4, val, line, start_col);
+        }
+        // ----- Char literal -----
+        // Use 39 for single-quote char
+        else if (c == 39) {
+            start_col := col;
+            pos = pos + 1;
+            col = col + 1;
+            char_val := 0;
+            if (pos < src_len) {
+                ch := str_char_at(source, pos);
+                if (ch == 92 && pos + 1 < src_len) {
+                    pos = pos + 1;
+                    col = col + 1;
+                    char_val = resolve_escape(str_char_at(source, pos));
+                    pos = pos + 1;
+                    col = col + 1;
+                } else {
+                    char_val = ch;
+                    pos = pos + 1;
+                    col = col + 1;
+                }
+            }
+            // Skip closing quote
+            if (pos < src_len && str_char_at(source, pos) == 39) {
+                pos = pos + 1;
+                col = col + 1;
+            }
+            count = add_token(types, values, lines, cols, count, 3, int_to_str(char_val), line, start_col);
+        }
+        // ----- Symbols / Operators -----
+        else {
+            start_col := col;
+            // Try two-character operator
+            if (pos + 1 < src_len) {
+                c2 := str_char_at(source, pos + 1);
+                if (try_two_char_op(c, c2) == 1) {
+                    val := str_concat(char_to_str(c), char_to_str(c2));
+                    count = add_token(types, values, lines, cols, count, 5, val, line, start_col);
+                    pos = pos + 2;
+                    col = col + 2;
+                    continue;
+                }
+            }
+            // Single-character symbol
+            val := char_to_str(c);
+            count = add_token(types, values, lines, cols, count, 5, val, line, start_col);
+            pos = pos + 1;
+            col = col + 1;
+        }
+    }
+
+    // Add EOF token
+    count = add_token(types, values, lines, cols, count, 0, "", line, col);
+    return count;
+}
+
+// ----- Token type name (for debug printing) -----
+
+func tok_type_name(t int) string {
+    if (t == 0) { return "EOF"; }
+    if (t == 1) { return "KEYWORD"; }
+    if (t == 2) { return "IDENT"; }
+    if (t == 3) { return "NUMBER"; }
+    if (t == 4) { return "STRING"; }
+    if (t == 5) { return "SYMBOL"; }
+    return "UNKNOWN";
+}
+
+// ============================================================
+// Standalone test: tokenize a file and print all tokens
+// Usage: pangu run bootstrap/lexer.pgl <file.pgl>
+// ============================================================
+
+func main() {
+    if (args_count() < 2) {
+        println("Usage: pangu run bootstrap/lexer.pgl <file.pgl>");
+        exit(1);
+    }
+    filepath := args(1);
+    source := read_file(filepath);
+
+    tok_types := make_array(50000);
+    tok_values := make_str_array(50000);
+    tok_lines := make_array(50000);
+    tok_cols := make_array(50000);
+
+    count := tokenize(source, tok_types, tok_values, tok_lines, tok_cols);
+
+    i := 0;
+    while (i < count) {
+        t := array_get(tok_types, i);
+        v := str_array_get(tok_values, i);
+        ln := array_get(tok_lines, i);
+        cl := array_get(tok_cols, i);
+        print(int_to_str(ln));
+        print(":");
+        print(int_to_str(cl));
+        print("  ");
+        print(tok_type_name(t));
+        if (str_len(v) > 0) {
+            print("  ");
+            print(v);
+        }
+        println("");
+        i = i + 1;
+    }
+    println(str_concat("Total tokens: ", int_to_str(count)));
+}

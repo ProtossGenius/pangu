@@ -134,7 +134,7 @@ class IPipelineFactory : public IPipeline {
     std::stack<ProductPack> _packer_stack;
     std::stack<PipelinePtr> _pipeline_stack;
     bool                    _need_choise_pipeline;
-    size_t                  _stack_max_size = 10000;
+    size_t                  _stack_max_size = 100000;
     IPipelineFactory       *_parent;
 };
 
