@@ -30,7 +30,21 @@ struct LoadedPackage {
 };
 
 void printUsage(std::ostream &os, const char *argv0) {
-    os << "usage: " << argv0 << " [parse|emit-ir|compile|run] <file.pgl>\n";
+    os << "Pangu Programming Language Compiler\n\n"
+       << "USAGE:\n"
+       << "  " << argv0 << " <command> <file.pgl> [args...]\n\n"
+       << "COMMANDS:\n"
+       << "  run <file.pgl> [args]   Compile and run via JIT\n"
+       << "  compile <file.pgl>      Compile to native executable (output: build/<name>)\n"
+       << "  emit-ir <file.pgl>      Print generated LLVM IR\n"
+       << "  parse <file.pgl>        Parse and print AST\n\n"
+       << "OPTIONS:\n"
+       << "  --help, -h              Show this help message\n"
+       << "  --version               Show version information\n\n"
+       << "EXAMPLES:\n"
+       << "  " << argv0 << " run hello.pgl\n"
+       << "  " << argv0 << " compile hello.pgl\n"
+       << "  " << argv0 << " run lexer.pgl input.pgl\n";
 }
 
 bool parseMode(const std::string &mode_name, Mode &mode) {
@@ -56,6 +70,15 @@ bool parseMode(const std::string &mode_name, Mode &mode) {
 bool parseArgs(int argc, const char *argv[], Options &options) {
     if (argc <= 1) {
         return false;
+    }
+    const std::string first = argv[1];
+    if (first == "--help" || first == "-h") {
+        options.show_help = true;
+        return true;
+    }
+    if (first == "--version") {
+        options.show_version = true;
+        return true;
     }
     if (argc == 2) {
         options.input_path = argv[ 1 ];
@@ -341,6 +364,14 @@ int run(int argc, const char *argv[]) {
     if (!parseArgs(argc, argv, options)) {
         printUsage(std::cerr, argv[ 0 ]);
         return -1;
+    }
+    if (options.show_help) {
+        printUsage(std::cout, argv[ 0 ]);
+        return 0;
+    }
+    if (options.show_version) {
+        std::cout << "pangu 0.1.0\n";
+        return 0;
     }
 
     switch (options.mode) {

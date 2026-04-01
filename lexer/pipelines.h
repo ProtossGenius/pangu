@@ -43,7 +43,8 @@ enum ELexPipeline {
     Comments,
     String,
     Macro,
-    Eof
+    Eof,
+    Char
 };
 
 LEXER_CLASS(PipeNumber, Number);
@@ -54,6 +55,21 @@ LEXER_CLASS(PipeComments, Comments)
 LEXER_CLASS(PipeString, String)
 LEXER_CLASS(PipeMacro, Macro)
 LEXER_CLASS(PipeEof, Eof)
+
+// Char literal pipeline: 'x' → produces NUMBER token with ASCII value
+class PipeChar : public IPipeline {
+  public:
+    void createProduct(IPipelineFactory *_factory) override {
+        _factory->pushProduct(std::unique_ptr<IProduct>(
+            (IProduct *) new DLex(ELexPipeline::Number)));
+    }
+    void accept(IPipelineFactory *factory, PData &&data) override;
+};
+static Reg __reg_pipe_PipeChar([]() {
+    LEX_PIPElINES[ELexPipeline::Char] =
+        SinglePipelineGetter(new PipelinePtr(new PipeChar()));
+    LEX_PIPE_ENUM[ELexPipeline::Char] = "Char";
+});
 
 } // namespace lexer
 } // namespace pangu

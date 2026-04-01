@@ -1,0 +1,21 @@
+package main;
+
+func main() {
+    println(true);
+    println(false);
+    x := true;
+    println(x);
+    if (true) {
+        println(1);
+    }
+    if (false) {
+        println(999);
+    } else {
+        println(0);
+    }
+    a := true;
+    b := false;
+    println(a && b);
+    println(a || b);
+    println(!b);
+}

@@ -30,7 +30,11 @@ void LexSwitcher::onChoice() {
         return _factory->choicePipeline(ELexPipeline::Space);
     }
 
-    if ('\'' == c || '"' == c || '`' == c) {
+    if ('\'' == c) {
+        return _factory->choicePipeline(ELexPipeline::Char);
+    }
+
+    if ('"' == c || '`' == c) {
 
         return _factory->choicePipeline(ELexPipeline::String);
     }

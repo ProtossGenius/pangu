@@ -173,6 +173,7 @@ class ModuleBuilder {
 
     llvm::Type *resolveTypeName(const std::string &name) {
         if (name == "int")    return _builder.getInt32Ty();
+        if (name == "bool")   return _builder.getInt32Ty();
         if (name == "string") return _builder.getPtrTy();
         auto it = _struct_types.find(name);
         if (it != _struct_types.end()) {
@@ -915,6 +916,11 @@ class ModuleBuilder {
                                           std::stoi(code->getValue()));
         case pgcodes::ValueType::IDENTIFIER: {
             const auto &name = code->getValue();
+            // bool literals
+            if (name == "true")
+                return llvm::ConstantInt::get(_builder.getInt32Ty(), 1);
+            if (name == "false")
+                return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
             // break/continue are keywords that appear as identifiers
             if (name == "break") {
                 if (_loop_stack.empty())

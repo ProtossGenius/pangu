@@ -1,0 +1,16 @@
+package main;
+
+func main() {
+    println('A');
+    println('0');
+    println('\n');
+    println('\t');
+    println('\\');
+    println('\'');
+    x := 'A';
+    println(x);
+    println('a' + 1);
+    if ('A' == 65) {
+        println(1);
+    }
+}

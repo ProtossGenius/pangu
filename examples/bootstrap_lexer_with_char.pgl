@@ -1,0 +1,115 @@
+package main;
+import "std/io/pp" as iopp;
+func is_alpha(ch int) int {
+    if ((ch >= 65) && (ch <= 90)) { return 1; }
+    if ((ch >= 97) && (ch <= 122)) { return 1; }
+    if (ch == 95) { return 1; }
+    return 0;
+}
+
+func is_digit(ch int) int {
+    if ((ch >= '0') && (ch <= '9')) { return 1; }
+    return 0;
+}
+
+func is_space(ch int) int {
+    if (ch == 32) { return 1; }
+    if (ch == 9) { return 1; }
+    if (ch == 10) { return 1; }
+    if (ch == 13) { return 1; }
+    return 0;
+}
+
+type TokenizeType enum {
+  KEYWORD,
+  IDENT,
+  NUMBER,
+  // etc ..
+}
+type Tokenize struct {
+    name string;
+    type TokenizeType;
+}
+// 这个应该是标准库中提供的，这里提供伪代码实现
+type FilePipe pipeline {
+  // 和下面的pipeline对比，它没有def in,说明不会作为别人的输出。
+  def out: char; // 这里面的char代表out是一个char类型的流
+  src string;
+  func startup(path string) {
+    src = read_file(path)
+    // 没有in的话，就不用返回pipeline
+  }
+
+  func run(/*没有in*/) {
+    src >> out; // 流的简单用法，将src里的char依次输入到out中。
+    EOF >> out;
+    end(); // 一个默认函数，表示该pipeline关闭，会调用reset函数
+    /* 流的几种其他用法
+      如果想要实现把src所有字符变成大写： src<>UPPER;
+      把src所有字符大写，并生成一份拷贝给target string:
+              src <> UPPER  // 将自己的字符大写，in/out 匹配的方法也可以作为pipeline使用（func UPPER(char) char)
+                      {+length = src.length()}  // 增加流程间变量，这个变量在流程间可见，前面是+表示增加，是-表示删除
+                    (length->presize) >> target {-length}; // length 作为启动参数，先构造target的默认内存长度,之后再将元素一个个添加到target里。
+      startup里面是一个参数列表，可以有若干个参数，虽然是一个参数列表，但也可以认为是一个结构体。
+      如字符串的startup可能是(src string, presize/*虽预分配内存大小*/uint, length /*长度为length的空串*/uint)，调用的时候是按照名称来制定参数的，如果名称和预期不同的话，就通过-> 来显示指定
+    */
+  }
+}
+
+type NumTokPipe pipeline {
+  def in: char;
+  def out: Tokenize;
+  name: string;
+  func run(c char) {
+      if (is_digit(c)) {
+        c >> name;
+        return;
+      }
+      {name, type:TokenizeType::NUMBER} >> out;
+      // {name, TokenizeType::NUMBER -> type} >> out; 这种写法也可以
+      c >> in; // in是输入流，这一步可以把废弃不用的c还给in, 如果有多个的话，可以用 [c] >> in;
+               // 如果in 之前是 [ A, B, C >> （出口），c会沿着出口重新推回去
+               // 如果是多个，例如 [1, 2, 3] >> in; 推进去之后变成 [ A, B, C, 3, 2, 1 >> (出口)
+               // 原则是，进入in的时候是什么顺序，从in里出来就是什么顺序
+      end();
+  }
+
+  func resize() {
+    name.resize();
+  }
+}
+
+type TokenizePipeline pipeline {
+    def in: char;
+    def out: Tokenize;
+
+    func startup(path string) { // 也可以定义在外面, 返回值是一个能够生成in 类型的pipeline.
+        return (path) >> iopp.FilePipe;
+    }
+
+  func run(c char) {
+      // 虽然这里一直每用到，不过可以用 $.length 获取流程间的共享变量,在编译的时候需要统计这些被使用的流程间共享变量，检查其流程的上下文是否提供
+      { 
+        is_digit : NumTokPipe,
+        in == '"' -> StringTokPipe,
+        is_alpha -> StringTokPipe, // 分隔符 ':' 和 '->' 是等效的
+        // etc.
+      } >> out; // out还是输出流
+
+      // 有一个这里没有用到的 [a, b, c, d] {{name:a.name}}>> out， 支持并行运行a b c d 四个pipeline， 之后把它们的返回值打包返回给 out,
+      // 流程间变量$可以认为是一个附加在流程中的变量，例如这个词元分析，它是跟随char c的。 语法是{+var_name}
+      // 而{ {...object...} } 是将前面的结果整合成一个新的结构体，传给下一个pipeline
+      // 同样可以使用{ generate(a, b, c, d) } ， 注意后面花括号里的a b c d指的是对应流程的产出
+    }
+}
+func main() {
+    if (args_count() < 2) {
+        println("usage: lexer <file.pgl>");
+        exit(1);
+    }
+    path := args(1);
+
+    (path)  >>  Tokenize
+            >> iopp.StdOut;
+    tokenize(src);
+}

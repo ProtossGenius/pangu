@@ -1,0 +1,12 @@
+package main;
+
+func main() {
+    println('A');
+    println('0');
+    println('\n');
+    x := 'Z';
+    println(x);
+    if ('A' == 65) {
+        println(1);
+    }
+}

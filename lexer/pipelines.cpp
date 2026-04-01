@@ -265,5 +265,46 @@ void PipeEof::accept(IPipelineFactory *factory, PData &&data) {
     factory->packProduct();
 }
 
+// Char literal: 'x', '\n', '\0' etc. → NUMBER token with ASCII value
+static const std::map<char, int> CHAR_ESCAPES = {
+    {'n', '\n'}, {'t', '\t'}, {'r', '\r'}, {'0', '\0'}, {'\\', '\\'},
+    {'\'', '\''}, {'"', '"'}, {'a', '\a'}, {'b', '\b'}, {'v', '\v'},
+    {'f', '\f'}, {'e', '\e'},
+};
+
+void PipeChar::accept(IPipelineFactory *factory, PData &&data) {
+    GET_CHAR(data);
+
+    if (str.empty()) {
+        str.push_back(c); // opening quote
+        return;
+    }
+    if (str.size() == 1 && str[0] == '\'') {
+        if (c == '\\') {
+            str.push_back(c); // start escape sequence
+            return;
+        }
+        // Normal char — store its ASCII value
+        str = std::to_string(static_cast<unsigned char>(c));
+        return;
+    }
+    if (str.size() == 2 && str[0] == '\'' && str[1] == '\\') {
+        // Escape code char
+        auto it = CHAR_ESCAPES.find(c);
+        if (it == CHAR_ESCAPES.end()) {
+            factory->onFail("unknown escape sequence: \\" + std::string(1, c));
+            return;
+        }
+        str = std::to_string(it->second);
+        return;
+    }
+    // Expect closing quote
+    if (c == '\'') {
+        factory->packProduct();
+    } else {
+        factory->onFail("char literal must contain exactly one character");
+    }
+}
+
 } // namespace lexer
 } // namespace pangu
