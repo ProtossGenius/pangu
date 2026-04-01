@@ -1,0 +1,35 @@
+package main;
+
+func main() {
+    s := "hello world";
+
+    // str_index_of
+    idx := str_index_of(s, "world");
+    println(idx);
+
+    idx2 := str_index_of(s, "xyz");
+    println(idx2);
+
+    idx3 := str_index_of(s, "hello");
+    println(idx3);
+
+    // str_starts_with
+    sw1 := str_starts_with(s, "hello");
+    println(sw1);
+
+    sw2 := str_starts_with(s, "world");
+    println(sw2);
+
+    sw3 := str_starts_with("abc", "abc");
+    println(sw3);
+
+    // str_replace
+    r1 := str_replace(s, "world", "pangu");
+    println(r1);
+
+    r2 := str_replace(s, "xyz", "nothing");
+    println(r2);
+
+    r3 := str_replace("aaa", "a", "bb");
+    println(r3);
+}

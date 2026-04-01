@@ -1,0 +1,14 @@
+package main;
+
+func main() {
+    // str_index_of
+    idx := str_index_of("hello world", "world");
+    println(idx);
+    println(str_index_of("abc", "xyz"));
+    // str_starts_with
+    println(str_starts_with("hello", "hel"));
+    println(str_starts_with("hello", "world"));
+    // str_replace
+    r := str_replace("foo bar baz", "bar", "qux");
+    println(r);
+}

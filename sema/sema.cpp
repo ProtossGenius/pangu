@@ -23,6 +23,7 @@ using ModuleTable   = std::map<std::string, FunctionTable>;
 const std::set<std::string> BUILTIN_FUNCTIONS = {
     "println", "print", "exit",
     "str_concat", "str_len", "str_eq", "str_substr",
+    "str_index_of", "str_starts_with", "str_replace",
     "int_to_str", "str_to_int",
     "read_file", "write_file",
     "str_char_at", "char_to_str",
@@ -44,9 +45,11 @@ size_t builtinParamCount(const std::string &name) {
     if (name == "args") return 1;
     if (name == "args_count") return 0;
     if (name == "str_concat" || name == "str_eq") return 2;
+    if (name == "str_index_of" || name == "str_starts_with") return 2;
     if (name == "write_file" || name == "str_char_at") return 2;
     if (name == "array_get" || name == "str_array_get") return 2;
     if (name == "str_substr") return 3;
+    if (name == "str_replace") return 3;
     if (name == "array_set" || name == "str_array_set") return 3;
     return 0;
 }

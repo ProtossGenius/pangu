@@ -1437,6 +1437,24 @@ class ModuleBuilder {
                 throw std::runtime_error("str_to_int expects 1 argument");
             return emitStrToInt(args);
         }
+        if (callee == "str_index_of") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 2)
+                throw std::runtime_error("str_index_of expects 2 arguments");
+            return emitStrIndexOf(args[0], args[1]);
+        }
+        if (callee == "str_starts_with") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 2)
+                throw std::runtime_error("str_starts_with expects 2 arguments");
+            return emitStrStartsWith(args[0], args[1]);
+        }
+        if (callee == "str_replace") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 3)
+                throw std::runtime_error("str_replace expects 3 arguments");
+            return emitStrReplace(args[0], args[1], args[2]);
+        }
         // File I/O builtins
         if (callee == "read_file") {
             auto args = emitCallArgs(args_code);
@@ -1641,6 +1659,31 @@ class ModuleBuilder {
                                     {_builder.getPtrTy()}, false));
     }
 
+    llvm::FunctionCallee getStrstr() {
+        return _module->getOrInsertFunction(
+            "strstr",
+            llvm::FunctionType::get(_builder.getPtrTy(),
+                                    {_builder.getPtrTy(), _builder.getPtrTy()},
+                                    false));
+    }
+
+    llvm::FunctionCallee getStrncmp() {
+        return _module->getOrInsertFunction(
+            "strncmp",
+            llvm::FunctionType::get(_builder.getInt32Ty(),
+                                    {_builder.getPtrTy(), _builder.getPtrTy(),
+                                     _builder.getInt64Ty()},
+                                    false));
+    }
+
+    llvm::FunctionCallee getRealloc() {
+        return _module->getOrInsertFunction(
+            "realloc",
+            llvm::FunctionType::get(_builder.getPtrTy(),
+                                    {_builder.getPtrTy(), _builder.getInt64Ty()},
+                                    false));
+    }
+
     // str_concat(a, b) → new string
     llvm::Value *emitStrConcat(const std::vector<llvm::Value *> &args) {
         auto *a = args[0];
@@ -1708,6 +1751,88 @@ class ModuleBuilder {
     // str_to_int(s) → int
     llvm::Value *emitStrToInt(const std::vector<llvm::Value *> &args) {
         return _builder.CreateCall(getAtoi(), {args[0]}, "atoi");
+    }
+
+    // str_index_of(haystack, needle) → int (-1 if not found)
+    llvm::Value *emitStrIndexOf(llvm::Value *haystack, llvm::Value *needle) {
+        auto *found = _builder.CreateCall(getStrstr(), {haystack, needle}, "found");
+        auto *is_null = _builder.CreateICmpEQ(
+            found, llvm::ConstantPointerNull::get(_builder.getPtrTy()), "isnull");
+        auto *diff = _builder.CreatePtrDiff(_builder.getInt8Ty(), found, haystack, "diff");
+        auto *idx32 = _builder.CreateTrunc(diff, _builder.getInt32Ty(), "idx32");
+        auto *result = _builder.CreateSelect(
+            is_null, llvm::ConstantInt::get(_builder.getInt32Ty(), -1), idx32, "indexOf");
+        return result;
+    }
+
+    // str_starts_with(s, prefix) → int (1 if yes, 0 if no)
+    llvm::Value *emitStrStartsWith(llvm::Value *s, llvm::Value *prefix) {
+        auto *prefix_len = _builder.CreateCall(getStrlen(), {prefix}, "plen");
+        auto *cmp = _builder.CreateCall(getStrncmp(), {s, prefix, prefix_len}, "cmp");
+        auto *eq = _builder.CreateICmpEQ(
+            cmp, llvm::ConstantInt::get(_builder.getInt32Ty(), 0), "eq");
+        return _builder.CreateZExt(eq, _builder.getInt32Ty(), "starts_with");
+    }
+
+    // str_replace(s, old, new) → new string with first occurrence replaced
+    llvm::Value *emitStrReplace(llvm::Value *s, llvm::Value *old_str, llvm::Value *new_str) {
+        auto *func = _module->getFunction("__pangu_str_replace");
+        if (!func) {
+            // Build the function inline
+            auto *ft = llvm::FunctionType::get(
+                _builder.getPtrTy(),
+                {_builder.getPtrTy(), _builder.getPtrTy(), _builder.getPtrTy()},
+                false);
+            func = llvm::Function::Create(ft, llvm::Function::InternalLinkage,
+                                          "__pangu_str_replace", _module.get());
+            auto *entry = llvm::BasicBlock::Create(*_context, "entry", func);
+            auto *found_bb = llvm::BasicBlock::Create(*_context, "found", func);
+            auto *notfound_bb = llvm::BasicBlock::Create(*_context, "notfound", func);
+
+            llvm::IRBuilder<> fb(*_context);
+            fb.SetInsertPoint(entry);
+            auto args_it = func->arg_begin();
+            auto *arg_s = &*args_it++;
+            auto *arg_old = &*args_it++;
+            auto *arg_new = &*args_it++;
+
+            auto *pos = fb.CreateCall(getStrstr(), {arg_s, arg_old}, "pos");
+            auto *is_null = fb.CreateICmpEQ(
+                pos, llvm::ConstantPointerNull::get(_builder.getPtrTy()), "null");
+            fb.CreateCondBr(is_null, notfound_bb, found_bb);
+
+            // Not found: return copy of original
+            fb.SetInsertPoint(notfound_bb);
+            auto *slen = fb.CreateCall(getStrlen(), {arg_s}, "slen");
+            auto *salloc = fb.CreateAdd(slen, llvm::ConstantInt::get(fb.getInt64Ty(), 1));
+            auto *scopy = fb.CreateCall(getMalloc(), {salloc}, "scopy");
+            fb.CreateCall(getMemcpy(), {scopy, arg_s, salloc});
+            fb.CreateRet(scopy);
+
+            // Found: build prefix + new + suffix
+            fb.SetInsertPoint(found_bb);
+            auto *prefix_len = fb.CreatePtrDiff(fb.getInt8Ty(), pos, arg_s, "plen");
+            auto *old_len = fb.CreateCall(getStrlen(), {arg_old}, "olen");
+            auto *new_len = fb.CreateCall(getStrlen(), {arg_new}, "nlen");
+            auto *s_len = fb.CreateCall(getStrlen(), {arg_s}, "slen2");
+            auto *result_len = fb.CreateSub(s_len, old_len);
+            result_len = fb.CreateAdd(result_len, new_len);
+            auto *buf_size = fb.CreateAdd(result_len, llvm::ConstantInt::get(fb.getInt64Ty(), 1));
+            auto *buf = fb.CreateCall(getMalloc(), {buf_size}, "buf");
+            // copy prefix
+            fb.CreateCall(getMemcpy(), {buf, arg_s, prefix_len});
+            // copy new
+            auto *dst1 = fb.CreateGEP(fb.getInt8Ty(), buf, {prefix_len}, "dst1");
+            fb.CreateCall(getMemcpy(), {dst1, arg_new, new_len});
+            // copy suffix
+            auto *dst2 = fb.CreateGEP(fb.getInt8Ty(), buf, {fb.CreateAdd(prefix_len, new_len)}, "dst2");
+            auto *suffix_start = fb.CreateGEP(fb.getInt8Ty(), pos, {old_len}, "suf");
+            auto *suffix_len = fb.CreateSub(s_len, fb.CreateAdd(prefix_len, old_len));
+            auto *suffix_copy = fb.CreateAdd(suffix_len, llvm::ConstantInt::get(fb.getInt64Ty(), 1));
+            fb.CreateCall(getMemcpy(), {dst2, suffix_start, suffix_copy});
+            fb.CreateRet(buf);
+        }
+        return _builder.CreateCall(func, {s, old_str, new_str}, "replaced");
     }
 
     // read_file(path) → string (reads entire file into malloc'd buffer)
