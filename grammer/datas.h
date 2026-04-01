@@ -23,6 +23,10 @@ class GStructContainer {
     void   write_string(std::ostream &ss);
     size_t size() const { return _structs.size(); }
     const std::map<std::string, PStruct> &items() const { return _structs; }
+    void mergeFrom(GStructContainer &other) {
+        for (auto &kv : other._structs)
+            _structs[kv.first] = std::move(kv.second);
+    }
 
   protected:
     std::map<std::string, PStruct> _structs;
@@ -41,6 +45,10 @@ class GFunctionContainer {
     virtual ~GFunctionContainer() {}
     void   write_string(std::ostream &ss);
     size_t size() const { return _functions.size(); }
+    void mergeFrom(GFunctionContainer &other) {
+        for (auto &kv : other._functions)
+            _functions[kv.first] = std::move(kv.second);
+    }
 
   protected:
     std::map<std::string, PFunction> _functions;
@@ -129,6 +137,10 @@ class GImplContainer {
     void addImpl(PImpl &&impl);
     void write_string(std::ostream &ss);
     size_t size() const { return _impls.size(); }
+    void mergeFrom(GImplContainer &other) {
+        for (auto &kv : other._impls)
+            _impls[kv.first] = std::move(kv.second);
+    }
 
   private:
     std::map<std::string, PImpl> _impls;
@@ -150,6 +162,14 @@ class GPackage : public IGrammer {
         return functions.getFunction(name);
     }
     std::string to_string() override;
+
+    void mergeFrom(GPackage &other) {
+        functions.mergeFrom(other.functions);
+        structs.mergeFrom(other.structs);
+        impls.mergeFrom(other.impls);
+        for (auto &kv : other._imports)
+            _imports[kv.first] = std::move(kv.second);
+    }
 
     GFunctionContainer  functions;
     GTypeFunctContainer function_defs;

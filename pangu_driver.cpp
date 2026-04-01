@@ -6,6 +6,8 @@
 #include "llvm_backend/llvm_backend.h"
 #include "sema/sema.h"
 
+#include <algorithm>
+#include <dirent.h>
 #include <fstream>
 #include <iostream>
 #include <lexer/pipelines.h>
@@ -15,6 +17,7 @@
 #include <string>
 #include <cstdlib>
 #include <limits.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include <vector>
 
@@ -113,7 +116,13 @@ int runParsePipeline(const std::string &input_path) {
     return 0;
 }
 
+bool isDirectory(const std::string &path) {
+    struct stat st;
+    return stat(path.c_str(), &st) == 0 && S_ISDIR(st.st_mode);
+}
+
 bool ensureReadable(const std::string &input_path) {
+    if (isDirectory(input_path)) return true;
     std::ifstream input(input_path);
     if (input.good()) {
         return true;
@@ -123,10 +132,13 @@ bool ensureReadable(const std::string &input_path) {
 }
 
 std::string moduleNameFromPath(const std::string &input_path) {
-    const std::string::size_type slash_pos = input_path.find_last_of("/\\");
+    std::string path = input_path;
+    while (!path.empty() && (path.back() == '/' || path.back() == '\\'))
+        path.pop_back();
+    const std::string::size_type slash_pos = path.find_last_of("/\\");
     const std::string            file_name =
-        slash_pos == std::string::npos ? input_path
-                                       : input_path.substr(slash_pos + 1);
+        slash_pos == std::string::npos ? path
+                                       : path.substr(slash_pos + 1);
     const std::string::size_type dot_pos = file_name.find_last_of('.');
     return dot_pos == std::string::npos ? file_name
                                         : file_name.substr(0, dot_pos);
@@ -149,6 +161,22 @@ std::string directoryName(const std::string &path) {
     return slash_pos == std::string::npos ? "." : path.substr(0, slash_pos);
 }
 
+std::vector<std::string> findPglFiles(const std::string &dir_path) {
+    std::vector<std::string> result;
+    DIR *dir = opendir(dir_path.c_str());
+    if (!dir) return result;
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != nullptr) {
+        std::string name = entry->d_name;
+        if (name.size() > 4 && name.substr(name.size() - 4) == ".pgl") {
+            result.push_back(dir_path + "/" + name);
+        }
+    }
+    closedir(dir);
+    std::sort(result.begin(), result.end());
+    return result;
+}
+
 std::string ensurePglSuffix(const std::string &path) {
     return path.size() >= 4 && path.substr(path.size() - 4) == ".pgl"
                ? path
@@ -158,14 +186,22 @@ std::string ensurePglSuffix(const std::string &path) {
 std::string findImportPath(const std::string &from_source,
                            const std::string &import_path) {
     std::vector<std::string> candidates;
+    // Determine the base directory for relative imports
+    std::string base_dir = isDirectory(from_source)
+                               ? from_source
+                               : directoryName(from_source);
+
     if (import_path.rfind("stdlib/", 0) == 0) {
         candidates.push_back(ensurePglSuffix(import_path));
+        candidates.push_back(import_path);
     } else if (!import_path.empty() && import_path[ 0 ] == '/') {
         candidates.push_back(ensurePglSuffix(import_path));
+        candidates.push_back(import_path);
     } else {
-        candidates.push_back(
-            ensurePglSuffix(directoryName(from_source) + "/" + import_path));
+        candidates.push_back(ensurePglSuffix(base_dir + "/" + import_path));
+        candidates.push_back(base_dir + "/" + import_path);
         candidates.push_back(ensurePglSuffix(import_path));
+        candidates.push_back(import_path);
     }
 
     for (const auto &candidate : candidates) {
@@ -211,17 +247,45 @@ bool loadPackageRecursive(
         return true;
     }
 
+    // Collect files to parse: single file or all .pgl files in directory
+    std::vector<std::string> files_to_parse;
+    if (isDirectory(canonical_source)) {
+        files_to_parse = findPglFiles(canonical_source);
+        if (files_to_parse.empty()) {
+            error = "no .pgl files found in directory: " + source_path;
+            return false;
+        }
+    } else {
+        files_to_parse.push_back(canonical_source);
+    }
+
+    // Parse the first (or entry) file as the base package
     std::string parse_error;
-    auto package = parsePackage(canonical_source, parse_error);
-    if (package == nullptr) {
+    auto base_package = parsePackage(files_to_parse[0], parse_error);
+    if (base_package == nullptr) {
         error = parse_error;
         return false;
+    }
+    std::string base_pkg_name = base_package->name();
+
+    // Parse remaining files; merge those with the same package name
+    std::vector<std::unique_ptr<grammer::GPackage>> kept_pkgs;
+    for (size_t i = 1; i < files_to_parse.size(); ++i) {
+        auto pkg = parsePackage(files_to_parse[i], parse_error);
+        if (pkg == nullptr) {
+            error = parse_error;
+            return false;
+        }
+        if (pkg->name() == base_pkg_name) {
+            base_package->mergeFrom(*pkg);
+            kept_pkgs.push_back(std::move(pkg));
+        }
     }
 
     LoadedPackage loaded;
     loaded.module_id   = moduleIdFromSourcePath(canonical_source);
     loaded.source_path = canonical_source;
-    loaded.package     = std::move(package);
+    loaded.package     = std::move(base_package);
 
     for (const auto &it : loaded.package->imports()) {
         const auto &imp = it.second;
@@ -243,6 +307,12 @@ bool loadPackageRecursive(
 
     load_order.push_back(canonical_source);
     loaded_packages[ canonical_source ] = std::move(loaded);
+
+    // Keep merged package ASTs alive
+    static std::vector<std::unique_ptr<grammer::GPackage>> merged_storage;
+    for (auto &p : kept_pkgs)
+        merged_storage.push_back(std::move(p));
+
     return true;
 }
 

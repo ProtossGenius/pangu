@@ -1,0 +1,8 @@
+package main;
+
+import "mylib" as lib;
+
+func main() {
+    println(lib.add(3, 4));
+    println(lib.multiply(5, 6));
+}

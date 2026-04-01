@@ -38,8 +38,23 @@ test_compile_fail () {
     done
 }
 
+test_multifile () {
+    echo "\033[32m ########## TEST MULTIFILE #########\033[0m";
+    for dir in test_datas/multifile_*/ test_datas/multifile/; do
+        [ -d "$dir" ] || continue
+        local target="$dir/target"
+        [ -f "$target" ] || continue
+        echo "\033[32m testing multifile $dir ......\033[0m";
+        ./build/pangu run "$dir" > "${dir}out" 2>&1;
+        if [ $? -ne 0 ]; then echo "\033[31m multifile run $dir fail \033[0m"; cat "${dir}out"; exit; fi
+        diff "$target" "${dir}out";
+        if [ $? -ne 0 ]; then echo "\033[31m multifile output mismatch $dir \033[0m"; exit; fi
+    done
+}
+
 test lexer 
 test grammer 
 test runtime
 test_compile
 test_compile_fail
+test_multifile
