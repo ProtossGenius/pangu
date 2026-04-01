@@ -383,7 +383,46 @@ class ProgramChecker {
             return;
         }
 
-        checkImportedCall(left, alias, callee, args_code);
+        checkImportedOrMethodCall(left, alias, callee, args_code);
+    }
+
+    bool isStructMethodCall(const std::string &type_name,
+                            const std::string &method_name,
+                            size_t actual_args) {
+        // Check if StructName.method_name exists in current module
+        std::string mangled = type_name + "." + method_name;
+        auto mod_it = _module_functions.find(_current_module_id);
+        if (mod_it == _module_functions.end()) return false;
+        auto func_it = mod_it->second.find(mangled);
+        return func_it != mod_it->second.end();
+    }
+
+    void checkImportedOrMethodCall(const pgcodes::GCode *alias_node,
+                           const std::string &alias,
+                           const std::string &callee,
+                           const pgcodes::GCode *args_code) {
+        // First check if this is a struct method call: StructName.method(args)
+        std::string mangled = alias + "." + callee;
+        auto mod_it = _module_functions.find(_current_module_id);
+        if (mod_it != _module_functions.end()) {
+            auto func_it = mod_it->second.find(mangled);
+            if (func_it != mod_it->second.end()) {
+                // It's a struct method call
+                size_t actual_args = countArgs(args_code);
+                if (actual_args != func_it->second.param_count) {
+                    const auto &loc = alias_node->location();
+                    size_t hw = alias.size() + 1 + callee.size();
+                    emitError(loc, "method '" + mangled + "' expects " +
+                              std::to_string(func_it->second.param_count) +
+                              " argument(s), got " + std::to_string(actual_args), hw);
+                }
+                checkCallArgs(args_code);
+                return;
+            }
+        }
+
+        // Fall back to import-qualified call
+        checkImportedCall(alias_node, alias, callee, args_code);
     }
 
     void checkImportedCall(const pgcodes::GCode *alias_node,

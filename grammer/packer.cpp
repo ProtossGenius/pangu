@@ -48,7 +48,12 @@ void packTypeDefToPackage(IPipelineFactory *factory, PProduct &&pro) {
 }
 
 void packImplToPackage(IPipelineFactory *factory, PProduct &&pro) {
-    auto top = static_cast<GPackage *>(factory->getTopProduct());
+    auto *impl = static_cast<GImpl *>(pro.get());
+    auto  top  = static_cast<GPackage *>(factory->getTopProduct());
+    // Transfer methods from impl to package's function container
+    for (auto &method : impl->methods()) {
+        top->functions.addFunction(std::move(method));
+    }
     top->impls.addImpl(PImpl(static_cast<GImpl *>(pro.release())));
 }
 

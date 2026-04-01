@@ -1,0 +1,24 @@
+package main;
+
+type Point struct {
+    x int;
+    y int;
+}
+
+impl Point PointMethods {
+    func sum_xy(p Point) int {
+        return p.x + p.y;
+    }
+
+    func scale(p Point, factor int) Point {
+        return Point{x: p.x * factor, y: p.y * factor};
+    }
+}
+
+func main() {
+    p := Point{x: 3, y: 4};
+    println(Point.sum_xy(p));
+    q := Point.scale(p, 10);
+    println(q.x);
+    println(q.y);
+}

@@ -822,6 +822,89 @@ class ModuleBuilder {
         if (isComparisonOperator(oper)) {
             return emitComparison(code, oper);
         }
+        if (oper == ".") {
+            const auto *left  = code->getLeft();
+            const auto *right = code->getRight();
+
+            // If left subtree has no return prefix, handle normally
+            if (!containsReturnPrefix(left)) {
+                std::string          module_alias, callee;
+                const pgcodes::GCode *args_code = nullptr;
+                if (extractQualifiedCall(code, module_alias, callee, args_code)) {
+                    return emitQualifiedCall(module_alias, callee, args_code);
+                }
+                return emitFieldAccess(code);
+            }
+
+            // Left has return prefix, e.g. return(p).x or return(mod).func()
+            // Extract the base expression by stripping the return wrapper
+            const pgcodes::GCode *base_expr = nullptr;
+            if (left &&
+                left->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                left->getOper() == "(" && left->getLeft() &&
+                left->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER &&
+                left->getLeft()->getValue() == "return") {
+                base_expr = left->getRight();
+            }
+            if (!base_expr) {
+                throw std::runtime_error(
+                    "complex return expression in field/method access");
+            }
+
+            // Check for qualified call: return(module).func(args)
+            if (base_expr->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+                std::string callee;
+                const pgcodes::GCode *args_code = nullptr;
+                if (right &&
+                    right->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                    right->getOper() == "(" && right->getLeft() &&
+                    right->getLeft()->getValueType() ==
+                        pgcodes::ValueType::IDENTIFIER) {
+                    callee    = right->getLeft()->getValue();
+                    args_code = right->getRight();
+                    return emitQualifiedCall(base_expr->getValue(), callee,
+                                             args_code);
+                }
+                if (right &&
+                    right->getValueType() == pgcodes::ValueType::IDENTIFIER &&
+                    isSuffixCallNode(right->getRight())) {
+                    callee    = right->getValue();
+                    args_code = right->getRight()->getRight();
+                    return emitQualifiedCall(base_expr->getValue(), callee,
+                                             args_code);
+                }
+            }
+
+            // Field access: emit base expression, use extractvalue
+            auto *base_val = emitExpression(base_expr);
+            if (right &&
+                right->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+                const std::string &field_name = right->getValue();
+                auto *struct_type =
+                    llvm::dyn_cast<llvm::StructType>(base_val->getType());
+                if (struct_type) {
+                    const StructInfo *sinfo = nullptr;
+                    for (const auto &[sname, si] : _struct_types) {
+                        if (si.llvm_type == struct_type) {
+                            sinfo = &si;
+                            break;
+                        }
+                    }
+                    if (sinfo) {
+                        auto fi = sinfo->field_index.find(field_name);
+                        if (fi != sinfo->field_index.end()) {
+                            return _builder.CreateExtractValue(
+                                base_val, fi->second, field_name);
+                        }
+                        throw std::runtime_error("struct has no field '" +
+                                                 field_name + "'");
+                    }
+                }
+                throw std::runtime_error("cannot access field '" +
+                                         field_name + "' on non-struct");
+            }
+            throw std::runtime_error("unsupported return field access");
+        }
         if (oper == "(") {
             // Grouping parentheses: left is `)` placeholder
             if (code->getLeft() != nullptr &&
@@ -837,8 +920,8 @@ class ModuleBuilder {
             }
             return emitParenOrCall(code);
         }
-        throw std::runtime_error("unsupported return expression operator: " +
-                                 oper);
+        // For any other operator, fall back to the general expression emitter
+        return emitExpression(code);
     }
 
     llvm::Value *emitValue(const pgcodes::GCode *code) {
@@ -1423,11 +1506,16 @@ class ModuleBuilder {
                                    const std::string &callee,
                                    const pgcodes::GCode *args_code) {
         auto *callee_function = resolveImportedFunction(module_alias, callee);
-        if (callee_function == nullptr) {
-            throw std::runtime_error("unsupported imported function call: " +
-                                     module_alias + "." + callee);
+        if (callee_function != nullptr) {
+            return emitCall(callee_function, module_alias + "." + callee, args_code);
         }
-        return emitCall(callee_function, module_alias + "." + callee, args_code);
+        // Try as a struct method call: StructName.method_name
+        std::string mangled = module_alias + "." + callee;
+        callee_function = resolveCurrentFunction(mangled);
+        if (callee_function != nullptr) {
+            return emitCall(callee_function, mangled, args_code);
+        }
+        throw std::runtime_error("unsupported qualified call: " + mangled);
     }
 
     llvm::Value *emitParenOrCall(const pgcodes::GCode *code) {

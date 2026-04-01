@@ -555,18 +555,30 @@ void PipeImpl::accept(IPipelineFactory *factory, PData &&data) {
         return;
     }
     case int(ImplStep::READ_BODY): {
-        if (makeSymbol("{") == *lex) {
-            topProduct->setBraceDepth(topProduct->getBraceDepth() + 1);
-            topProduct->addBodyToken();
+        // Delegate function definitions to the function parser
+        if (makeIdentifier("func") == *lex || makeIdentifier("pipeline") == *lex) {
+            factory->setNextPacker([](auto *factory, auto pro) {
+                auto *impl_product = static_cast<GImpl *>(factory->getTopProduct());
+                auto  ptr = PFunction(static_cast<GFunction *>(pro.release()));
+                // Mangle name: StructName.method_name
+                ptr->setName(impl_product->name() + "." + ptr->name());
+                impl_product->addMethod(std::move(ptr));
+            });
+            factory->undealData(std::move(data));
+            factory->choicePipeline(EGrammer::Func);
             return;
         }
         if (makeSymbol("}") == *lex) {
-            const int next_depth = topProduct->getBraceDepth() - 1;
-            if (next_depth == 0) {
+            if (topProduct->getBraceDepth() <= 1) {
                 factory->packProduct();
                 return;
             }
-            topProduct->setBraceDepth(next_depth);
+            topProduct->setBraceDepth(topProduct->getBraceDepth() - 1);
+            topProduct->addBodyToken();
+            return;
+        }
+        if (makeSymbol("{") == *lex) {
+            topProduct->setBraceDepth(topProduct->getBraceDepth() + 1);
             topProduct->addBodyToken();
             return;
         }

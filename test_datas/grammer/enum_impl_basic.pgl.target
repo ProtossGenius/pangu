@@ -1,12 +1,14 @@
 package syntax_demo
 import list(0)
 struct list (0):
-function list:(0)
+function list:(1)
+func Lexer.create([])[(var) return type(Lex) ] (( _}_ ) _{_ ((( _return_ ) _(_ ( _Lex_ ( _{_ ( __ )))) _;_ 
+))
 type func list:(0)
 type def list:(1)
 type LexType enum {STRING, NUMBER}
 impl list:(2)
-impl Lexer Switcher {body_tokens=14}
+impl Lexer Switcher {body_tokens=2}
 impl NumberLexer Lexer worker {body_tokens=3}
 variable list:(0)
 

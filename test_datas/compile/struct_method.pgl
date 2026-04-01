@@ -1,0 +1,17 @@
+package main;
+
+type Point struct {
+    x int;
+    y int;
+}
+
+impl Point PointMethods {
+    func sum_xy(p Point) int {
+        return p.x + p.y;
+    }
+}
+
+func main() {
+    p := Point{x: 5, y: 8};
+    println(Point.sum_xy(p));
+}

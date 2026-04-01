@@ -1,0 +1,20 @@
+package main;
+
+type Point struct {
+    x int;
+    y int;
+}
+
+func get_x(p Point) int {
+    return p.x;
+}
+
+func sum_fields(p Point) int {
+    return p.x + p.y;
+}
+
+func main() {
+    p := Point{x: 42, y: 7};
+    println(get_x(p));
+    println(sum_fields(p));
+}
