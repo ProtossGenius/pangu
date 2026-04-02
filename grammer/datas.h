@@ -235,14 +235,32 @@ class GVarDef : public IGrammer {
     std::string        integrityTest() override;
     std::string        to_string() override;
 
+    void addAnnotation(const std::string &key, const std::string &value = "") {
+        _annotations.push_back({key, value});
+    }
+    const std::vector<std::pair<std::string, std::string>> &annotations() const {
+        return _annotations;
+    }
+
   private:
     PType       _type;
     std::string _detail;
+    std::vector<std::pair<std::string, std::string>> _annotations;
 };
 class GTypeDef : public IGrammer {
   public:
     virtual int         typeId() const override { return 0; }
     virtual std::string to_string() override { return "typedef: " + name(); }
+
+    void addAnnotation(const std::string &key, const std::string &value = "") {
+        _annotations.push_back({key, value});
+    }
+    const std::vector<std::pair<std::string, std::string>> &annotations() const {
+        return _annotations;
+    }
+
+  private:
+    std::vector<std::pair<std::string, std::string>> _annotations;
 };
 class GEnum : public GTypeDef {
   public:
@@ -257,6 +275,16 @@ class GStruct : public GVarDefContainer {
   public:
     int         typeId() const override { return 0; }
     std::string to_string() override;
+
+    void addAnnotation(const std::string &key, const std::string &value = "") {
+        _annotations.push_back({key, value});
+    }
+    const std::vector<std::pair<std::string, std::string>> &annotations() const {
+        return _annotations;
+    }
+
+  private:
+    std::vector<std::pair<std::string, std::string>> _annotations;
 };
 class GInterface : public GTypeDef {
   public:

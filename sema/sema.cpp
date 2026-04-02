@@ -36,6 +36,10 @@ const std::set<std::string> BUILTIN_FUNCTIONS = {
     "pipeline_cache_append", "pipeline_cache_str", "pipeline_cache_reset",
     "pipeline_emit", "pipeline_output_count", "pipeline_output_get",
     "pipeline_set_worker", "pipeline_get_worker",
+    "reflect_type_count", "reflect_type_name",
+    "reflect_field_count", "reflect_field_name", "reflect_field_type",
+    "reflect_annotation_count", "reflect_annotation_key",
+    "reflect_annotation_value", "reflect_annotation_field_index",
 };
 
 bool isBuiltin(const std::string &name) {
@@ -75,6 +79,16 @@ size_t builtinParamCount(const std::string &name) {
     if (name == "pipeline_output_get") return 2;
     if (name == "pipeline_set_worker") return 2;
     if (name == "pipeline_get_worker") return 1;
+    // Reflection builtins
+    if (name == "reflect_type_count") return 0;
+    if (name == "reflect_type_name") return 1;
+    if (name == "reflect_field_count") return 1;
+    if (name == "reflect_field_name") return 2;
+    if (name == "reflect_field_type") return 2;
+    if (name == "reflect_annotation_count") return 1;
+    if (name == "reflect_annotation_key") return 2;
+    if (name == "reflect_annotation_value") return 2;
+    if (name == "reflect_annotation_field_index") return 2;
     return 0;
 }
 

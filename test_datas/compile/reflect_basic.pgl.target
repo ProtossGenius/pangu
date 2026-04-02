@@ -1,0 +1,11 @@
+2
+Point
+Color
+3
+x int
+y int
+z int
+3
+json(x_coord) field=0
+json(y_coord) field=1
+readonly() field=1

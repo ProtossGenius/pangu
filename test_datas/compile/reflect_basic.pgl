@@ -1,0 +1,43 @@
+package main;
+
+type Point struct {
+    @json("x_coord") x int;
+    @json("y_coord") @readonly y int;
+    z int;
+}
+
+type Color enum {
+    Red
+    Green
+    Blue
+}
+
+func main() {
+    tc := reflect_type_count();
+    println(tc);
+    i := 0;
+    while (i < tc) {
+        println(reflect_type_name(i));
+        i = i + 1;
+    }
+    fc := reflect_field_count("Point");
+    println(fc);
+    j := 0;
+    while (j < fc) {
+        print(reflect_field_name("Point", j));
+        print(" ");
+        println(reflect_field_type("Point", j));
+        j = j + 1;
+    }
+    ac := reflect_annotation_count("Point");
+    println(ac);
+    k := 0;
+    while (k < ac) {
+        print(reflect_annotation_key("Point", k));
+        print("(");
+        print(reflect_annotation_value("Point", k));
+        print(") field=");
+        println(reflect_annotation_field_index("Point", k));
+        k = k + 1;
+    }
+}

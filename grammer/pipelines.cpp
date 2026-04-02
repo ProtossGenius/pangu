@@ -184,6 +184,7 @@ void PipeInterface::accept(IPipelineFactory *factory, PData &&data) {
 enum class StructStep {
     WAIT_BODY = 0,
     READING_VAR,
+    READING_ANNOTATION,
 };
 
 void PipeStruct::createProduct(IPipelineFactory *_factory) {
@@ -239,12 +240,17 @@ void PipeVariable::createProduct(IPipelineFactory *factory) {
 }
 
 enum class VarStep {
-    WAITING_NAME = 0,
+    WAITING_ANNOTATION = 0,
+    WAITING_NAME,
     WAITING_PACKAGE,
     WAITING_POINT,
     WAITING_TYPE,
     WAITING_DETAIL,
     WAITING_FINISH,
+    WAITING_ANNO_NAME,
+    WAITING_ANNO_LPAREN,
+    WAITING_ANNO_VALUE,
+    WAITING_ANNO_RPAREN,
 };
 void PipeVariable::accept(IPipelineFactory *factory, PData &&data) {
     GET_LEX(data);
@@ -252,12 +258,26 @@ void PipeVariable::accept(IPipelineFactory *factory, PData &&data) {
     // ignore space.
     if (lexer::ELexPipeline::Space == type) {
         if (makeSpace("\n") == *lex) {
-            factory->undealData(std::move(data));
-            factory->packProduct();
+            // Newlines in annotation context continue to next line
+            if (topProduct->getStep() != (int) VarStep::WAITING_ANNOTATION) {
+                factory->undealData(std::move(data));
+                factory->packProduct();
+            }
         }
         return;
     }
     switch (topProduct->getStep()) {
+    case (int) VarStep::WAITING_ANNOTATION: {
+        // Handle @annotation(value) before field name
+        if (makeSymbol("@") == *lex) {
+            topProduct->setStep((int) VarStep::WAITING_ANNO_NAME);
+            return;
+        }
+        // No more annotations, fall through to name parsing
+        topProduct->setStep((int) VarStep::WAITING_NAME);
+        // Fall through by re-processing this token
+    }
+    [[fallthrough]];
     case (int) VarStep::WAITING_NAME: {
         if (lexer::ELexPipeline::Identifier == type) {
             topProduct->setName(str);
@@ -265,6 +285,51 @@ void PipeVariable::accept(IPipelineFactory *factory, PData &&data) {
             return;
         }
         factory->onFail("except an identifier, but get " + lex->to_string());
+        break;
+    }
+    case (int) VarStep::WAITING_ANNO_NAME: {
+        if (lexer::ELexPipeline::Identifier == type) {
+            topProduct->setDetail(str); // temporarily store anno name in detail
+            topProduct->setStep((int) VarStep::WAITING_ANNO_LPAREN);
+            return;
+        }
+        factory->onFail("expected annotation name after @, got " + lex->to_string());
+        break;
+    }
+    case (int) VarStep::WAITING_ANNO_LPAREN: {
+        if (makeSymbol("(") == *lex) {
+            topProduct->setStep((int) VarStep::WAITING_ANNO_VALUE);
+            return;
+        }
+        // No parentheses: annotation without value
+        topProduct->addAnnotation(topProduct->getDetail(), "");
+        topProduct->setDetail("");
+        topProduct->setStep((int) VarStep::WAITING_ANNOTATION);
+        factory->undealData(std::move(data));
+        return;
+    }
+    case (int) VarStep::WAITING_ANNO_VALUE: {
+        if (lexer::ELexPipeline::String == type) {
+            topProduct->addAnnotation(topProduct->getDetail(), str);
+            topProduct->setDetail("");
+            topProduct->setStep((int) VarStep::WAITING_ANNO_RPAREN);
+            return;
+        }
+        if (lexer::ELexPipeline::Identifier == type || lexer::ELexPipeline::Number == type) {
+            topProduct->addAnnotation(topProduct->getDetail(), str);
+            topProduct->setDetail("");
+            topProduct->setStep((int) VarStep::WAITING_ANNO_RPAREN);
+            return;
+        }
+        factory->onFail("expected annotation value, got " + lex->to_string());
+        break;
+    }
+    case (int) VarStep::WAITING_ANNO_RPAREN: {
+        if (makeSymbol(")") == *lex) {
+            topProduct->setStep((int) VarStep::WAITING_ANNOTATION);
+            return;
+        }
+        factory->onFail("expected ')' after annotation value, got " + lex->to_string());
         break;
     }
     case (int) VarStep::WAITING_PACKAGE: {

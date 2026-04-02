@@ -238,3 +238,81 @@ int pg_pipeline_get_worker(void *state) {
     PipelineState *s = (PipelineState *)state;
     return s->worker_id;
 }
+
+// --- Reflection runtime ---
+
+typedef struct {
+    const char *name;
+    int field_count;
+    const char **field_names;
+    const char **field_types;
+    int ann_count;
+    const char **ann_keys;
+    const char **ann_values;
+    const int *ann_field_indices;
+} PanguTypeMeta;
+
+static int g_type_count = 0;
+static PanguTypeMeta *g_type_registry = NULL;
+
+void __pangu_register_types(int count, void *registry) {
+    g_type_count = count;
+    g_type_registry = (PanguTypeMeta *)registry;
+}
+
+static PanguTypeMeta *find_type_meta(const char *name) {
+    for (int i = 0; i < g_type_count; i++) {
+        if (strcmp(g_type_registry[i].name, name) == 0)
+            return &g_type_registry[i];
+    }
+    return NULL;
+}
+
+int reflect_type_count(void) {
+    return g_type_count;
+}
+
+const char *reflect_type_name(int index) {
+    if (index < 0 || index >= g_type_count) return "";
+    return g_type_registry[index].name;
+}
+
+int reflect_field_count(const char *type_name) {
+    PanguTypeMeta *m = find_type_meta(type_name);
+    return m ? m->field_count : 0;
+}
+
+const char *reflect_field_name(const char *type_name, int index) {
+    PanguTypeMeta *m = find_type_meta(type_name);
+    if (!m || index < 0 || index >= m->field_count) return "";
+    return m->field_names[index];
+}
+
+const char *reflect_field_type(const char *type_name, int index) {
+    PanguTypeMeta *m = find_type_meta(type_name);
+    if (!m || index < 0 || index >= m->field_count) return "";
+    return m->field_types[index];
+}
+
+int reflect_annotation_count(const char *type_name) {
+    PanguTypeMeta *m = find_type_meta(type_name);
+    return m ? m->ann_count : 0;
+}
+
+const char *reflect_annotation_key(const char *type_name, int index) {
+    PanguTypeMeta *m = find_type_meta(type_name);
+    if (!m || index < 0 || index >= m->ann_count) return "";
+    return m->ann_keys[index];
+}
+
+const char *reflect_annotation_value(const char *type_name, int index) {
+    PanguTypeMeta *m = find_type_meta(type_name);
+    if (!m || index < 0 || index >= m->ann_count) return "";
+    return m->ann_values[index];
+}
+
+int reflect_annotation_field_index(const char *type_name, int index) {
+    PanguTypeMeta *m = find_type_meta(type_name);
+    if (!m || index < 0 || index >= m->ann_count) return -1;
+    return m->ann_field_indices[index];
+}

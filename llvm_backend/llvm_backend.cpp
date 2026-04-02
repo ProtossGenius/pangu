@@ -96,6 +96,7 @@ class ModuleBuilder {
         declareArgcArgvGlobals();
         declareStructTypes();
         declareEnumTypes();
+        emitTypeMetadata();
         declareRuntimeHelpers();
         declareFunctions();
         defineFunctions();
@@ -122,6 +123,9 @@ class ModuleBuilder {
         llvm::StructType                    *llvm_type;
         std::vector<StructFieldInfo>         fields;
         std::map<std::string, size_t>        field_index; // name → index
+        // Reflection metadata
+        std::vector<std::vector<std::pair<std::string, std::string>>> field_annotations;
+        std::vector<std::pair<std::string, std::string>> struct_annotations;
     };
     // Loop context for break/continue
     struct LoopContext {
@@ -305,6 +309,38 @@ class ModuleBuilder {
         // int pg_pipeline_get_worker(void* state)
         _module->getOrInsertFunction("pg_pipeline_get_worker",
             llvm::FunctionType::get(i32_ty, {ptr_ty}, false));
+
+        // Reflection runtime helpers
+        // int reflect_type_count(void)
+        _module->getOrInsertFunction("reflect_type_count",
+            llvm::FunctionType::get(i32_ty, {}, false));
+        // const char* reflect_type_name(int index)
+        _module->getOrInsertFunction("reflect_type_name",
+            llvm::FunctionType::get(ptr_ty, {i32_ty}, false));
+        // int reflect_field_count(const char* type_name)
+        _module->getOrInsertFunction("reflect_field_count",
+            llvm::FunctionType::get(i32_ty, {ptr_ty}, false));
+        // const char* reflect_field_name(const char* type_name, int index)
+        _module->getOrInsertFunction("reflect_field_name",
+            llvm::FunctionType::get(ptr_ty, {ptr_ty, i32_ty}, false));
+        // const char* reflect_field_type(const char* type_name, int index)
+        _module->getOrInsertFunction("reflect_field_type",
+            llvm::FunctionType::get(ptr_ty, {ptr_ty, i32_ty}, false));
+        // int reflect_annotation_count(const char* type_name)
+        _module->getOrInsertFunction("reflect_annotation_count",
+            llvm::FunctionType::get(i32_ty, {ptr_ty}, false));
+        // const char* reflect_annotation_key(const char* type_name, int index)
+        _module->getOrInsertFunction("reflect_annotation_key",
+            llvm::FunctionType::get(ptr_ty, {ptr_ty, i32_ty}, false));
+        // const char* reflect_annotation_value(const char* type_name, int index)
+        _module->getOrInsertFunction("reflect_annotation_value",
+            llvm::FunctionType::get(ptr_ty, {ptr_ty, i32_ty}, false));
+        // int reflect_annotation_field_index(const char* type_name, int index)
+        _module->getOrInsertFunction("reflect_annotation_field_index",
+            llvm::FunctionType::get(i32_ty, {ptr_ty, i32_ty}, false));
+        // void __pangu_register_types(int count, void* registry)
+        _module->getOrInsertFunction("__pangu_register_types",
+            llvm::FunctionType::get(void_ty, {i32_ty, ptr_ty}, false));
     }
 
     void declareStructTypes() {
@@ -335,9 +371,11 @@ class ModuleBuilder {
                     field_types.push_back(ftype);
                     info.fields.push_back(StructFieldInfo{fname, idx});
                     info.field_index[fname] = idx;
+                    info.field_annotations.push_back(var->annotations());
                     ++idx;
                 }
                 info.llvm_type->setBody(field_types);
+                info.struct_annotations = gs->annotations();
             }
         }
     }
@@ -355,6 +393,172 @@ class ModuleBuilder {
                 }
                 _enum_types[genum->name()] = std::move(info);
             }
+        }
+    }
+
+    // Create a global string constant (no insert point needed)
+    llvm::Constant *createGlobalString(const std::string &str, const std::string &name) {
+        auto *strConst = llvm::ConstantDataArray::getString(*_context, str, true);
+        auto *gv = new llvm::GlobalVariable(
+            *_module, strConst->getType(), true,
+            llvm::GlobalVariable::PrivateLinkage, strConst, name);
+        gv->setUnnamedAddr(llvm::GlobalValue::UnnamedAddr::Global);
+        return llvm::ConstantExpr::getBitCast(gv, _builder.getPtrTy());
+    }
+
+    // Emit runtime-readable metadata for all struct and enum types.
+    // Creates global constants: __pangu_type_count, __pangu_type_names[],
+    // and per-type info arrays for field names, types, and annotations.
+    void emitTypeMetadata() {
+        auto *i32_ty = _builder.getInt32Ty();
+        auto *ptr_ty = _builder.getPtrTy();
+
+        // PanguTypeMeta struct: { ptr name, i32 field_count, ptr field_names,
+        //   ptr field_types, i32 ann_count, ptr ann_keys, ptr ann_values, ptr ann_field_indices }
+        auto *meta_ty = llvm::StructType::create(
+            *_context, {ptr_ty, i32_ty, ptr_ty, ptr_ty, i32_ty, ptr_ty, ptr_ty, ptr_ty},
+            "PanguTypeMeta");
+
+        struct TypeMetaEntry {
+            std::string name;
+            int field_count;
+            std::vector<std::string> field_names;
+            std::vector<std::string> field_types;
+            std::vector<std::string> annotation_keys;
+            std::vector<std::string> annotation_values;
+            std::vector<int> annotation_field_indices;
+        };
+
+        std::vector<TypeMetaEntry> entries;
+
+        for (const auto &unit : _program.packages) {
+            for (const auto &it : unit.package->structs.items()) {
+                const auto *gs = it.second.get();
+                TypeMetaEntry entry;
+                entry.name = gs->name();
+                entry.field_count = (int)gs->orderedNames().size();
+                for (const auto &fname : gs->orderedNames()) {
+                    const auto *var = gs->getVariable(fname);
+                    entry.field_names.push_back(fname);
+                    entry.field_types.push_back(var->getType()->name());
+                }
+                auto sit = _struct_types.find(gs->name());
+                if (sit != _struct_types.end()) {
+                    for (size_t fi = 0; fi < sit->second.field_annotations.size(); fi++) {
+                        for (const auto &ann : sit->second.field_annotations[fi]) {
+                            entry.annotation_keys.push_back(ann.first);
+                            entry.annotation_values.push_back(ann.second);
+                            entry.annotation_field_indices.push_back((int)fi);
+                        }
+                    }
+                }
+                entries.push_back(std::move(entry));
+            }
+        }
+
+        for (const auto &[name, info] : _enum_types) {
+            TypeMetaEntry entry;
+            entry.name = name;
+            entry.field_count = (int)info.variants.size();
+            for (const auto &[vname, vval] : info.variants) {
+                entry.field_names.push_back(vname);
+                entry.field_types.push_back("int");
+            }
+            entries.push_back(std::move(entry));
+        }
+
+        int type_count = (int)entries.size();
+        auto *null_ptr = llvm::ConstantPointerNull::get(llvm::PointerType::get(*_context, 0));
+
+        // Build each PanguTypeMeta constant
+        std::vector<llvm::Constant *> meta_consts;
+        for (size_t ti = 0; ti < entries.size(); ti++) {
+            const auto &e = entries[ti];
+            std::string pfx = "__pangu_meta_" + e.name + "_";
+
+            auto *name_str = createGlobalString(e.name, pfx + "name");
+
+            // Field names array
+            llvm::Constant *fn_arr_ptr = null_ptr;
+            if (!e.field_names.empty()) {
+                std::vector<llvm::Constant *> fn_ptrs;
+                for (const auto &fn : e.field_names)
+                    fn_ptrs.push_back(createGlobalString(fn, pfx + "fn_" + fn));
+                auto *arr_ty = llvm::ArrayType::get(ptr_ty, fn_ptrs.size());
+                auto *arr_gv = new llvm::GlobalVariable(
+                    *_module, arr_ty, true, llvm::GlobalVariable::PrivateLinkage,
+                    llvm::ConstantArray::get(arr_ty, fn_ptrs), pfx + "field_names");
+                fn_arr_ptr = llvm::ConstantExpr::getBitCast(arr_gv, ptr_ty);
+            }
+
+            // Field types array
+            llvm::Constant *ft_arr_ptr = null_ptr;
+            if (!e.field_types.empty()) {
+                std::vector<llvm::Constant *> ft_ptrs;
+                for (const auto &ft : e.field_types)
+                    ft_ptrs.push_back(createGlobalString(ft, pfx + "ft_" + ft));
+                auto *arr_ty = llvm::ArrayType::get(ptr_ty, ft_ptrs.size());
+                auto *arr_gv = new llvm::GlobalVariable(
+                    *_module, arr_ty, true, llvm::GlobalVariable::PrivateLinkage,
+                    llvm::ConstantArray::get(arr_ty, ft_ptrs), pfx + "field_types");
+                ft_arr_ptr = llvm::ConstantExpr::getBitCast(arr_gv, ptr_ty);
+            }
+
+            int ann_count = (int)e.annotation_keys.size();
+            llvm::Constant *ak_ptr = null_ptr, *av_ptr = null_ptr, *afi_ptr = null_ptr;
+            if (ann_count > 0) {
+                std::vector<llvm::Constant *> ak_ptrs, av_ptrs;
+                for (const auto &ak : e.annotation_keys)
+                    ak_ptrs.push_back(createGlobalString(ak, pfx + "ak"));
+                for (const auto &av : e.annotation_values)
+                    av_ptrs.push_back(createGlobalString(av.empty() ? "" : av, pfx + "av"));
+
+                auto *ak_arr_ty = llvm::ArrayType::get(ptr_ty, ak_ptrs.size());
+                auto *ak_gv = new llvm::GlobalVariable(
+                    *_module, ak_arr_ty, true, llvm::GlobalVariable::PrivateLinkage,
+                    llvm::ConstantArray::get(ak_arr_ty, ak_ptrs), pfx + "ann_keys");
+                ak_ptr = llvm::ConstantExpr::getBitCast(ak_gv, ptr_ty);
+
+                auto *av_arr_ty = llvm::ArrayType::get(ptr_ty, av_ptrs.size());
+                auto *av_gv = new llvm::GlobalVariable(
+                    *_module, av_arr_ty, true, llvm::GlobalVariable::PrivateLinkage,
+                    llvm::ConstantArray::get(av_arr_ty, av_ptrs), pfx + "ann_values");
+                av_ptr = llvm::ConstantExpr::getBitCast(av_gv, ptr_ty);
+
+                std::vector<llvm::Constant *> afi_vals;
+                for (int idx : e.annotation_field_indices)
+                    afi_vals.push_back(llvm::ConstantInt::get(i32_ty, idx));
+                auto *afi_arr_ty = llvm::ArrayType::get(i32_ty, afi_vals.size());
+                auto *afi_gv = new llvm::GlobalVariable(
+                    *_module, afi_arr_ty, true, llvm::GlobalVariable::PrivateLinkage,
+                    llvm::ConstantArray::get(afi_arr_ty, afi_vals), pfx + "ann_fidx");
+                afi_ptr = llvm::ConstantExpr::getBitCast(afi_gv, ptr_ty);
+            }
+
+            auto *meta_val = llvm::ConstantStruct::get(meta_ty, {
+                name_str,
+                llvm::ConstantInt::get(i32_ty, e.field_count),
+                fn_arr_ptr,
+                ft_arr_ptr,
+                llvm::ConstantInt::get(i32_ty, ann_count),
+                ak_ptr, av_ptr, afi_ptr
+            });
+            meta_consts.push_back(meta_val);
+        }
+
+        // __pangu_type_count
+        new llvm::GlobalVariable(
+            *_module, i32_ty, true, llvm::GlobalVariable::ExternalLinkage,
+            llvm::ConstantInt::get(i32_ty, type_count),
+            "__pangu_type_count");
+
+        // __pangu_type_registry array
+        if (!meta_consts.empty()) {
+            auto *arr_ty = llvm::ArrayType::get(meta_ty, meta_consts.size());
+            auto *arr = llvm::ConstantArray::get(arr_ty, meta_consts);
+            new llvm::GlobalVariable(
+                *_module, arr_ty, true, llvm::GlobalVariable::ExternalLinkage,
+                arr, "__pangu_type_registry");
         }
     }
 
@@ -465,6 +669,15 @@ class ModuleBuilder {
             auto install_fn = _module->getFunction("pg_install_signal_handlers");
             if (install_fn) {
                 _builder.CreateCall(install_fn, {});
+            }
+
+            // Register type metadata for reflection
+            auto register_fn = _module->getFunction("__pangu_register_types");
+            auto *registry_gv = _module->getGlobalVariable("__pangu_type_registry");
+            auto *count_gv = _module->getGlobalVariable("__pangu_type_count");
+            if (register_fn && registry_gv && count_gv) {
+                auto *count_val = _builder.CreateLoad(_builder.getInt32Ty(), count_gv);
+                _builder.CreateCall(register_fn, {count_val, registry_gv});
             }
         } else {
             bindParameters(function);
@@ -2040,6 +2253,51 @@ class ModuleBuilder {
             auto args = emitCallArgs(args_code);
             auto *fn = _module->getFunction("pg_pipeline_get_worker");
             return _builder.CreateCall(fn, {args.front()}, "worker_id");
+        }
+        // Reflection builtins
+        if (callee == "reflect_type_count") {
+            auto *fn = _module->getFunction("reflect_type_count");
+            return _builder.CreateCall(fn, {}, "type_count");
+        }
+        if (callee == "reflect_type_name") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("reflect_type_name");
+            return _builder.CreateCall(fn, {args[0]}, "type_name");
+        }
+        if (callee == "reflect_field_count") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("reflect_field_count");
+            return _builder.CreateCall(fn, {args[0]}, "field_count");
+        }
+        if (callee == "reflect_field_name") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("reflect_field_name");
+            return _builder.CreateCall(fn, {args[0], args[1]}, "field_name");
+        }
+        if (callee == "reflect_field_type") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("reflect_field_type");
+            return _builder.CreateCall(fn, {args[0], args[1]}, "field_type");
+        }
+        if (callee == "reflect_annotation_count") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("reflect_annotation_count");
+            return _builder.CreateCall(fn, {args[0]}, "ann_count");
+        }
+        if (callee == "reflect_annotation_key") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("reflect_annotation_key");
+            return _builder.CreateCall(fn, {args[0], args[1]}, "ann_key");
+        }
+        if (callee == "reflect_annotation_value") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("reflect_annotation_value");
+            return _builder.CreateCall(fn, {args[0], args[1]}, "ann_value");
+        }
+        if (callee == "reflect_annotation_field_index") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("reflect_annotation_field_index");
+            return _builder.CreateCall(fn, {args[0], args[1]}, "ann_fidx");
         }
         if (callee_function == nullptr) {
             throw std::runtime_error("unsupported function call: " + callee);
