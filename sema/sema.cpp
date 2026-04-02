@@ -21,7 +21,7 @@ TypeCat categorize(const std::string &type_name) {
     if (type_name.empty() || type_name == "void")   return TypeCat::VOID;
     if (type_name == "int" || type_name == "bool")   return TypeCat::INT;
     if (type_name == "string")                       return TypeCat::STRING;
-    if (type_name == "ptr")                          return TypeCat::PTR;
+    if (type_name == "ptr" || type_name == "func")   return TypeCat::PTR;
     return TypeCat::STRUCT; // struct or enum name
 }
 
@@ -615,6 +615,15 @@ class ProgramChecker {
             auto it = _defined_vars.find(name);
             if (it != _defined_vars.end()) return it->second;
 
+            // Function reference (bare function name used as value)
+            {
+                auto mod_it = _module_functions.find(_current_module_id);
+                if (mod_it != _module_functions.end() &&
+                    mod_it->second.count(name) != 0) {
+                    return "func";
+                }
+            }
+
             return "";
         }
 
@@ -862,6 +871,13 @@ class ProgramChecker {
         if (mod_it == _module_functions.end()) return;
         auto func_it = mod_it->second.find(name);
         if (func_it == mod_it->second.end()) {
+            // Allow calling variables that hold function references
+            auto var_it = _defined_vars.find(name);
+            if (var_it != _defined_vars.end() &&
+                (var_it->second == "func" || var_it->second == "ptr")) {
+                checkCallArgs(args_code);
+                return;
+            }
             emitError(loc, "undefined function '" + name + "'", name_width);
             checkCallArgs(args_code);
             return;

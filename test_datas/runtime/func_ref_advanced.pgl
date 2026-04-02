@@ -1,0 +1,39 @@
+package main;
+
+func negate(x int) int {
+    return 0 - x;
+}
+
+func square(x int) int {
+    return x * x;
+}
+
+func apply_twice(f func, x int) int {
+    return f(f(x));
+}
+
+func choose(flag int) func {
+    if (flag == 1) {
+        return negate;
+    };
+    return square;
+}
+
+func main() int {
+    // Function reference in variable, call indirectly
+    op := negate;
+    println(op(5));  // -5
+
+    // Apply function reference twice
+    println(apply_twice(negate, 3));   // 3 (negate twice = identity)
+    println(apply_twice(square, 2));   // 16 (square of square of 2)
+
+    // Return function reference from function
+    f1 := choose(1);
+    println(f1(7));  // -7
+
+    f2 := choose(0);
+    println(f2(3));  // 9
+
+    return 0;
+}

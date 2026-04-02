@@ -1,0 +1,29 @@
+package main;
+
+func add_one(x int) int {
+    return x + 1;
+}
+
+func double_it(x int) int {
+    return x * 2;
+}
+
+func apply(f func, x int) int {
+    return f(x);
+}
+
+func main() int {
+    // Store function reference in variable
+    fn := add_one;
+    println(fn(5));   // 6
+
+    // Reassign to different function
+    fn = double_it;
+    println(fn(3));   // 6
+
+    // Pass function as argument
+    println(apply(add_one, 10));   // 11
+    println(apply(double_it, 10)); // 20
+
+    return 0;
+}

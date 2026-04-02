@@ -205,8 +205,20 @@ while (i < 10) {
 ### For Loop
 
 ```pgl
+// C-style for loop
 for (i := 0; i < 10; ++i) {
     if (i % 2 == 0) { continue; }
+    println(i);
+}
+
+// For-in range loop (iterate 0..N-1)
+for i in 5 {
+    println(i);  // prints 0, 1, 2, 3, 4
+}
+
+// For-in with variable bound
+n := 10;
+for i in n {
     println(i);
 }
 ```
@@ -415,12 +427,45 @@ The bootstrap reads PGL source, tokenizes it, parses to AST, and emits C code
 that is compiled with gcc. It supports multi-file compilation, the `-o` flag,
 and `--help`.
 
+## Stream Operators
+
+PGL provides stream operators for data-flow style programming:
+
+### `>>` Stream Push
+
+Appends a value to a string variable:
+
+```pgl
+buf := "";
+72 >> buf;       // append char 'H' (ASCII 72) to buf
+"world" >> buf;  // append string "world" to buf
+println(buf);    // "Hworld"
+```
+
+### `<>` In-Place Transform
+
+Applies a function to each character of a string, modifying it in-place:
+
+```pgl
+func to_upper(ch int) int {
+    if (ch >= 97 && ch <= 122) { return ch - 32; };
+    return ch;
+}
+
+s := "hello";
+s <> to_upper;
+println(s);  // "HELLO"
+```
+
+### `==>` Pipeline Chain (Planned)
+
+Chains pipeline stages together for end-to-end data processing.
+
 ## Planned / Not Yet Implemented
 
-- Full type checking (argument types, return types verified at compile time)
 - Interface dispatch
 - Closures / function values
-- Stream operators (`>>`, `<>`) for pipeline data flow
+- For-in loop over arrays (currently only numeric ranges)
 - Range patterns in match expressions
 - Auto-generated pipeline `run` state machine
 - Generics

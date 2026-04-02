@@ -626,6 +626,7 @@ class ModuleBuilder {
         if (name == "bool")   return _builder.getInt32Ty();
         if (name == "string") return _builder.getPtrTy();
         if (name == "ptr")    return _builder.getPtrTy();
+        if (name == "func")   return _builder.getPtrTy();  // function pointer
         auto it = _struct_types.find(name);
         if (it != _struct_types.end()) {
             return it->second.llvm_type;
@@ -792,6 +793,7 @@ class ModuleBuilder {
         _current_function =
             _declared_functions.at(functionKey(unit.module_id, function.name()));
         _variables.clear();
+        _func_ptr_types.clear();
         _terminated = false;
 
         // Attach DWARF debug info to this function
@@ -1790,6 +1792,9 @@ class ModuleBuilder {
             }
             auto it = _variables.find(name);
             if (it == _variables.end()) {
+                // Check if it's a function reference (function as value)
+                auto *func = resolveCurrentFunction(name);
+                if (func) return func;
                 throw std::runtime_error("unknown identifier: " + name);
             }
             auto *alloca_type = it->second->getAllocatedType();
@@ -2112,6 +2117,11 @@ class ModuleBuilder {
 
         const std::string name = left->getValue();
         auto *value = emitExpression(code->getRight());
+
+        // Track function pointer type when assigning a function reference
+        if (auto *func = llvm::dyn_cast<llvm::Function>(value)) {
+            _func_ptr_types[name] = func->getFunctionType();
+        }
 
         llvm::AllocaInst  *slot = nullptr;
         auto               it   = _variables.find(name);
@@ -2680,6 +2690,28 @@ class ModuleBuilder {
             return _builder.CreateCall(fn, {args[0], args[1]}, "ann_fidx");
         }
         if (callee_function == nullptr) {
+            // Try indirect call through function pointer variable
+            auto var_it = _variables.find(callee);
+            if (var_it != _variables.end() &&
+                var_it->second->getAllocatedType()->isPointerTy()) {
+                auto *fn_ptr = _builder.CreateLoad(
+                    _builder.getPtrTy(), var_it->second, callee + ".fp");
+                auto args = emitCallArgs(args_code);
+                // Try to use tracked function type, otherwise infer from args
+                llvm::FunctionType *ftype = nullptr;
+                auto fpt_it = _func_ptr_types.find(callee);
+                if (fpt_it != _func_ptr_types.end()) {
+                    ftype = fpt_it->second;
+                } else {
+                    // Infer: all args as their actual types, return i32
+                    std::vector<llvm::Type *> param_types;
+                    for (auto *a : args) param_types.push_back(a->getType());
+                    ftype = llvm::FunctionType::get(
+                        _builder.getInt32Ty(), param_types, false);
+                }
+                return _builder.CreateCall(ftype, fn_ptr, args,
+                                           callee + ".icall");
+            }
             throw std::runtime_error("unsupported function call: " + callee);
         }
         auto args = emitCallArgs(args_code);
@@ -3327,6 +3359,8 @@ class ModuleBuilder {
     llvm::FunctionCallee               _exit;
     std::map<std::string, llvm::Function *>    _declared_functions;
     std::map<std::string, llvm::AllocaInst *>  _variables;
+    // Track function types for variables holding function pointers (indirect calls)
+    std::map<std::string, llvm::FunctionType *> _func_ptr_types;
     std::map<std::string, StructInfo>          _struct_types;
     std::map<std::string, EnumInfo>            _enum_types;
     std::map<std::string, PipelineInfo>        _pipeline_types;
