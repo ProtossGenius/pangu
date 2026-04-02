@@ -157,3 +157,83 @@ static int pg_str_ends_with(char* s, char* suffix) {
     return strcmp(s + slen - plen, suffix) == 0 ? 1 : 0;
 }
 
+// ===== Pipeline runtime =====
+typedef struct {
+    int worker_id;
+    char* cache_buf;
+    int cache_len;
+    int cache_cap;
+    char** out_buf;
+    int out_count;
+    int out_cap;
+    int elem_size;
+} PipelineState;
+
+static char* pg_pipeline_create(int elem_size) {
+    PipelineState* s = (PipelineState*)calloc(1, sizeof(PipelineState));
+    s->worker_id = 0;
+    s->cache_cap = 256;
+    s->cache_buf = (char*)calloc(s->cache_cap, 1);
+    s->cache_len = 0;
+    s->out_cap = 64;
+    s->out_buf = (char**)calloc(s->out_cap, sizeof(char*));
+    s->out_count = 0;
+    s->elem_size = elem_size;
+    return (char*)s;
+}
+
+static void pg_pipeline_destroy(char* state) {
+    PipelineState* s = (PipelineState*)state;
+    if (s->cache_buf) free(s->cache_buf);
+    if (s->out_buf) free(s->out_buf);
+    free(s);
+}
+
+static void pg_pipeline_cache_append(char* state, int ch) {
+    PipelineState* s = (PipelineState*)state;
+    if (s->cache_len + 1 >= s->cache_cap) {
+        s->cache_cap *= 2;
+        s->cache_buf = (char*)realloc(s->cache_buf, s->cache_cap);
+    }
+    s->cache_buf[s->cache_len++] = (char)ch;
+}
+
+static char* pg_pipeline_cache_str(char* state) {
+    PipelineState* s = (PipelineState*)state;
+    char* result = (char*)malloc(s->cache_len + 1);
+    memcpy(result, s->cache_buf, s->cache_len);
+    result[s->cache_len] = '\0';
+    s->cache_len = 0;
+    return result;
+}
+
+static void pg_pipeline_cache_reset(char* state) {
+    PipelineState* s = (PipelineState*)state;
+    s->cache_len = 0;
+}
+
+static void pg_pipeline_emit(char* state, char* elem) {
+    PipelineState* s = (PipelineState*)state;
+    if (s->out_count >= s->out_cap) {
+        s->out_cap *= 2;
+        s->out_buf = (char**)realloc(s->out_buf, s->out_cap * sizeof(char*));
+    }
+    s->out_buf[s->out_count++] = elem;
+}
+
+static int pg_pipeline_output_count(char* state) {
+    return ((PipelineState*)state)->out_count;
+}
+
+static char* pg_pipeline_output_get(char* state, int index) {
+    return ((PipelineState*)state)->out_buf[index];
+}
+
+static void pg_pipeline_set_worker(char* state, int wid) {
+    ((PipelineState*)state)->worker_id = wid;
+}
+
+static int pg_pipeline_get_worker(char* state) {
+    return ((PipelineState*)state)->worker_id;
+}
+

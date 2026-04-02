@@ -122,6 +122,7 @@ func type_to_c(t int) string {
 }
 func pgl_type_to_code(t string) int {
     if (str_eq(t, "string") == 1) { return 1; }
+    if (str_eq(t, "ptr") == 1) { return 1; }
     return 0;
 }
 
@@ -190,6 +191,9 @@ func infer_type(ctx string, id int) int {
         if (str_eq(sv, "str_replace") == 1) { return 1; }
         if (str_eq(sv, "make_array") == 1) { return 1; }
         if (str_eq(sv, "make_str_array") == 1) { return 1; }
+        if (str_eq(sv, "pipeline_create") == 1) { return 1; }
+        if (str_eq(sv, "pipeline_cache_str") == 1) { return 1; }
+        if (str_eq(sv, "pipeline_output_get") == 1) { return 1; }
         return fn_find(ctx, sv);
     }
     return 0;
@@ -232,6 +236,16 @@ func builtin_c_name(name string, arg_type int) string {
     if (str_eq(name, "find_pgl_files") == 1) { return "pg_find_pgl_files"; }
     if (str_eq(name, "is_directory") == 1) { return "pg_is_directory"; }
     if (str_eq(name, "str_ends_with") == 1) { return "pg_str_ends_with"; }
+    if (str_eq(name, "pipeline_create") == 1) { return "pg_pipeline_create"; }
+    if (str_eq(name, "pipeline_destroy") == 1) { return "pg_pipeline_destroy"; }
+    if (str_eq(name, "pipeline_cache_append") == 1) { return "pg_pipeline_cache_append"; }
+    if (str_eq(name, "pipeline_cache_str") == 1) { return "pg_pipeline_cache_str"; }
+    if (str_eq(name, "pipeline_cache_reset") == 1) { return "pg_pipeline_cache_reset"; }
+    if (str_eq(name, "pipeline_emit") == 1) { return "pg_pipeline_emit"; }
+    if (str_eq(name, "pipeline_output_count") == 1) { return "pg_pipeline_output_count"; }
+    if (str_eq(name, "pipeline_output_get") == 1) { return "pg_pipeline_output_get"; }
+    if (str_eq(name, "pipeline_set_worker") == 1) { return "pg_pipeline_set_worker"; }
+    if (str_eq(name, "pipeline_get_worker") == 1) { return "pg_pipeline_get_worker"; }
     return name;
 }
 

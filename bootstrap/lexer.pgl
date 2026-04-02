@@ -1,9 +1,21 @@
 package main;
 
 // ============================================================
-// Pangu Bootstrap Lexer
+// Pangu Bootstrap Lexer (Pipeline Style)
 // Token types: 0=EOF, 1=KEYWORD, 2=IDENT, 3=NUMBER, 4=STRING, 5=SYMBOL
+//
+// Architecture: character dispatch via pipeline state machine.
+// A switcher routes each char to workers; workers accumulate chars
+// in pipeline cache and emit tokens on completion.
 // ============================================================
+
+// ----- Worker IDs -----
+// 0 = Switcher (idle / dispatch)
+// 1 = WIdent   (identifier or keyword)
+// 2 = WNumber  (integer or hex literal)
+// 3 = WString  (double-quoted string)
+// 4 = WBacktick (backtick raw string)
+// 5 = WChar    (single-quoted char literal)
 
 // ----- Character classification -----
 
@@ -40,6 +52,7 @@ func is_keyword(s string) int {
     if (s == "pipeline" || s == "impl" || s == "enum" || s == "interface") { return 1; }
     if (s == "switcher" || s == "worker") { return 1; }
     if (s == "break" || s == "continue") { return 1; }
+    if (s == "match") { return 1; }
     return 0;
 }
 
@@ -73,7 +86,6 @@ func resolve_escape(c int) int {
 }
 
 // ----- Multi-char operator check -----
-// Returns 1 if two-char operator, 0 if not
 
 func try_two_char_op(c1 int, c2 int) int {
     if (c2 == '=') {
@@ -90,14 +102,65 @@ func try_two_char_op(c1 int, c2 int) int {
     if (c1 == ':' && c2 == ':') { return 1; }
     if (c1 == '<' && c2 == '<') { return 1; }
     if (c1 == '>' && c2 == '>') { return 1; }
+    if (c1 == '=' && c2 == '>') { return 1; }
     return 0;
 }
 
 // ============================================================
-// Main tokenizer
-// source: the PGL source code string
-// types/values/lines/cols: parallel arrays (pass as string for ptr)
-// Returns: token count
+// Pipeline Workers
+// Each worker processes chars via pipeline cache.
+// Returns: 0 = consumed char, advance pos
+//          1 = did not consume char, re-dispatch
+// ============================================================
+
+// ----- Worker 1: Identifier/Keyword -----
+// Accumulates alpha/digit chars. On non-alnum, emits IDENT or KEYWORD.
+func lex_ident(pipe ptr, c int) int {
+    if (is_alnum(c) == 1) {
+        pipeline_cache_append(pipe, c);
+        return 0;
+    }
+    // Non-alnum: emit token and re-dispatch current char
+    return 1;
+}
+
+func lex_ident_emit(pipe ptr, types string, values string, lines string, cols string,
+                    count int, tline int, tcol int) int {
+    val := pipeline_cache_str(pipe);
+    if (is_keyword(val) == 1) {
+        return add_token(types, values, lines, cols, count, 1, val, tline, tcol);
+    }
+    return add_token(types, values, lines, cols, count, 2, val, tline, tcol);
+}
+
+// ----- Worker 2: Number -----
+// Accumulates digit chars (and hex prefix). On non-digit, emits NUMBER.
+func lex_number(pipe ptr, c int, is_hex int) int {
+    if (is_digit(c) == 1 || c == '_') {
+        pipeline_cache_append(pipe, c);
+        return 0;
+    }
+    if (is_hex == 1) {
+        if ((c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+            pipeline_cache_append(pipe, c);
+            return 0;
+        }
+    }
+    if (c == '.' || c == 'x' || c == 'X') {
+        pipeline_cache_append(pipe, c);
+        return 0;
+    }
+    return 1;
+}
+
+func lex_number_emit(pipe ptr, types string, values string, lines string, cols string,
+                     count int, tline int, tcol int) int {
+    val := pipeline_cache_str(pipe);
+    return add_token(types, values, lines, cols, count, 3, val, tline, tcol);
+}
+
+// ============================================================
+// Main tokenizer (pipeline dispatch loop)
 // ============================================================
 
 func tokenize(source string,
@@ -107,29 +170,125 @@ func tokenize(source string,
     pos := 0;
     line := 1;
     col := 1;
+    pipe := pipeline_create(8);
+
+    // Track worker start position for token location
+    tok_line := 1;
+    tok_col := 1;
+    // For hex number detection
+    in_hex := 0;
 
     while (pos < src_len) {
         c := str_char_at(source, pos);
+        wid := pipeline_get_worker(pipe);
 
-        // ----- Whitespace -----
-        if (is_space(c) == 1) {
-            if (c == '\n') {
-                line = line + 1;
-                col = 1;
-            } else {
-                col = col + 1;
+        // ----- Active worker processing -----
+        if (wid == 1) {
+            result := lex_ident(pipe, c);
+            if (result == 1) {
+                count = lex_ident_emit(pipe, types, values, lines, cols, count, tok_line, tok_col);
+                pipeline_set_worker(pipe, 0);
+                continue;
             }
             pos = pos + 1;
+            col = col + 1;
+            continue;
         }
-        // ----- Comments -----
-        else if (c == '/' && pos + 1 < src_len && str_char_at(source, pos + 1) == '/') {
+        if (wid == 2) {
+            result := lex_number(pipe, c, in_hex);
+            if (result == 1) {
+                count = lex_number_emit(pipe, types, values, lines, cols, count, tok_line, tok_col);
+                pipeline_set_worker(pipe, 0);
+                in_hex = 0;
+                continue;
+            }
+            if (c == 'x' || c == 'X') { in_hex = 1; }
+            pos = pos + 1;
+            col = col + 1;
+            continue;
+        }
+        if (wid == 3) {
+            // String worker: process until closing "
+            if (c == 34) {
+                val := pipeline_cache_str(pipe);
+                count = add_token(types, values, lines, cols, count, 4, val, tok_line, tok_col);
+                pipeline_set_worker(pipe, 0);
+                pos = pos + 1;
+                col = col + 1;
+                continue;
+            }
+            if (c == 92 && pos + 1 < src_len) {
+                pos = pos + 1;
+                col = col + 1;
+                esc := resolve_escape(str_char_at(source, pos));
+                pipeline_cache_append(pipe, esc);
+                pos = pos + 1;
+                col = col + 1;
+                continue;
+            }
+            pipeline_cache_append(pipe, c);
+            if (c == '\n') { line = line + 1; col = 1; } else { col = col + 1; }
+            pos = pos + 1;
+            continue;
+        }
+        if (wid == 4) {
+            // Backtick string worker: process until closing `
+            if (c == '`') {
+                val := pipeline_cache_str(pipe);
+                count = add_token(types, values, lines, cols, count, 4, val, tok_line, tok_col);
+                pipeline_set_worker(pipe, 0);
+                pos = pos + 1;
+                col = col + 1;
+                continue;
+            }
+            pipeline_cache_append(pipe, c);
+            if (c == '\n') { line = line + 1; col = 1; } else { col = col + 1; }
+            pos = pos + 1;
+            continue;
+        }
+        if (wid == 5) {
+            // Char literal worker: handle single char or escape
+            char_val := 0;
+            if (c == 92 && pos + 1 < src_len) {
+                pos = pos + 1;
+                col = col + 1;
+                char_val = resolve_escape(str_char_at(source, pos));
+            } else {
+                char_val = c;
+            }
+            pos = pos + 1;
+            col = col + 1;
+            // Skip closing quote
+            if (pos < src_len && str_char_at(source, pos) == 39) {
+                pos = pos + 1;
+                col = col + 1;
+            }
+            count = add_token(types, values, lines, cols, count, 3, int_to_str(char_val), tok_line, tok_col);
+            pipeline_set_worker(pipe, 0);
+            continue;
+        }
+
+        // ----- Switcher: dispatch character to worker -----
+
+        // Whitespace: skip
+        if (is_space(c) == 1) {
+            if (c == '\n') { line = line + 1; col = 1; } else { col = col + 1; }
+            pos = pos + 1;
+            continue;
+        }
+
+        // Line comment
+        if (c == '/' && pos + 1 < src_len && str_char_at(source, pos + 1) == '/') {
             pos = pos + 2;
             col = col + 2;
             while (pos < src_len && str_char_at(source, pos) != '\n') {
                 pos = pos + 1;
             }
+            continue;
         }
-        else if (c == '/' && pos + 1 < src_len && str_char_at(source, pos + 1) == '*') {
+
+        // Block comment
+        if (c == '/' && pos + 1 < src_len && str_char_at(source, pos + 1) == '*') {
             pos = pos + 2;
             col = col + 2;
             while (pos + 1 < src_len) {
@@ -139,180 +298,94 @@ func tokenize(source string,
                     col = col + 2;
                     break;
                 }
-                if (cc == '\n') {
-                    line = line + 1;
-                    col = 1;
-                } else {
-                    col = col + 1;
-                }
+                if (cc == '\n') { line = line + 1; col = 1; } else { col = col + 1; }
                 pos = pos + 1;
             }
+            continue;
         }
-        // ----- Numbers -----
-        else if (is_digit(c) == 1) {
-            start := pos;
-            start_col := col;
-            // Check hex: 0x...
-            if (c == '0' && pos + 1 < src_len) {
-                c2 := str_char_at(source, pos + 1);
-                if (c2 == 'x' || c2 == 'X') {
-                    pos = pos + 2;
-                    col = col + 2;
-                    while (pos < src_len) {
-                        ch := str_char_at(source, pos);
-                        if (is_digit(ch) == 1 || (ch >= 'a' && ch <= 'f') || (ch >= 'A' && ch <= 'F') || ch == '_') {
-                            pos = pos + 1;
-                            col = col + 1;
-                        } else {
-                            break;
-                        }
-                    }
-                    val := str_substr(source, start, pos - start);
-                    count = add_token(types, values, lines, cols, count, 3, val, line, start_col);
-                    continue;
-                }
-            }
-            // Decimal / float
-            while (pos < src_len) {
-                ch := str_char_at(source, pos);
-                if (is_digit(ch) == 1 || ch == '_') {
-                    pos = pos + 1;
-                    col = col + 1;
-                } else {
-                    break;
-                }
-            }
-            if (pos < src_len && str_char_at(source, pos) == '.') {
-                pos = pos + 1;
-                col = col + 1;
-                while (pos < src_len && is_digit(str_char_at(source, pos)) == 1) {
-                    pos = pos + 1;
-                    col = col + 1;
-                }
-            }
-            val := str_substr(source, start, pos - start);
-            count = add_token(types, values, lines, cols, count, 3, val, line, start_col);
-        }
-        // ----- Identifiers / Keywords -----
-        else if (is_alpha(c) == 1) {
-            start := pos;
-            start_col := col;
-            while (pos < src_len && is_alnum(str_char_at(source, pos)) == 1) {
-                pos = pos + 1;
-                col = col + 1;
-            }
-            val := str_substr(source, start, pos - start);
-            if (is_keyword(val) == 1) {
-                count = add_token(types, values, lines, cols, count, 1, val, line, start_col);
-            } else {
-                count = add_token(types, values, lines, cols, count, 2, val, line, start_col);
-            }
-        }
-        // ----- String literal (double quote) -----
-        // Use 34 for double-quote char, 92 for backslash
-        else if (c == 34) {
-            start_col := col;
+
+        // Identifier/keyword -> worker 1
+        if (is_alpha(c) == 1) {
+            tok_line = line;
+            tok_col = col;
+            pipeline_set_worker(pipe, 1);
+            pipeline_cache_append(pipe, c);
             pos = pos + 1;
             col = col + 1;
-            val := "";
-            while (pos < src_len && str_char_at(source, pos) != 34) {
-                ch := str_char_at(source, pos);
-                if (ch == 92 && pos + 1 < src_len) {
-                    pos = pos + 1;
-                    col = col + 1;
-                    esc_char := resolve_escape(str_char_at(source, pos));
-                    val = str_concat(val, char_to_str(esc_char));
-                    pos = pos + 1;
-                    col = col + 1;
-                } else {
-                    if (ch == '\n') {
-                        line = line + 1;
-                        col = 1;
-                    } else {
-                        col = col + 1;
-                    }
-                    val = str_concat(val, char_to_str(ch));
-                    pos = pos + 1;
-                }
-            }
-            if (pos < src_len) {
-                pos = pos + 1;
-                col = col + 1;
-            }
-            count = add_token(types, values, lines, cols, count, 4, val, line, start_col);
+            continue;
         }
-        // ----- Backtick string -----
-        else if (c == '`') {
-            start_col := col;
+
+        // Number -> worker 2
+        if (is_digit(c) == 1) {
+            tok_line = line;
+            tok_col = col;
+            pipeline_set_worker(pipe, 2);
+            pipeline_cache_append(pipe, c);
+            in_hex = 0;
             pos = pos + 1;
             col = col + 1;
-            val := "";
-            while (pos < src_len && str_char_at(source, pos) != '`') {
-                ch := str_char_at(source, pos);
-                if (ch == '\n') {
-                    line = line + 1;
-                    col = 1;
-                } else {
-                    col = col + 1;
-                }
-                val = str_concat(val, char_to_str(ch));
-                pos = pos + 1;
-            }
-            if (pos < src_len) {
-                pos = pos + 1;
-                col = col + 1;
-            }
-            count = add_token(types, values, lines, cols, count, 4, val, line, start_col);
+            continue;
         }
-        // ----- Char literal -----
-        // Use 39 for single-quote char
-        else if (c == 39) {
-            start_col := col;
+
+        // Double-quoted string -> worker 3
+        if (c == 34) {
+            tok_line = line;
+            tok_col = col;
+            pipeline_set_worker(pipe, 3);
             pos = pos + 1;
             col = col + 1;
-            char_val := 0;
-            if (pos < src_len) {
-                ch := str_char_at(source, pos);
-                if (ch == 92 && pos + 1 < src_len) {
-                    pos = pos + 1;
-                    col = col + 1;
-                    char_val = resolve_escape(str_char_at(source, pos));
-                    pos = pos + 1;
-                    col = col + 1;
-                } else {
-                    char_val = ch;
-                    pos = pos + 1;
-                    col = col + 1;
-                }
-            }
-            // Skip closing quote
-            if (pos < src_len && str_char_at(source, pos) == 39) {
-                pos = pos + 1;
-                col = col + 1;
-            }
-            count = add_token(types, values, lines, cols, count, 3, int_to_str(char_val), line, start_col);
+            continue;
         }
-        // ----- Symbols / Operators -----
-        else {
-            start_col := col;
-            // Try two-character operator
-            if (pos + 1 < src_len) {
-                c2 := str_char_at(source, pos + 1);
-                if (try_two_char_op(c, c2) == 1) {
-                    val := str_concat(char_to_str(c), char_to_str(c2));
-                    count = add_token(types, values, lines, cols, count, 5, val, line, start_col);
-                    pos = pos + 2;
-                    col = col + 2;
-                    continue;
-                }
-            }
-            // Single-character symbol
-            val := char_to_str(c);
-            count = add_token(types, values, lines, cols, count, 5, val, line, start_col);
+
+        // Backtick string -> worker 4
+        if (c == '`') {
+            tok_line = line;
+            tok_col = col;
+            pipeline_set_worker(pipe, 4);
             pos = pos + 1;
             col = col + 1;
+            continue;
         }
+
+        // Char literal -> worker 5
+        if (c == 39) {
+            tok_line = line;
+            tok_col = col;
+            pipeline_set_worker(pipe, 5);
+            pos = pos + 1;
+            col = col + 1;
+            continue;
+        }
+
+        // Symbol/operator (handled inline by switcher)
+        tok_line = line;
+        tok_col = col;
+        if (pos + 1 < src_len) {
+            c2 := str_char_at(source, pos + 1);
+            if (try_two_char_op(c, c2) == 1) {
+                val := str_concat(char_to_str(c), char_to_str(c2));
+                count = add_token(types, values, lines, cols, count, 5, val, tok_line, tok_col);
+                pos = pos + 2;
+                col = col + 2;
+                continue;
+            }
+        }
+        val := char_to_str(c);
+        count = add_token(types, values, lines, cols, count, 5, val, tok_line, tok_col);
+        pos = pos + 1;
+        col = col + 1;
     }
+
+    // Flush any active worker
+    wid := pipeline_get_worker(pipe);
+    if (wid == 1) {
+        count = lex_ident_emit(pipe, types, values, lines, cols, count, tok_line, tok_col);
+    }
+    if (wid == 2) {
+        count = lex_number_emit(pipe, types, values, lines, cols, count, tok_line, tok_col);
+    }
+
+    pipeline_destroy(pipe);
 
     // Add EOF token
     count = add_token(types, values, lines, cols, count, 0, "", line, col);
