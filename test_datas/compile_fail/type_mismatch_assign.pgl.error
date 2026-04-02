@@ -1,0 +1,3 @@
+/home/sream/workspace/pangu/test_datas/compile_fail/type_mismatch_assign.pgl:5:7: error: cannot assign 'string' to variable 'x' of type 'int'
+    x = "now a string";
+      ^

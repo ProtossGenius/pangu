@@ -1,0 +1,3 @@
+/home/sream/workspace/pangu/test_datas/compile_fail/type_mismatch_return.pgl:4:12: error: function 'get_value' return type is 'int', but returning 'string'
+    return "not an int";
+           ^~~~~~

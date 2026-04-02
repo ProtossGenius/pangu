@@ -1,0 +1,3 @@
+/home/sream/workspace/pangu/test_datas/compile_fail/type_mismatch_arg.pgl:8:5: error: argument 1 of 'add' expects type 'int', got 'string'
+    add("hello", 2);
+    ^~~

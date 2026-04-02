@@ -1,0 +1,9 @@
+package main;
+
+func get_value() int {
+    return "not an int";
+}
+
+func main() {
+    println(get_value());
+}

@@ -12,12 +12,50 @@ namespace pangu {
 namespace sema {
 namespace {
 
+// Type categories for compatibility checking.
+// int/bool/enum are all i32 and freely interchangeable.
+// string and ptr are both pointers but semantically different.
+enum class TypeCat { INT, STRING, PTR, STRUCT, VOID, UNKNOWN };
+
+TypeCat categorize(const std::string &type_name) {
+    if (type_name.empty() || type_name == "void")   return TypeCat::VOID;
+    if (type_name == "int" || type_name == "bool")   return TypeCat::INT;
+    if (type_name == "string")                       return TypeCat::STRING;
+    if (type_name == "ptr")                          return TypeCat::PTR;
+    return TypeCat::STRUCT; // struct or enum name
+}
+
+// Two types are compatible if they can be used interchangeably.
+bool typesCompatible(const std::string &a, const std::string &b) {
+    if (a == b) return true;
+    if (a.empty() || b.empty()) return true;              // unknown → compatible
+    if (a == "unknown" || b == "unknown") return true;
+    auto ca = categorize(a), cb = categorize(b);
+    if (ca == TypeCat::UNKNOWN || cb == TypeCat::UNKNOWN) return true;
+    if (ca == TypeCat::VOID || cb == TypeCat::VOID)       return true;
+    // int/bool/enum are all i32
+    if (ca == TypeCat::INT && cb == TypeCat::INT)          return true;
+    // string is a kind of ptr
+    if ((ca == TypeCat::STRING || ca == TypeCat::PTR) &&
+        (cb == TypeCat::STRING || cb == TypeCat::PTR))     return true;
+    return ca == cb && a == b; // struct types must match by name
+}
+
 struct FunctionSig {
-    std::string name;
-    size_t      param_count = 0;
+    std::string              name;
+    size_t                   param_count = 0;
+    std::vector<std::string> param_types;    // type name per param
+    std::string              return_type;    // "int", "string", struct name, etc.
+};
+
+// Struct field info for type inference of field access.
+struct StructFieldInfo {
+    std::string field_name;
+    std::string type_name;
 };
 
 using FunctionTable = std::map<std::string, FunctionSig>;
+using StructFieldMap = std::map<std::string, std::vector<StructFieldInfo>>;
 using ModuleTable   = std::map<std::string, FunctionTable>;
 
 const std::set<std::string> BUILTIN_FUNCTIONS = {
@@ -92,6 +130,85 @@ size_t builtinParamCount(const std::string &name) {
     return 0;
 }
 
+std::string builtinReturnType(const std::string &name) {
+    // Functions returning string
+    if (name == "str_concat" || name == "str_substr" || name == "str_replace" ||
+        name == "int_to_str" || name == "char_to_str" || name == "read_file" ||
+        name == "args" || name == "str_array_get" || name == "pipeline_cache_str" ||
+        name == "pipeline_output_get" || name == "reflect_type_name" ||
+        name == "reflect_field_name" || name == "reflect_field_type" ||
+        name == "reflect_annotation_key" || name == "reflect_annotation_value") {
+        return "string";
+    }
+    // Functions returning ptr
+    if (name == "make_array" || name == "make_str_array" ||
+        name == "pipeline_create" || name == "find_pgl_files") {
+        return "ptr";
+    }
+    // Functions returning int
+    if (name == "str_len" || name == "str_to_int" || name == "str_eq" ||
+        name == "str_index_of" || name == "str_starts_with" || name == "str_ends_with" ||
+        name == "str_char_at" || name == "array_get" || name == "args_count" ||
+        name == "pipeline_output_count" || name == "pipeline_get_worker" ||
+        name == "is_directory" || name == "system" ||
+        name == "reflect_type_count" || name == "reflect_field_count" ||
+        name == "reflect_annotation_count" || name == "reflect_annotation_field_index") {
+        return "int";
+    }
+    // Void-like (side effects only)
+    return "";
+}
+
+std::vector<std::string> builtinParamTypes(const std::string &name) {
+    // println/print accept any type — use "unknown" as wildcard
+    if (name == "println" || name == "print") return {"unknown"};
+    if (name == "exit" || name == "panic") return {"int"};
+    if (name == "system") return {"string"};
+    if (name == "str_len") return {"string"};
+    if (name == "int_to_str") return {"int"};
+    if (name == "str_to_int") return {"string"};
+    if (name == "read_file") return {"string"};
+    if (name == "char_to_str") return {"int"};
+    if (name == "make_array" || name == "make_str_array") return {"int"};
+    if (name == "args") return {"int"};
+    if (name == "str_concat") return {"string", "string"};
+    if (name == "str_eq") return {"string", "string"};
+    if (name == "str_index_of") return {"string", "string"};
+    if (name == "str_starts_with") return {"string", "string"};
+    if (name == "str_ends_with") return {"string", "string"};
+    if (name == "write_file") return {"string", "string"};
+    if (name == "str_char_at") return {"string", "int"};
+    if (name == "array_get") return {"ptr", "int"};
+    if (name == "str_array_get") return {"ptr", "int"};
+    if (name == "array_set") return {"ptr", "int", "int"};
+    if (name == "str_array_set") return {"ptr", "int", "string"};
+    if (name == "str_substr") return {"string", "int", "int"};
+    if (name == "str_replace") return {"string", "string", "string"};
+    if (name == "find_pgl_files") return {"string", "int"};
+    if (name == "is_directory") return {"string"};
+    // Pipeline builtins — use ptr for pipeline handle, int for others
+    if (name == "pipeline_create") return {"int"};
+    if (name == "pipeline_destroy") return {"ptr"};
+    if (name == "pipeline_cache_append") return {"ptr", "int"};
+    if (name == "pipeline_cache_str") return {"ptr"};
+    if (name == "pipeline_cache_reset") return {"ptr"};
+    if (name == "pipeline_emit") return {"ptr", "string"};
+    if (name == "pipeline_output_count") return {"ptr"};
+    if (name == "pipeline_output_get") return {"ptr", "int"};
+    if (name == "pipeline_set_worker") return {"ptr", "int"};
+    if (name == "pipeline_get_worker") return {"ptr"};
+    // Reflection
+    if (name == "reflect_type_name") return {"int"};
+    if (name == "reflect_field_count") return {"string"};
+    if (name == "reflect_field_name") return {"string", "int"};
+    if (name == "reflect_field_type") return {"string", "int"};
+    if (name == "reflect_annotation_count") return {"string"};
+    if (name == "reflect_annotation_key") return {"string", "int"};
+    if (name == "reflect_annotation_value") return {"string", "int"};
+    if (name == "reflect_annotation_field_index") return {"string", "int"};
+    return {};
+}
+
 // Collect all `,`-separated argument nodes from a call expression.
 void collectArgNodes(const pgcodes::GCode              *code,
                      std::vector<const pgcodes::GCode *> &out) {
@@ -162,13 +279,38 @@ class ProgramChecker {
                                      name + "'");
                     continue;
                 }
-                table[name] = {name, func->params.size()};
+                FunctionSig sig;
+                sig.name        = name;
+                sig.param_count = func->params.size();
+                // Collect parameter types.
+                for (const auto &pname : func->params.orderedNames()) {
+                    const auto *var = func->params.getVariable(pname);
+                    sig.param_types.push_back(
+                        var && var->getType() ? var->getType()->name() : "");
+                }
+                // Collect return type.
+                if (func->result.size() == 1) {
+                    const auto *rv = func->result.getVariable(
+                        func->result.orderedNames().front());
+                    sig.return_type =
+                        rv && rv->getType() ? rv->getType()->name() : "";
+                }
+                table[name] = std::move(sig);
             }
             _module_functions[unit.module_id] = std::move(table);
 
-            // Collect struct type names
+            // Collect struct type names and field types.
             for (const auto &it : unit.package->structs.items()) {
                 _struct_names.insert(it.first);
+                std::vector<StructFieldInfo> fields;
+                const auto *gs = it.second.get();
+                for (const auto &fname : gs->orderedNames()) {
+                    const auto *fvar = gs->getVariable(fname);
+                    std::string ftype =
+                        (fvar && fvar->getType()) ? fvar->getType()->name() : "";
+                    fields.push_back({fname, ftype});
+                }
+                _struct_fields[it.first] = std::move(fields);
             }
 
             // Collect enum type names
@@ -189,9 +331,20 @@ class ProgramChecker {
             for (const auto &it : unit.package->functions.items()) {
                 _current_func_name = it.second->name();
                 _defined_vars.clear();
-                // Register parameters as defined variables.
+                // Register parameters as defined variables with their types.
                 for (const auto &pname : it.second->params.orderedNames()) {
-                    _defined_vars.insert(pname);
+                    const auto *var = it.second->params.getVariable(pname);
+                    std::string ptype =
+                        (var && var->getType()) ? var->getType()->name() : "";
+                    _defined_vars[pname] = ptype;
+                }
+                // Track current function return type for return-value checking.
+                _current_return_type = "";
+                if (it.second->result.size() == 1) {
+                    const auto *rv = it.second->result.getVariable(
+                        it.second->result.orderedNames().front());
+                    if (rv && rv->getType())
+                        _current_return_type = rv->getType()->name();
                 }
                 checkStatement(it.second->code.get());
             }
@@ -293,7 +446,8 @@ class ProgramChecker {
             // Define-assignment: left must be identifier.
             if (code->getLeft() != nullptr &&
                 code->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER) {
-                _defined_vars.insert(code->getLeft()->getValue());
+                std::string inferred = inferType(code->getRight());
+                _defined_vars[code->getLeft()->getValue()] = inferred;
             }
             checkExpression(code->getRight());
             return;
@@ -302,7 +456,25 @@ class ProgramChecker {
             // Assignment: left must be already defined.
             if (code->getLeft() != nullptr &&
                 code->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER) {
-                checkIdentifierRef(code->getLeft(), code->getLeft()->getValue());
+                const std::string &vname = code->getLeft()->getValue();
+                checkIdentifierRef(code->getLeft(), vname);
+                // Check type compatibility
+                auto it = _defined_vars.find(vname);
+                if (it != _defined_vars.end() && !it->second.empty()) {
+                    std::string rhs_type = inferType(code->getRight());
+                    if (!rhs_type.empty() &&
+                        !typesCompatible(rhs_type, it->second)) {
+                        auto ca = categorize(rhs_type), ce = categorize(it->second);
+                        if (!(ca == TypeCat::INT && _enum_names.count(it->second)) &&
+                            !(ce == TypeCat::INT && _enum_names.count(rhs_type))) {
+                            const auto &loc = code->location();
+                            emitError(loc, "cannot assign '" + rhs_type +
+                                      "' to variable '" + vname +
+                                      "' of type '" + it->second + "'",
+                                      vname.size());
+                        }
+                    }
+                }
             }
             checkExpression(code->getRight());
             return;
@@ -344,12 +516,291 @@ class ProgramChecker {
             checkMatchBody(code->getRight());
             return;
         }
-        // Generic binary/unary operator: recurse both sides.
+        // Generic binary/unary operator: recurse both sides + type check.
         checkExpression(code->getLeft());
         checkExpression(code->getRight());
+        checkOperatorTypes(code, oper);
     }
 
     // ── Specific checks ──────────────────────────────────────────────
+
+    void checkOperatorTypes(const pgcodes::GCode *code, const std::string &oper) {
+        // Only check binary arithmetic/string ops
+        if (code->getLeft() == nullptr || code->getRight() == nullptr) return;
+
+        // Arithmetic: both operands must be numeric
+        if (oper == "-" || oper == "*" || oper == "/" || oper == "%") {
+            std::string lt = inferType(code->getLeft());
+            std::string rt = inferType(code->getRight());
+            if (!lt.empty() && categorize(lt) != TypeCat::INT &&
+                categorize(lt) != TypeCat::UNKNOWN) {
+                emitError(code->location(), "operator '" + oper +
+                          "' requires integer operands, got '" + lt + "'", 1);
+            }
+            if (!rt.empty() && categorize(rt) != TypeCat::INT &&
+                categorize(rt) != TypeCat::UNKNOWN) {
+                emitError(code->location(), "operator '" + oper +
+                          "' requires integer operands, got '" + rt + "'", 1);
+            }
+            return;
+        }
+
+        // '+' can be int+int or string+string
+        if (oper == "+") {
+            std::string lt = inferType(code->getLeft());
+            std::string rt = inferType(code->getRight());
+            if (lt.empty() || rt.empty()) return;
+            auto cl = categorize(lt), cr = categorize(rt);
+            if (cl == TypeCat::UNKNOWN || cr == TypeCat::UNKNOWN) return;
+            // int + int or string + string OK
+            if (cl == TypeCat::INT && cr == TypeCat::INT) return;
+            if ((cl == TypeCat::STRING || cl == TypeCat::PTR) &&
+                (cr == TypeCat::STRING || cr == TypeCat::PTR)) return;
+            // Mixed string + int etc is an error
+            emitError(code->location(),
+                      "operator '+' cannot mix types '" + lt + "' and '" + rt + "'",
+                      1);
+            return;
+        }
+    }
+
+    // ── Type inference ───────────────────────────────────────────────
+
+    // Infer the type of an expression.  Returns a type name string
+    // ("int", "string", "bool", struct/enum name) or "" if unknown.
+    std::string inferType(const pgcodes::GCode *code) {
+        if (code == nullptr) return "";
+
+        // Literals
+        if (code->getValueType() == pgcodes::ValueType::NUMBER) return "int";
+        if (code->getValueType() == pgcodes::ValueType::STRING) return "string";
+
+        // Identifier: variable ref, function call, struct literal, keyword
+        if (code->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+            const std::string &name = code->getValue();
+
+            // Boolean keywords
+            if (name == "true" || name == "false") return "int";
+
+            // Suffix call: name(args...)
+            if (isSuffixCallNode(code->getRight())) {
+                return inferCallReturnType(name);
+            }
+
+            // Struct literal: StructName{...}
+            if (code->getRight() != nullptr &&
+                code->getRight()->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                code->getRight()->getOper() == "{" &&
+                _struct_names.count(name) != 0) {
+                return name;
+            }
+
+            // Variable reference
+            auto it = _defined_vars.find(name);
+            if (it != _defined_vars.end()) return it->second;
+
+            return "";
+        }
+
+        // Operator nodes
+        if (code->getValueType() != pgcodes::ValueType::NOT_VALUE) return "";
+        const std::string &oper = code->getOper();
+
+        // Parenthesized expression
+        if (oper == "(") {
+            if (code->getLeft() != nullptr &&
+                code->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+                return inferCallReturnType(code->getLeft()->getValue());
+            }
+            return inferType(code->getRight());
+        }
+
+        // Struct literal: { StructName, fields... }
+        if (oper == "{") {
+            if (code->getLeft() != nullptr &&
+                code->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER &&
+                _struct_names.count(code->getLeft()->getValue()) != 0) {
+                return code->getLeft()->getValue();
+            }
+            return "";
+        }
+
+        // Field access: expr.field
+        if (oper == ".") {
+            return inferDotType(code);
+        }
+
+        // Enum variant: EnumName::Variant
+        if (oper == "::") {
+            if (code->getLeft() != nullptr &&
+                code->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+                const std::string &ename = code->getLeft()->getValue();
+                if (_enum_names.count(ename)) return ename;
+            }
+            return "int";
+        }
+
+        // Match expression
+        if (oper == "match") {
+            return inferMatchType(code->getRight());
+        }
+
+        // Arithmetic/comparison/logical operators
+        if (oper == "+" || oper == "-" || oper == "*" || oper == "/" ||
+            oper == "%") {
+            std::string lt = inferType(code->getLeft());
+            if (oper == "+" && categorize(lt) == TypeCat::STRING) return "string";
+            return "int";
+        }
+        if (oper == "==" || oper == "!=" || oper == "<" || oper == ">" ||
+            oper == "<=" || oper == ">=" || oper == "&&" || oper == "||") {
+            return "int"; // comparisons and logical ops return int/bool
+        }
+        if (oper == "!") return "int";
+        if (oper == "++" || oper == "--") return "int";
+
+        return "";
+    }
+
+    std::string inferCallReturnType(const std::string &name) {
+        if (isBuiltin(name)) return builtinReturnType(name);
+        auto mod_it = _module_functions.find(_current_module_id);
+        if (mod_it != _module_functions.end()) {
+            auto func_it = mod_it->second.find(name);
+            if (func_it != mod_it->second.end())
+                return func_it->second.return_type;
+        }
+        return "";
+    }
+
+    std::string inferDotType(const pgcodes::GCode *code) {
+        const auto *left  = code->getLeft();
+        const auto *right = code->getRight();
+        if (left == nullptr || right == nullptr) return "";
+
+        // Method call: alias.func(args) or StructName.method(args)
+        if (left->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+            const std::string &alias = left->getValue();
+
+            // Extract callee for return type lookup
+            std::string callee;
+            if (right->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                right->getOper() == "(" && right->getLeft() != nullptr &&
+                right->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+                callee = right->getLeft()->getValue();
+            } else if (right->getValueType() == pgcodes::ValueType::IDENTIFIER &&
+                       isSuffixCallNode(right->getRight())) {
+                callee = right->getValue();
+            }
+
+            if (!callee.empty()) {
+                // Struct method: StructName.method
+                std::string mangled = alias + "." + callee;
+                auto mod_it = _module_functions.find(_current_module_id);
+                if (mod_it != _module_functions.end()) {
+                    auto func_it = mod_it->second.find(mangled);
+                    if (func_it != mod_it->second.end())
+                        return func_it->second.return_type;
+                }
+                // Imported function: alias.func
+                if (_current_imports != nullptr &&
+                    _current_imports->count(alias) != 0) {
+                    const auto &target_mod = _current_imports->at(alias);
+                    auto tmod_it = _module_functions.find(target_mod);
+                    if (tmod_it != _module_functions.end()) {
+                        auto tfn_it = tmod_it->second.find(callee);
+                        if (tfn_it != tmod_it->second.end())
+                            return tfn_it->second.return_type;
+                    }
+                }
+            }
+
+            // Field access: var.field → look up struct field type
+            if (right->getValueType() == pgcodes::ValueType::IDENTIFIER &&
+                !isSuffixCallNode(right->getRight())) {
+                std::string owner_type = inferType(left);
+                auto sf_it = _struct_fields.find(owner_type);
+                if (sf_it != _struct_fields.end()) {
+                    const std::string &field_name = right->getValue();
+                    for (const auto &fi : sf_it->second) {
+                        if (fi.field_name == field_name)
+                            return fi.type_name;
+                    }
+                }
+            }
+        }
+        return "";
+    }
+
+    std::string inferMatchType(const pgcodes::GCode *body) {
+        if (body == nullptr) return "";
+        if (body->getValueType() == pgcodes::ValueType::NOT_VALUE) {
+            if (body->getOper() == "{") return inferMatchType(body->getRight());
+            if (body->getOper() == ";") {
+                std::string t = inferMatchType(body->getLeft());
+                return t.empty() ? inferMatchType(body->getRight()) : t;
+            }
+            if (body->getOper() == "=>") return inferType(body->getRight());
+        }
+        return "";
+    }
+
+    // ── Call/reference checks ────────────────────────────────────────
+
+    void checkReturnType(const pgcodes::GCode *node,
+                         const pgcodes::GCode *expr) {
+        if (_current_return_type.empty()) return;
+        std::string actual = inferType(expr);
+        if (actual.empty()) return;
+        // Known parser quirk: `return expr.field` is parsed as
+        // `(return(expr)).field`, so the sema sees just `expr` as the
+        // return value.  When the inferred type is a struct but the
+        // expected return type is primitive, it is almost certainly a
+        // false positive — skip.
+        if (_struct_names.count(actual) && categorize(_current_return_type) != TypeCat::STRUCT)
+            return;
+        if (!typesCompatible(actual, _current_return_type)) {
+            auto ca = categorize(actual), ce = categorize(_current_return_type);
+            if (ca == TypeCat::INT && _enum_names.count(_current_return_type)) return;
+            if (ce == TypeCat::INT && _enum_names.count(actual)) return;
+            // Try to get location from the return node or the expression.
+            auto loc = node->location();
+            if (!loc.valid() && expr != nullptr) loc = expr->location();
+            emitError(loc, "function '" + _current_func_name +
+                      "' return type is '" + _current_return_type +
+                      "', but returning '" + actual + "'", 6);
+        }
+    }
+
+    void checkCallArgTypes(const pgcodes::GCode *args_code,
+                           const std::vector<std::string> &param_types,
+                           const std::string &func_name,
+                           const lexer::SourceLocation &loc,
+                           size_t name_width) {
+        if (args_code == nullptr) return;
+        std::vector<const pgcodes::GCode *> nodes;
+        collectArgNodes(args_code, nodes);
+        for (size_t i = 0; i < nodes.size() && i < param_types.size(); ++i) {
+            checkExpression(nodes[i]);
+            std::string actual   = inferType(nodes[i]);
+            const std::string &expected = param_types[i];
+            if (!actual.empty() && !expected.empty() &&
+                !typesCompatible(actual, expected)) {
+                // For enums, int/bool compatibility — be lenient
+                auto ca = categorize(actual), ce = categorize(expected);
+                if (ca == TypeCat::INT && _enum_names.count(expected)) continue;
+                if (ce == TypeCat::INT && _enum_names.count(actual))   continue;
+
+                emitError(loc, "argument " + std::to_string(i + 1) +
+                          " of '" + func_name + "' expects type '" +
+                          expected + "', got '" + actual + "'", name_width);
+            }
+        }
+        // Check remaining args not covered above
+        for (size_t i = param_types.size(); i < nodes.size(); ++i) {
+            checkExpression(nodes[i]);
+        }
+    }
 
     void checkCallArgs(const pgcodes::GCode *args_code) {
         if (args_code == nullptr) return;
@@ -365,6 +816,7 @@ class ProgramChecker {
                         const pgcodes::GCode *args_code) {
         // `return` is handled as a special prefix, not a real call.
         if (name == "return") {
+            checkReturnType(node, args_code);
             checkExpression(args_code);
             return;
         }
@@ -379,6 +831,11 @@ class ProgramChecker {
                 emitError(loc, "builtin '" + name + "' expects " +
                           std::to_string(expected) + " argument(s), got " +
                           std::to_string(actual_args), name_width);
+            } else {
+                // Check arg types for builtins
+                auto ptypes = builtinParamTypes(name);
+                checkCallArgTypes(args_code, ptypes, name, loc, name_width);
+                return;
             }
             checkCallArgs(args_code);
             return;
@@ -398,8 +855,12 @@ class ProgramChecker {
                       std::to_string(func_it->second.param_count) +
                       " argument(s), got " + std::to_string(actual_args),
                       name_width);
+            checkCallArgs(args_code);
+            return;
         }
-        checkCallArgs(args_code);
+        // Check arg types for user-defined functions
+        checkCallArgTypes(args_code, func_it->second.param_types,
+                          name, loc, name_width);
     }
 
     void checkDotExpression(const pgcodes::GCode *code) {
@@ -629,10 +1090,12 @@ class ProgramChecker {
     CheckResult                                 _result;
     std::string                                 _current_module_id;
     std::string                                 _current_func_name;
+    std::string                                 _current_return_type;
     const std::map<std::string, std::string>   *_current_imports = nullptr;
-    std::set<std::string>                       _defined_vars;
+    std::map<std::string, std::string>          _defined_vars;   // name → type
     std::set<std::string>                       _struct_names;
     std::set<std::string>                       _enum_names;
+    StructFieldMap                              _struct_fields;
 };
 
 } // namespace

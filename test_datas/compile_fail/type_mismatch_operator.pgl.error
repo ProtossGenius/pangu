@@ -1,0 +1,3 @@
+/home/sream/workspace/pangu/test_datas/compile_fail/type_mismatch_operator.pgl:4:13: error: operator '+' cannot mix types 'int' and 'string'
+    x := 10 + "hello";
+            ^
