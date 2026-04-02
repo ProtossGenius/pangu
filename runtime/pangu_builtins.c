@@ -5,16 +5,68 @@
 #include <dirent.h>
 #include <unistd.h>
 
-// --- Backtrace (Linux) ---
+// --- Backtrace with PGL source location (Linux) ---
 #ifdef __linux__
 #include <execinfo.h>
+
 void pg_print_backtrace(void) {
     void *buffer[64];
     int nframes = backtrace(buffer, 64);
     char **symbols = backtrace_symbols(buffer, nframes);
+
+    // Read /proc/self/exe for addr2line
+    char exe_path[1024];
+    ssize_t exe_len = readlink("/proc/self/exe", exe_path, sizeof(exe_path) - 1);
+    int has_exe = (exe_len > 0);
+    if (has_exe) exe_path[exe_len] = '\0';
+
+    // Read base address from /proc/self/maps for PIE binaries
+    void *base_addr = NULL;
+    if (has_exe) {
+        FILE *maps = fopen("/proc/self/maps", "r");
+        if (maps) {
+            char line[512];
+            while (fgets(line, sizeof(line), maps)) {
+                if (strstr(line, "r-xp") || strstr(line, "r--p")) {
+                    if (strstr(line, exe_path)) {
+                        unsigned long start;
+                        if (sscanf(line, "%lx-", &start) == 1) {
+                            base_addr = (void *)start;
+                            break;
+                        }
+                    }
+                }
+            }
+            fclose(maps);
+        }
+    }
+
     fprintf(stderr, "Stack trace:\n");
-    for (int i = 0; i < nframes; i++)
-        fprintf(stderr, "  %s\n", symbols[i]);
+    for (int i = 0; i < nframes; i++) {
+        if (has_exe) {
+            // Subtract base address for PIE binaries
+            void *offset = (void *)((char *)buffer[i] - (char *)base_addr);
+            char resolved[512];
+            char cmd[2048];
+            snprintf(cmd, sizeof(cmd), "addr2line -e '%s' -f -C -p %p 2>/dev/null",
+                     exe_path, offset);
+            FILE *fp = popen(cmd, "r");
+            if (fp) {
+                if (fgets(resolved, sizeof(resolved), fp)) {
+                    size_t len = strlen(resolved);
+                    if (len > 0 && resolved[len - 1] == '\n') resolved[len - 1] = '\0';
+                    if (strstr(resolved, "??") == NULL) {
+                        fprintf(stderr, "  [%d] %s\n", i, resolved);
+                        pclose(fp);
+                        continue;
+                    }
+                }
+                pclose(fp);
+            }
+        }
+        // Fallback to backtrace_symbols
+        fprintf(stderr, "  [%d] %s\n", i, symbols[i]);
+    }
     free(symbols);
 }
 #else

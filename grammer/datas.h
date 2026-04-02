@@ -287,6 +287,8 @@ class GFuncDef : public IGrammer {
     void                setBraceDepth(int depth) { _brace_depth = depth; }
     int                 getBraceDepth() const { return _brace_depth; }
     bool                hasBody() const { return _body_token_count > 0; }
+    void                setLocation(const lexer::SourceLocation &loc) { _location = loc; }
+    const lexer::SourceLocation &location() const { return _location; }
     virtual std::string to_string() override;
     GVarDefContainer    params;
     GVarDefContainer    result;
@@ -295,6 +297,7 @@ class GFuncDef : public IGrammer {
     std::string _decl_keyword = "func";
     size_t      _body_token_count = 0;
     int         _brace_depth      = 0;
+    lexer::SourceLocation _location;
 };
 using pgcodes::GCode;
 using pgcodes::PCode;

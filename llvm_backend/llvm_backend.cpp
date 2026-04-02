@@ -4,6 +4,8 @@
 #include <llvm/ExecutionEngine/Orc/LLJIT.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/Constants.h>
+#include <llvm/IR/DIBuilder.h>
+#include <llvm/IR/DebugInfoMetadata.h>
 #include <llvm/IR/Function.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/LLVMContext.h>
@@ -84,8 +86,10 @@ class ModuleBuilder {
         : _context(new llvm::LLVMContext())
         , _module(new llvm::Module(moduleNameFromPath(source_path), *_context))
         , _builder(*_context)
-        , _program(program) {
+        , _program(program)
+        , _source_path(source_path) {
         _module->setSourceFileName(source_path);
+        initDebugInfo(source_path);
     }
 
     void buildAllFunctions() {
@@ -99,6 +103,7 @@ class ModuleBuilder {
                 functionKey(_program.entry_module_id, "main")) == 0) {
             throw std::runtime_error("main function not found");
         }
+        finalizeDebugInfo();
     }
 
     std::unique_ptr<llvm::LLVMContext> releaseContext() {
@@ -140,6 +145,100 @@ class ModuleBuilder {
             llvm::ConstantPointerNull::get(
                 llvm::PointerType::get(*_context, 0)),
             "__pangu_argv");
+    }
+
+    // --- DWARF Debug Info ---
+
+    void initDebugInfo(const std::string &source_path) {
+        _di_builder = std::make_unique<llvm::DIBuilder>(*_module);
+        // Extract directory and filename from source_path
+        std::string dir, filename;
+        auto pos = source_path.rfind('/');
+        if (pos != std::string::npos) {
+            dir = source_path.substr(0, pos);
+            filename = source_path.substr(pos + 1);
+        } else {
+            dir = ".";
+            filename = source_path;
+        }
+        _di_file = _di_builder->createFile(filename, dir);
+        _di_cu = _di_builder->createCompileUnit(
+            llvm::dwarf::DW_LANG_C,
+            _di_file,
+            "pangu",        // producer
+            false,          // isOptimized
+            "",             // flags
+            0               // runtime version
+        );
+        _module->addModuleFlag(llvm::Module::Warning, "Debug Info Version",
+                               llvm::DEBUG_METADATA_VERSION);
+        _module->addModuleFlag(llvm::Module::Warning, "Dwarf Version", 4);
+    }
+
+    void finalizeDebugInfo() {
+        if (_di_builder) {
+            _di_builder->finalize();
+        }
+    }
+
+    llvm::DIFile *getOrCreateDIFile(const std::string &filepath) {
+        auto it = _di_files.find(filepath);
+        if (it != _di_files.end()) return it->second;
+        std::string dir, filename;
+        auto pos = filepath.rfind('/');
+        if (pos != std::string::npos) {
+            dir = filepath.substr(0, pos);
+            filename = filepath.substr(pos + 1);
+        } else {
+            dir = ".";
+            filename = filepath;
+        }
+        auto *f = _di_builder->createFile(filename, dir);
+        _di_files[filepath] = f;
+        return f;
+    }
+
+    llvm::DISubroutineType *createDebugFunctionType() {
+        // Simple: all functions return i32 and take i32 params (no type info needed for backtrace)
+        llvm::SmallVector<llvm::Metadata *, 8> types;
+        types.push_back(nullptr); // return type (unspecified)
+        return _di_builder->createSubroutineType(
+            _di_builder->getOrCreateTypeArray(types));
+    }
+
+    void attachDebugInfo(llvm::Function *func,
+                         const grammer::GFunction &gfunc) {
+        if (!_di_builder) return;
+        const auto &loc = gfunc.location();
+        llvm::DIFile *file = loc.valid() ? getOrCreateDIFile(loc.file) : _di_file;
+        unsigned line = loc.valid() ? loc.line : 0;
+        auto *sp = _di_builder->createFunction(
+            file,                       // scope
+            gfunc.name(),               // name
+            func->getName(),            // linkage name
+            file,                       // file
+            line,                       // line number
+            createDebugFunctionType(),  // type
+            line,                       // scope line
+            llvm::DINode::FlagPrototyped,
+            llvm::DISubprogram::SPFlagDefinition
+        );
+        func->setSubprogram(sp);
+        _current_di_scope = sp;
+    }
+
+    void emitDebugLocation(const pgcodes::GCode *code) {
+        if (!_di_builder || !_current_di_scope || !code) return;
+        const auto &loc = code->location();
+        if (loc.valid()) {
+            _builder.SetCurrentDebugLocation(
+                llvm::DILocation::get(*_context, loc.line, loc.column,
+                                      _current_di_scope));
+        }
+    }
+
+    void clearDebugLocation() {
+        _builder.SetCurrentDebugLocation(llvm::DebugLoc());
     }
 
     // Declare C runtime helper functions (defined in runtime/pangu_builtins.c)
@@ -299,9 +398,20 @@ class ModuleBuilder {
         _variables.clear();
         _terminated = false;
 
+        // Attach DWARF debug info to this function
+        attachDebugInfo(_current_function, function);
+
         auto *entry =
             llvm::BasicBlock::Create(*_context, "entry", _current_function);
         _builder.SetInsertPoint(entry);
+
+        // Set initial debug location to function entry line
+        if (_current_di_scope) {
+            const auto &loc = function.location();
+            unsigned line = loc.valid() ? loc.line : 0;
+            _builder.SetCurrentDebugLocation(
+                llvm::DILocation::get(*_context, line, 0, _current_di_scope));
+        }
 
         if (function.name() == "main") {
             // Store argc/argv from main params into globals
@@ -342,6 +452,10 @@ class ModuleBuilder {
         if (code == nullptr || _terminated) {
             return nullptr;
         }
+
+        // Set debug location for this statement
+        emitDebugLocation(code);
+
         if (code->getValueType() != pgcodes::ValueType::NOT_VALUE) {
             return emitExpression(code);
         }
@@ -894,6 +1008,10 @@ class ModuleBuilder {
         if (code == nullptr) {
             return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
         }
+
+        // Set debug location for expressions with valid source info
+        emitDebugLocation(code);
+
         if (containsReturnPrefix(code)) {
             auto *value = emitReturnExpressionTree(code);
             _builder.CreateRet(value);
@@ -2461,6 +2579,7 @@ class ModuleBuilder {
     std::unique_ptr<llvm::Module>      _module;
     llvm::IRBuilder<>                  _builder;
     const Program                     &_program;
+    std::string                        _source_path;
     llvm::Function                    *_current_function = nullptr;
     llvm::FunctionCallee               _printf;
     llvm::FunctionCallee               _exit;
@@ -2474,6 +2593,12 @@ class ModuleBuilder {
     bool                                      _terminated = false;
     llvm::GlobalVariable                      *_argc_global = nullptr;
     llvm::GlobalVariable                      *_argv_global = nullptr;
+    // DWARF debug info
+    std::unique_ptr<llvm::DIBuilder>           _di_builder;
+    llvm::DICompileUnit                       *_di_cu = nullptr;
+    llvm::DIFile                              *_di_file = nullptr;
+    llvm::DIScope                             *_current_di_scope = nullptr;
+    std::map<std::string, llvm::DIFile *>      _di_files;
 };
 
 std::string printModule(llvm::Module &module) {
@@ -2612,7 +2737,7 @@ bool compileProgramToExecutable(const Program            &program,
         }
     }
 
-    std::string command = "clang -Wno-override-module -rdynamic -x ir " +
+    std::string command = "clang -g -Wno-override-module -rdynamic -x ir " +
                                 quotePath(ir_path);
     if (!runtime_path.empty()) {
         command += " -x c " + quotePath(runtime_path);

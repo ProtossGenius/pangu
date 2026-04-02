@@ -795,6 +795,7 @@ void PipeFunc::accept(IPipelineFactory *factory, PData &&data) {
                             lex->to_string());
         }
         topProduct->setDeclKeyword(str);
+        topProduct->setLocation(lex->location());
         topProduct->setStep(int(FuncStep::READ_NAME));
         return;
     }
