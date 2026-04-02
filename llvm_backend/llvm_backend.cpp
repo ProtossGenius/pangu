@@ -161,6 +161,11 @@ class ModuleBuilder {
             dir = ".";
             filename = source_path;
         }
+        // Ensure filename is not empty (e.g., when compiling a directory)
+        if (filename.empty()) {
+            filename = dir;
+            dir = ".";
+        }
         _di_file = _di_builder->createFile(filename, dir);
         _di_cu = _di_builder->createCompileUnit(
             llvm::dwarf::DW_LANG_C,
@@ -2843,6 +2848,10 @@ bool compileProgramToExecutable(const Program            &program,
     }
     command += " -o " + quotePath(output_path);
     const int rc = std::system(command.c_str());
+
+    // Clean up intermediate IR file
+    std::remove(ir_path.c_str());
+
     if (rc != 0) {
         error = "clang failed when compiling llvm ir";
         return false;

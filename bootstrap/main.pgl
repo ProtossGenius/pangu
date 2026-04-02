@@ -148,12 +148,13 @@ func main() {
     } else if (str_eq(mode, "compile") == 1) {
         runtime_code := read_file("bootstrap/runtime.c");
         c_code := emit_c(root, kinds, svals, ivals, lefts, rights, extras, runtime_code);
-        // Write to temp C file
+        // Write to temp C file, compile, then clean up
         tmp_c := str_concat(output_path, ".c");
         write_file(tmp_c, c_code);
-        // Compile with gcc
         cmd := str_concat("gcc -O2 -rdynamic -o ", str_concat(output_path, str_concat(" ", tmp_c)));
         ret := system(cmd);
+        // Remove intermediate C file
+        system(str_concat("rm -f ", tmp_c));
         if (ret != 0) {
             println(str_concat("gcc failed with exit code: ", int_to_str(ret)));
             exit(1);
