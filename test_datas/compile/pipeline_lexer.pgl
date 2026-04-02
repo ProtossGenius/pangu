@@ -1,0 +1,207 @@
+package main;
+
+// Pipeline control signals
+type Signal enum { CONTINUE, FINISH, TRANSFER_FINISH, APPEND, APPEND_FINISH }
+
+// Worker IDs
+type WorkerID enum { WIdent, WNumber, WString, WSymbol }
+
+// Pipeline declaration (parsed, runner is manual for now)
+type CharToToken pipeline(c int)(kind int, text string);
+
+// === Switcher: routes each character to the appropriate worker ===
+impl CharToToken Switcher {
+    func dispatch(c int) int {
+        if (c == ' ' || c == '\t' || c == '\n' || c == '\r') {
+            return -1;
+        }
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_') {
+            return WorkerID::WIdent;
+        }
+        if (c >= '0' && c <= '9') {
+            return WorkerID::WNumber;
+        }
+        if (c == '"') {
+            return WorkerID::WString;
+        }
+        return WorkerID::WSymbol;
+    }
+}
+
+// === Worker: identifiers and keywords ===
+impl WIdent CharToToken worker {
+    func process(c int, buf_len int, first_char int) int {
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') || c == '_') {
+            return Signal::APPEND;
+        }
+        return Signal::TRANSFER_FINISH;
+    }
+}
+
+// === Worker: numbers ===
+impl WNumber CharToToken worker {
+    func process(c int, buf_len int, first_char int) int {
+        if (c >= '0' && c <= '9') {
+            return Signal::APPEND;
+        }
+        return Signal::TRANSFER_FINISH;
+    }
+}
+
+// === Worker: string literals ===
+impl WString CharToToken worker {
+    func process(c int, buf_len int, first_char int) int {
+        if (buf_len == 0 && c == '"') {
+            return Signal::CONTINUE;
+        }
+        if (c == '"') {
+            return Signal::FINISH;
+        }
+        return Signal::APPEND;
+    }
+}
+
+// === Worker: symbols and operators ===
+impl WSymbol CharToToken worker {
+    func process(c int, buf_len int, first_char int) int {
+        if (buf_len == 0) {
+            return Signal::APPEND;
+        }
+        if (buf_len == 1) {
+            if (first_char == ':' && c == '=') { return Signal::APPEND_FINISH; }
+            if (first_char == '=' && c == '=') { return Signal::APPEND_FINISH; }
+            if (first_char == '!' && c == '=') { return Signal::APPEND_FINISH; }
+            if (first_char == '<' && c == '=') { return Signal::APPEND_FINISH; }
+            if (first_char == '>' && c == '=') { return Signal::APPEND_FINISH; }
+            if (first_char == '&' && c == '&') { return Signal::APPEND_FINISH; }
+            if (first_char == '|' && c == '|') { return Signal::APPEND_FINISH; }
+            if (first_char == '+' && c == '+') { return Signal::APPEND_FINISH; }
+            if (first_char == '-' && c == '-') { return Signal::APPEND_FINISH; }
+            if (first_char == ':' && c == ':') { return Signal::APPEND_FINISH; }
+            if (first_char == '=' && c == '>') { return Signal::APPEND_FINISH; }
+        }
+        return Signal::TRANSFER_FINISH;
+    }
+}
+
+func is_keyword(word string) int {
+    if (str_eq(word, "func")) { return 1; }
+    if (str_eq(word, "return")) { return 1; }
+    if (str_eq(word, "if")) { return 1; }
+    if (str_eq(word, "else")) { return 1; }
+    if (str_eq(word, "while")) { return 1; }
+    if (str_eq(word, "for")) { return 1; }
+    if (str_eq(word, "type")) { return 1; }
+    if (str_eq(word, "struct")) { return 1; }
+    if (str_eq(word, "enum")) { return 1; }
+    if (str_eq(word, "impl")) { return 1; }
+    if (str_eq(word, "import")) { return 1; }
+    if (str_eq(word, "package")) { return 1; }
+    return 0;
+}
+
+func dispatch_wrk(wid int, c int, buf_len int, first_char int) int {
+    if (wid == WorkerID::WIdent) { return WIdent.process(c, buf_len, first_char); }
+    if (wid == WorkerID::WNumber) { return WNumber.process(c, buf_len, first_char); }
+    if (wid == WorkerID::WString) { return WString.process(c, buf_len, first_char); }
+    if (wid == WorkerID::WSymbol) { return WSymbol.process(c, buf_len, first_char); }
+    return Signal::CONTINUE;
+}
+
+func get_token_kind(wid int, text string) string {
+    if (wid == WorkerID::WIdent) {
+        if (is_keyword(text) == 1) { return "KW"; }
+        return "ID";
+    }
+    if (wid == WorkerID::WNumber) { return "NUM"; }
+    if (wid == WorkerID::WString) { return "STR"; }
+    if (wid == WorkerID::WSymbol) { return "SYM"; }
+    return "???";
+}
+
+// Pipeline state machine runner
+func run_pipeline(input string) int {
+    len := str_len(input);
+    i := 0;
+    wrk := -2;
+    buf := "";
+    buf_len := 0;
+    first_char := 0;
+    count := 0;
+
+    while (i <= len) {
+        c := 0;
+        if (i < len) {
+            c = str_char_at(input, i);
+        }
+
+        if (i == len) {
+            if (wrk >= 0 && buf_len > 0) {
+                kind := get_token_kind(wrk, buf);
+                println(str_concat(str_concat(kind, ":"), buf));
+                count = count + 1;
+            }
+            break;
+        }
+
+        if (wrk == -2) {
+            wrk = CharToToken.dispatch(c);
+            if (wrk < 0) {
+                i = i + 1;
+                wrk = -2;
+                continue;
+            }
+        }
+
+        sig := dispatch_wrk(wrk, c, buf_len, first_char);
+
+        if (sig == Signal::APPEND) {
+            buf = str_concat(buf, char_to_str(c));
+            if (buf_len == 0) { first_char = c; }
+            buf_len = buf_len + 1;
+            i = i + 1;
+        }
+        if (sig == Signal::CONTINUE) {
+            i = i + 1;
+        }
+        if (sig == Signal::FINISH) {
+            kind := get_token_kind(wrk, buf);
+            println(str_concat(str_concat(kind, ":"), buf));
+            count = count + 1;
+            buf = "";
+            buf_len = 0;
+            first_char = 0;
+            wrk = -2;
+            i = i + 1;
+        }
+        if (sig == Signal::TRANSFER_FINISH) {
+            kind := get_token_kind(wrk, buf);
+            println(str_concat(str_concat(kind, ":"), buf));
+            count = count + 1;
+            buf = "";
+            buf_len = 0;
+            first_char = 0;
+            wrk = -2;
+        }
+        if (sig == Signal::APPEND_FINISH) {
+            buf = str_concat(buf, char_to_str(c));
+            buf_len = buf_len + 1;
+            kind := get_token_kind(wrk, buf);
+            println(str_concat(str_concat(kind, ":"), buf));
+            count = count + 1;
+            buf = "";
+            buf_len = 0;
+            first_char = 0;
+            wrk = -2;
+            i = i + 1;
+        }
+    }
+    return count;
+}
+
+func main() {
+    input := "func main() { println(42); }";
+    count := run_pipeline(input);
+    println(str_concat("Total: ", int_to_str(count)));
+}

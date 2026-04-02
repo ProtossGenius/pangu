@@ -1,0 +1,12 @@
+KW:func
+ID:main
+SYM:(
+SYM:)
+SYM:{
+ID:println
+SYM:(
+NUM:42
+SYM:)
+SYM:;
+SYM:}
+Total: 11
