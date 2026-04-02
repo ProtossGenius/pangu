@@ -2164,10 +2164,152 @@ class ModuleBuilder {
         return result;
     }
 
+    // ── >> [...] dispatch: c >> [pred -> handler, ...] ──────────────
+    // Evaluates predicates in order; first match calls the handler with the value.
+    // Returns the handler result, or 0 if no predicate matched.
+    void collectDispatchArms(const pgcodes::GCode *code,
+                             std::vector<const pgcodes::GCode *> &arms) {
+        if (code == nullptr) return;
+        const auto *stripped = stripGrouping(code);
+        if (stripped == nullptr) return;
+        if (stripped->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            stripped->getOper() == ",") {
+            collectDispatchArms(stripped->getLeft(), arms);
+            collectDispatchArms(stripped->getRight(), arms);
+            return;
+        }
+        arms.push_back(stripped);
+    }
+
+    llvm::Value *emitDispatch(const pgcodes::GCode *value_code,
+                              const pgcodes::GCode *arms_code) {
+        auto *value = emitExpression(value_code);
+
+        std::vector<const pgcodes::GCode *> arms;
+        collectDispatchArms(arms_code, arms);
+
+        auto *result_slot = createVariableSlot("__dispatch_result",
+                                               _builder.getInt32Ty());
+        _builder.CreateStore(
+            llvm::ConstantInt::get(_builder.getInt32Ty(), 0), result_slot);
+
+        auto *merge_bb = llvm::BasicBlock::Create(
+            *_context, "dispatch.end", _current_function);
+
+        for (size_t i = 0; i < arms.size(); ++i) {
+            const auto *arm = arms[i];
+            if (arm->getValueType() != pgcodes::ValueType::NOT_VALUE ||
+                arm->getOper() != "->") {
+                throw std::runtime_error(
+                    "dispatch arm must be 'predicate -> handler'");
+            }
+            const auto *pred_code = arm->getLeft();
+            const auto *handler_code = arm->getRight();
+
+            // Evaluate predicate: pred(value)
+            llvm::Value *cond = nullptr;
+            if (pred_code->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+                auto *pred_fn = resolveCurrentFunction(pred_code->getValue());
+                if (pred_fn) {
+                    cond = _builder.CreateCall(pred_fn, {value},
+                                               pred_code->getValue() + ".pred");
+                }
+            }
+            if (pred_code->getValueType() == pgcodes::ValueType::NUMBER) {
+                // Literal match: e.g., '"' -> StringPipe or 48 -> handler
+                auto *lit = llvm::ConstantInt::get(
+                    _builder.getInt32Ty(), std::stoi(pred_code->getValue()));
+                cond = _builder.CreateICmpEQ(value, lit, "lit.match");
+            }
+            if (pred_code->getValueType() == pgcodes::ValueType::STRING) {
+                // Char literal match: e.g., '"' -> handler
+                std::string raw = pred_code->getValue();
+                if (raw.size() >= 2 && raw.front() == '"' && raw.back() == '"')
+                    raw = raw.substr(1, raw.size() - 2);
+                int ch_val = raw.empty() ? 0 : static_cast<unsigned char>(raw[0]);
+                if (raw.size() >= 2 && raw[0] == '\\') {
+                    switch (raw[1]) {
+                    case 'n': ch_val = '\n'; break;
+                    case 't': ch_val = '\t'; break;
+                    case '\\': ch_val = '\\'; break;
+                    default: break;
+                    }
+                }
+                auto *lit = llvm::ConstantInt::get(_builder.getInt32Ty(), ch_val);
+                cond = _builder.CreateICmpEQ(value, lit, "char.match");
+            }
+            if (!cond) {
+                throw std::runtime_error(
+                    "unsupported dispatch predicate: " +
+                    (pred_code->getValue().empty() ? pred_code->getOper()
+                                                   : pred_code->getValue()));
+            }
+
+            // Convert to i1 if needed
+            if (cond->getType()->isIntegerTy(32)) {
+                cond = _builder.CreateICmpNE(
+                    cond, llvm::ConstantInt::get(_builder.getInt32Ty(), 0),
+                    "pred.bool");
+            }
+
+            auto *then_bb = llvm::BasicBlock::Create(
+                *_context, "dispatch." + std::to_string(i), _current_function);
+            auto *next_bb = (i + 1 < arms.size())
+                ? llvm::BasicBlock::Create(
+                    *_context, "dispatch.next." + std::to_string(i),
+                    _current_function)
+                : merge_bb;
+
+            _builder.CreateCondBr(cond, then_bb, next_bb);
+
+            // Then block: call handler(value)
+            _builder.SetInsertPoint(then_bb);
+            if (handler_code->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+                auto *handler_fn = resolveCurrentFunction(
+                    handler_code->getValue());
+                if (handler_fn) {
+                    auto *ret = _builder.CreateCall(handler_fn, {value},
+                                                     handler_code->getValue() + ".ret");
+                    _builder.CreateStore(ret, result_slot);
+                } else {
+                    // Try as variable holding function pointer
+                    auto var_it = _variables.find(handler_code->getValue());
+                    if (var_it != _variables.end() &&
+                        var_it->second->getAllocatedType()->isPointerTy()) {
+                        auto *fn_ptr = _builder.CreateLoad(
+                            _builder.getPtrTy(), var_it->second);
+                        auto *ftype = llvm::FunctionType::get(
+                            _builder.getInt32Ty(),
+                            {value->getType()}, false);
+                        auto *ret = _builder.CreateCall(ftype, fn_ptr, {value});
+                        _builder.CreateStore(ret, result_slot);
+                    }
+                }
+            }
+            _builder.CreateBr(merge_bb);
+
+            if (next_bb != merge_bb) {
+                _builder.SetInsertPoint(next_bb);
+            }
+        }
+
+        _builder.SetInsertPoint(merge_bb);
+        return _builder.CreateLoad(_builder.getInt32Ty(), result_slot,
+                                   "dispatch.result");
+    }
+
     // ── >> stream push: c >> token (append char to string) ──────────
     llvm::Value *emitStreamPush(const pgcodes::GCode *code) {
-        auto *lhs = emitExpression(code->getLeft());
         auto *rhs_code = code->getRight();
+
+        // c >> [pred -> handler, ...] dispatch syntax
+        if (rhs_code != nullptr &&
+            rhs_code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            rhs_code->getOper() == "[") {
+            return emitDispatch(code->getLeft(), rhs_code->getRight());
+        }
+
+        auto *lhs = emitExpression(code->getLeft());
 
         // c >> string_var: append char(int) to string
         if (rhs_code != nullptr &&
