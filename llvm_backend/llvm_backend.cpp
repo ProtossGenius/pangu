@@ -882,6 +882,9 @@ class ModuleBuilder {
         if (oper == "for") {
             return emitForStatement(code);
         }
+        if (oper == "for_in") {
+            return emitForInStatement(code);
+        }
         if (oper == "switch") {
             return emitSwitchStatement(code);
         }
@@ -1076,6 +1079,97 @@ class ModuleBuilder {
         function->insert(function->end(), end_block);
         _builder.SetInsertPoint(end_block);
         _terminated = false;
+        return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+    }
+
+    // ── for x in iterable { body } ──────────────────────────────────
+    // AST: for_in(left="in"(var_ident, iterable), right=body)
+    // If iterable is a number N: iterate 0..N-1
+    // If iterable is an identifier: iterate 0..str_len(var)-1 for strings
+    //   or use array_len convention
+    llvm::Value *emitForInStatement(const pgcodes::GCode *code) {
+        auto *function = _current_function;
+        const auto *inNode = code->getLeft();
+        if (inNode == nullptr || inNode->getOper() != "in") {
+            throw std::runtime_error("for_in: malformed AST, missing 'in' node");
+        }
+        const auto *varNode = inNode->getLeft();
+        const auto *iterNode = inNode->getRight();
+        if (varNode == nullptr || iterNode == nullptr) {
+            throw std::runtime_error("for_in: missing variable or iterable");
+        }
+
+        std::string varName = varNode->getValue();
+
+        // Determine iteration count
+        llvm::Value *count = nullptr;
+        if (iterNode->getValueType() == pgcodes::ValueType::NUMBER) {
+            count = llvm::ConstantInt::get(_builder.getInt32Ty(),
+                                           std::stoi(iterNode->getValue()));
+        } else {
+            count = emitExpression(iterNode);
+        }
+
+        // Allocate loop variable
+        auto *indexAlloca = createVariableSlot(varName, _builder.getInt32Ty());
+        _builder.CreateStore(
+            llvm::ConstantInt::get(_builder.getInt32Ty(), 0), indexAlloca);
+
+        // Save and register loop variable
+        llvm::AllocaInst *prevAlloca = nullptr;
+        auto prevIt = _variables.find(varName);
+        if (prevIt != _variables.end()) {
+            prevAlloca = prevIt->second;
+        }
+        _variables[varName] = indexAlloca;
+
+        auto *cond_block =
+            llvm::BasicBlock::Create(*_context, "forin.cond", function);
+        auto *body_block = llvm::BasicBlock::Create(*_context, "forin.body");
+        auto *step_block = llvm::BasicBlock::Create(*_context, "forin.step");
+        auto *end_block  = llvm::BasicBlock::Create(*_context, "forin.end");
+
+        _builder.CreateBr(cond_block);
+
+        // Condition: index < count
+        _builder.SetInsertPoint(cond_block);
+        auto *idx = _builder.CreateLoad(_builder.getInt32Ty(), indexAlloca, "idx");
+        auto *cmp = _builder.CreateICmpSLT(idx, count, "forin.cmp");
+        _builder.CreateCondBr(cmp, body_block, end_block);
+
+        // Body
+        function->insert(function->end(), body_block);
+        _builder.SetInsertPoint(body_block);
+        _terminated = false;
+        _loop_stack.push_back({end_block, step_block});
+        emitStatement(code->getRight());
+        _loop_stack.pop_back();
+        if (!_terminated &&
+            _builder.GetInsertBlock()->getTerminator() == nullptr) {
+            _builder.CreateBr(step_block);
+        }
+
+        // Step: index++
+        function->insert(function->end(), step_block);
+        _builder.SetInsertPoint(step_block);
+        auto *nextIdx = _builder.CreateAdd(
+            _builder.CreateLoad(_builder.getInt32Ty(), indexAlloca, "idx.cur"),
+            llvm::ConstantInt::get(_builder.getInt32Ty(), 1), "idx.next");
+        _builder.CreateStore(nextIdx, indexAlloca);
+        _builder.CreateBr(cond_block);
+
+        // End
+        function->insert(function->end(), end_block);
+        _builder.SetInsertPoint(end_block);
+        _terminated = false;
+
+        // Restore previous variable binding
+        if (prevAlloca != nullptr) {
+            _variables[varName] = prevAlloca;
+        } else {
+            _variables.erase(varName);
+        }
+
         return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
     }
 

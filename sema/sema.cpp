@@ -387,8 +387,24 @@ class ProgramChecker {
         }
         if (oper == "for") {
             // for (init; cond; step) body
-            // code->getLeft() is the header, code->getRight() is body
             checkStatement(code->getLeft());
+            checkStatement(code->getRight());
+            return;
+        }
+        if (oper == "for_in") {
+            // for x in iterable { body }
+            // left = "in"(var_ident, iterable), right = body
+            const auto *inNode = code->getLeft();
+            if (inNode != nullptr && inNode->getOper() == "in") {
+                const auto *varNode = inNode->getLeft();
+                const auto *iterNode = inNode->getRight();
+                if (varNode != nullptr) {
+                    _defined_vars[varNode->getValue()] = "int";
+                }
+                if (iterNode != nullptr) {
+                    checkExpression(iterNode);
+                }
+            }
             checkStatement(code->getRight());
             return;
         }

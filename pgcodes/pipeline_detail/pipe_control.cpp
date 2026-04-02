@@ -94,14 +94,74 @@ void PipeFor::on_START(IPipelineFactory *factory, PData &&data) {
     if (lexer::makeIdentifier("for") != *lex) {
         factory->onFail("in step START, should get identifier 'for'");
     }
-    topProduct->setOper("for");
+    // Don't set oper yet — WAIT_HEADER decides "for" vs "for_in"
     topProduct->setLocation(lex->location());
     topProduct->setStep(int(Steps::WAIT_HEADER));
 }
 void PipeFor::on_WAIT_HEADER(IPipelineFactory *factory, PData &&data) {
+    GET_LEX(data);
     GET_TOP(factory, GCode);
-    parseKeywordCondition(factory, topProduct, std::move(data), "for",
-                          int(Steps::WAIT_ACTION));
+    if (lexer::ELexPipeline::Space == type) {
+        return;
+    }
+    // for (init; cond; step) { body }  -- C-style
+    if (lexer::makeSymbol("(") == *lex) {
+        topProduct->setOper("for");
+        factory->undealData(std::move(data));
+        topProduct->setStep(int(Steps::WAIT_ACTION));
+        factory->choicePipeline(ECodeType::Block);
+        factory->pushProduct(PProduct(new GCode()), pack_as_left);
+        return;
+    }
+    // for x in expr { body }  -- range-based
+    if (type == lexer::ELexPipeline::Identifier) {
+        topProduct->setOper("for_in");
+        auto *varNode = new GCode();
+        varNode->setValue(lex->get(), pgcodes::ValueType::IDENTIFIER);
+        varNode->setLocation(lex->location());
+        topProduct->setLeft(varNode);
+        topProduct->setStep(int(Steps::WAIT_IN_KEYWORD));
+        return;
+    }
+    factory->onFail("'for' expects '(' or identifier");
+}
+void PipeFor::on_WAIT_IN_KEYWORD(IPipelineFactory *factory, PData &&data) {
+    GET_LEX(data);
+    GET_TOP(factory, GCode);
+    if (lexer::ELexPipeline::Space == type) {
+        return;
+    }
+    if (lexer::makeIdentifier("in") != *lex) {
+        factory->onFail("'for <var>' expects 'in'");
+    }
+    topProduct->setStep(int(Steps::WAIT_ITER_EXPR));
+}
+void PipeFor::on_WAIT_ITER_EXPR(IPipelineFactory *factory, PData &&data) {
+    GET_LEX(data);
+    GET_TOP(factory, GCode);
+    if (lexer::ELexPipeline::Space == type) {
+        return;
+    }
+
+    // Accept identifier or number literal as iterable
+    if (type == lexer::ELexPipeline::Identifier ||
+        type == lexer::ELexPipeline::Number) {
+        auto *iterNode = new GCode();
+        iterNode->setValue(lex->get(),
+                           type == lexer::ELexPipeline::Identifier
+                               ? pgcodes::ValueType::IDENTIFIER
+                               : pgcodes::ValueType::NUMBER);
+        iterNode->setLocation(lex->location());
+        // Build: left = "in"(varNode, iterNode)
+        auto *inNode = new GCode();
+        inNode->setOper("in");
+        inNode->setLeft(topProduct->releaseLeft());
+        inNode->setRight(iterNode);
+        topProduct->setLeft(inNode);
+        topProduct->setStep(int(Steps::WAIT_ACTION));
+        return;
+    }
+    factory->onFail("'for <var> in' expects identifier or number");
 }
 void PipeFor::on_WAIT_ACTION(IPipelineFactory *factory, PData &&data) {
     GET_TOP(factory, GCode);

@@ -1,0 +1,15 @@
+package main;
+
+func main() {
+    for i in 5 {
+        print(i);
+        print(" ");
+    };
+    println("");
+    n := 3;
+    total := 0;
+    for j in n {
+        total = total + j + 1;
+    };
+    println(total);
+}
