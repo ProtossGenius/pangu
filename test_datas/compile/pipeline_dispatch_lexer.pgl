@@ -1,0 +1,79 @@
+package main;
+
+// ── Predicate functions ──
+func is_alpha(ch char) bool {
+    if ((ch >= 'A') && (ch <= 'Z')) { return true; }
+    if ((ch >= 'a') && (ch <= 'z')) { return true; }
+    if (ch == '_') { return true; }
+    return false;
+}
+
+func is_digit(ch char) bool {
+    if ((ch >= '0') && (ch <= '9')) { return true; }
+    return false;
+}
+
+func is_space(ch char) bool {
+    if (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r') { return true; }
+    return false;
+}
+
+// ── Token handlers ──
+func handle_ident(ch char) int { return 1; }
+func handle_number(ch char) int { return 2; }
+
+// ── Lexer using dispatch + stream operators + for-in ──
+func tokenize(input string) int {
+    count := 0;
+    buf := "";
+    kind := 0;
+
+    for ch in input {
+        if (kind == 0) {
+            if (is_space(ch)) { continue; }
+            kind = ch >> [is_alpha -> handle_ident, is_digit -> handle_number];
+            if (kind > 0) {
+                ch >> buf;
+            }
+            continue;
+        }
+
+        // In a token — check if char continues current token
+        stays := 0;
+        if (kind == 1 && (is_alpha(ch) || is_digit(ch))) { stays = 1; }
+        if (kind == 2 && is_digit(ch)) { stays = 1; }
+
+        if (stays == 1) {
+            ch >> buf;
+        } else {
+            // Emit token
+            if (kind == 1) { print("ID:"); }
+            if (kind == 2) { print("NUM:"); }
+            println(buf);
+            count = count + 1;
+            buf = "";
+            kind = 0;
+
+            // Re-dispatch current char
+            if (!is_space(ch)) {
+                kind = ch >> [is_alpha -> handle_ident, is_digit -> handle_number];
+                if (kind > 0) { ch >> buf; }
+            }
+        }
+    }
+    // Flush last token
+    if (kind > 0) {
+        if (kind == 1) { print("ID:"); }
+        if (kind == 2) { print("NUM:"); }
+        println(buf);
+        count = count + 1;
+    }
+    return count;
+}
+
+func main() int {
+    count := tokenize("hello world 42 foo123 bar");
+    print("Total: ");
+    println(count);
+    return 0;
+}
