@@ -6,6 +6,46 @@
 #include <unistd.h>
 
 // --- Backtrace with PGL source location (Linux) ---
+
+// JIT function address → source location registry
+typedef struct {
+    void       *addr;
+    const char *name;
+    const char *file;
+    int         line;
+} PgJitFuncInfo;
+
+static PgJitFuncInfo *g_jit_funcs = NULL;
+static int g_jit_func_count = 0;
+static int g_jit_func_cap   = 0;
+
+void pg_register_jit_function(void *addr, const char *name,
+                               const char *file, int line) {
+    if (g_jit_func_count >= g_jit_func_cap) {
+        g_jit_func_cap = g_jit_func_cap ? g_jit_func_cap * 2 : 64;
+        g_jit_funcs = (PgJitFuncInfo *)realloc(
+            g_jit_funcs, g_jit_func_cap * sizeof(PgJitFuncInfo));
+    }
+    PgJitFuncInfo *info = &g_jit_funcs[g_jit_func_count++];
+    info->addr = addr;
+    info->name = name;
+    info->file = file;
+    info->line = line;
+}
+
+// Find the JIT function whose address is closest to (but not after) the given address
+static const PgJitFuncInfo *pg_lookup_jit_function(void *addr) {
+    const PgJitFuncInfo *best = NULL;
+    for (int i = 0; i < g_jit_func_count; i++) {
+        if (g_jit_funcs[i].addr <= addr) {
+            if (!best || g_jit_funcs[i].addr > best->addr) {
+                best = &g_jit_funcs[i];
+            }
+        }
+    }
+    return best;
+}
+
 #ifdef __linux__
 #include <execinfo.h>
 
@@ -43,6 +83,13 @@ void pg_print_backtrace(void) {
 
     fprintf(stderr, "Stack trace:\n");
     for (int i = 0; i < nframes; i++) {
+        // First check JIT function registry
+        const PgJitFuncInfo *jit_info = pg_lookup_jit_function(buffer[i]);
+        if (jit_info) {
+            fprintf(stderr, "  [%d] %s at %s:%d\n", i,
+                    jit_info->name, jit_info->file, jit_info->line);
+            continue;
+        }
         if (has_exe) {
             // Subtract base address for PIE binaries
             void *offset = (void *)((char *)buffer[i] - (char *)base_addr);

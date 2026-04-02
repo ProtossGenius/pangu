@@ -100,6 +100,7 @@ class ModuleBuilder {
         declareRuntimeHelpers();
         declareFunctions();
         defineFunctions();
+        emitJitDebugRegistration();
         if (_declared_functions.count(
                 functionKey(_program.entry_module_id, "main")) == 0) {
             throw std::runtime_error("main function not found");
@@ -223,8 +224,8 @@ class ModuleBuilder {
         unsigned line = loc.valid() ? loc.line : 0;
         auto *sp = _di_builder->createFunction(
             file,                       // scope
-            gfunc.name(),               // name
-            func->getName(),            // linkage name
+            gfunc.name(),               // name (PGL function name)
+            "",                         // linkage name (empty → addr2line uses name)
             file,                       // file
             line,                       // line number
             createDebugFunctionType(),  // type
@@ -341,6 +342,10 @@ class ModuleBuilder {
         // void __pangu_register_types(int count, void* registry)
         _module->getOrInsertFunction("__pangu_register_types",
             llvm::FunctionType::get(void_ty, {i32_ty, ptr_ty}, false));
+        // void pg_register_jit_function(void* addr, const char* name,
+        //                                const char* file, int line)
+        _module->getOrInsertFunction("pg_register_jit_function",
+            llvm::FunctionType::get(void_ty, {ptr_ty, ptr_ty, ptr_ty, i32_ty}, false));
     }
 
     void declareStructTypes() {
@@ -598,6 +603,48 @@ class ModuleBuilder {
                 defineFunction(unit, *it.second);
             }
         }
+    }
+
+    // Generate __pangu_register_jit_debug() that registers each PGL function's
+    // address+source location with the runtime, enabling JIT-mode backtraces.
+    void emitJitDebugRegistration() {
+        auto *void_ty = _builder.getVoidTy();
+        auto *reg_fn_type = llvm::FunctionType::get(void_ty, {}, false);
+        auto *reg_fn = llvm::Function::Create(
+            reg_fn_type, llvm::Function::ExternalLinkage,
+            "__pangu_register_jit_debug", *_module);
+        auto *entry = llvm::BasicBlock::Create(*_context, "entry", reg_fn);
+        _builder.SetInsertPoint(entry);
+        clearDebugLocation();
+
+        auto reg_callee = _module->getOrInsertFunction(
+            "pg_register_jit_function",
+            llvm::FunctionType::get(void_ty,
+                {_builder.getPtrTy(), _builder.getPtrTy(),
+                 _builder.getPtrTy(), _builder.getInt32Ty()}, false));
+
+        for (const auto &unit : _program.packages) {
+            for (const auto &it : unit.package->functions.items()) {
+                const auto &gfunc = *it.second;
+                auto func_key = functionKey(unit.module_id, gfunc.name());
+                auto func_it = _declared_functions.find(func_key);
+                if (func_it == _declared_functions.end()) continue;
+
+                llvm::Function *llvm_func = func_it->second;
+                const auto &loc = gfunc.location();
+                std::string name_str = gfunc.name();
+                std::string file_str = loc.valid() ? loc.file : _source_path;
+                int line = loc.valid() ? (int)loc.line : 0;
+
+                auto *name_val = _builder.CreateGlobalStringPtr(name_str);
+                auto *file_val = _builder.CreateGlobalStringPtr(file_str);
+                auto *line_val = llvm::ConstantInt::get(
+                    _builder.getInt32Ty(), line);
+                _builder.CreateCall(reg_callee,
+                    {llvm_func, name_val, file_val, line_val});
+            }
+        }
+        _builder.CreateRetVoid();
     }
 
     llvm::FunctionType *makeFunctionType(const grammer::GFunction &function) {
@@ -3060,6 +3107,13 @@ bool runProgramMain(const Program &program,
     if (!symbol_or_err) {
         error = llvm::toString(symbol_or_err.takeError());
         return false;
+    }
+
+    // Register JIT function addresses for source-level backtraces
+    auto debug_reg = jit->lookup("__pangu_register_jit_debug");
+    if (debug_reg) {
+        auto *reg_fn = debug_reg->toPtr<void (*)()>();
+        reg_fn();
     }
 
     using MainFunc = int (*)(int, const char **);
