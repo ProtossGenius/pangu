@@ -1,0 +1,32 @@
+package main;
+
+func to_upper(ch int) int {
+    if (ch >= 97 && ch <= 122) { return ch - 32; }
+    return ch;
+}
+
+func main() int {
+    // For-in over string: iterate each character
+    s := "Hello";
+    for ch in s {
+        print(char_to_str(to_upper(ch)));
+    }
+    println("");
+
+    // For-in over numeric range (existing feature)
+    for i in 5 {
+        print(int_to_str(i));
+    }
+    println("");
+
+    // Count specific chars
+    msg := "abracadabra";
+    count := 0;
+    for c in msg {
+        if (c == 97) { count = count + 1; }
+    }
+    print("a count: ");
+    println(count);
+
+    return 0;
+}

@@ -1,0 +1,26 @@
+package main;
+
+func is_vowel(ch char) bool {
+    if (ch == 'a' || ch == 'e' || ch == 'i' || ch == 'o' || ch == 'u') {
+        return true;
+    }
+    if (ch == 'A' || ch == 'E' || ch == 'I' || ch == 'O' || ch == 'U') {
+        return true;
+    }
+    return false;
+}
+
+func count_vowels(s string) int {
+    n := 0;
+    for ch in s {
+        if (is_vowel(ch)) { n = n + 1; }
+    }
+    return n;
+}
+
+func main() int {
+    println(count_vowels("Hello World"));
+    println(count_vowels("AEIOU"));
+    println(count_vowels("xyz"));
+    return 0;
+}

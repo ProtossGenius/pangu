@@ -19,7 +19,8 @@ enum class TypeCat { INT, STRING, PTR, STRUCT, VOID, UNKNOWN };
 
 TypeCat categorize(const std::string &type_name) {
     if (type_name.empty() || type_name == "void")   return TypeCat::VOID;
-    if (type_name == "int" || type_name == "bool")   return TypeCat::INT;
+    if (type_name == "int" || type_name == "bool" || type_name == "char")
+        return TypeCat::INT;
     if (type_name == "string")                       return TypeCat::STRING;
     if (type_name == "ptr" || type_name == "func")   return TypeCat::PTR;
     return TypeCat::STRUCT; // struct or enum name

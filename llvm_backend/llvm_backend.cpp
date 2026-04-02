@@ -623,6 +623,7 @@ class ModuleBuilder {
 
     llvm::Type *resolveTypeName(const std::string &name) {
         if (name == "int")    return _builder.getInt32Ty();
+        if (name == "char")   return _builder.getInt32Ty();
         if (name == "bool")   return _builder.getInt32Ty();
         if (name == "string") return _builder.getPtrTy();
         if (name == "ptr")    return _builder.getPtrTy();
@@ -1103,19 +1104,36 @@ class ModuleBuilder {
 
         std::string varName = varNode->getValue();
 
-        // Determine iteration count
-        llvm::Value *count = nullptr;
+        // Evaluate iterable expression
+        llvm::Value *iterVal = nullptr;
         if (iterNode->getValueType() == pgcodes::ValueType::NUMBER) {
-            count = llvm::ConstantInt::get(_builder.getInt32Ty(),
-                                           std::stoi(iterNode->getValue()));
+            iterVal = llvm::ConstantInt::get(_builder.getInt32Ty(),
+                                             std::stoi(iterNode->getValue()));
         } else {
-            count = emitExpression(iterNode);
+            iterVal = emitExpression(iterNode);
         }
 
-        // Allocate loop variable
-        auto *indexAlloca = createVariableSlot(varName, _builder.getInt32Ty());
+        // Determine if iterating over a string (ptr) or numeric range (int)
+        bool is_string_iter = iterVal->getType()->isPointerTy();
+
+        // Get iteration count
+        llvm::Value *count = nullptr;
+        llvm::Value *strVal = nullptr;
+        if (is_string_iter) {
+            strVal = iterVal;
+            count = emitStrLen({strVal});
+        } else {
+            count = iterVal;
+        }
+
+        // Allocate hidden index counter
+        auto *indexAlloca = createVariableSlot(
+            varName + ".__idx", _builder.getInt32Ty());
         _builder.CreateStore(
             llvm::ConstantInt::get(_builder.getInt32Ty(), 0), indexAlloca);
+
+        // Allocate loop variable (int for both cases — char is int)
+        auto *varAlloca = createVariableSlot(varName, _builder.getInt32Ty());
 
         // Save and register loop variable
         llvm::AllocaInst *prevAlloca = nullptr;
@@ -1123,7 +1141,7 @@ class ModuleBuilder {
         if (prevIt != _variables.end()) {
             prevAlloca = prevIt->second;
         }
-        _variables[varName] = indexAlloca;
+        _variables[varName] = varAlloca;
 
         auto *cond_block =
             llvm::BasicBlock::Create(*_context, "forin.cond", function);
@@ -1139,9 +1157,16 @@ class ModuleBuilder {
         auto *cmp = _builder.CreateICmpSLT(idx, count, "forin.cmp");
         _builder.CreateCondBr(cmp, body_block, end_block);
 
-        // Body
+        // Body — set loop variable to current element
         function->insert(function->end(), body_block);
         _builder.SetInsertPoint(body_block);
+        if (is_string_iter) {
+            auto *ch = emitStrCharAt(strVal, idx);
+            _builder.CreateStore(ch, varAlloca);
+        } else {
+            _builder.CreateStore(idx, varAlloca);
+        }
+
         _terminated = false;
         _loop_stack.push_back({end_block, step_block});
         emitStatement(code->getRight());
