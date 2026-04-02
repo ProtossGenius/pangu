@@ -1,9 +1,45 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
+#include <execinfo.h>
+#include <unistd.h>
 
 static int _pg_argc;
 static char** _pg_argv;
+
+static void pg_print_backtrace() {
+    void* buffer[64];
+    int nframes = backtrace(buffer, 64);
+    char** symbols = backtrace_symbols(buffer, nframes);
+    fprintf(stderr, "Stack trace:\n");
+    for (int i = 0; i < nframes; i++) {
+        fprintf(stderr, "  %s\n", symbols[i]);
+    }
+    free(symbols);
+}
+
+static void pg_signal_handler(int sig) {
+    fprintf(stderr, "\nFatal signal %d received\n", sig);
+    pg_print_backtrace();
+    _exit(1);
+}
+
+static void pg_install_signal_handlers() {
+    signal(SIGSEGV, pg_signal_handler);
+    signal(SIGABRT, pg_signal_handler);
+    signal(SIGFPE, pg_signal_handler);
+}
+
+static void pg_panic(char* msg) {
+    fprintf(stderr, "panic: %s\n", msg);
+    pg_print_backtrace();
+    _exit(1);
+}
+
+static int pg_system(char* cmd) {
+    return system(cmd);
+}
 
 static void pg_println_int(int x) { printf("%d\n", x); }
 static void pg_println_str(char* x) { printf("%s\n", x); }
@@ -73,4 +109,51 @@ static void pg_str_array_set(char* arr, int i, char* v) { ((char**)arr)[i] = v; 
 
 static char* pg_args(int i) { return _pg_argv[i]; }
 static int pg_args_count() { return _pg_argc; }
+
+// Directory listing: find .pgl files in a directory
+#include <dirent.h>
+static int pg_find_pgl_files(char* dir, char* out_arr) {
+    DIR* d = opendir(dir);
+    if (!d) return 0;
+    struct dirent* ent;
+    int count = 0;
+    // First pass: collect and sort
+    char* names[4096];
+    while ((ent = readdir(d)) != NULL) {
+        int len = strlen(ent->d_name);
+        if (len > 4 && strcmp(ent->d_name + len - 4, ".pgl") == 0) {
+            // Build full path: dir + "/" + name
+            int dlen = strlen(dir);
+            int need_slash = (dlen > 0 && dir[dlen-1] != '/') ? 1 : 0;
+            char* path = (char*)malloc(dlen + need_slash + len + 1);
+            memcpy(path, dir, dlen);
+            if (need_slash) path[dlen] = '/';
+            memcpy(path + dlen + need_slash, ent->d_name, len + 1);
+            names[count++] = path;
+        }
+    }
+    closedir(d);
+    // Simple sort
+    for (int i = 0; i < count - 1; i++)
+        for (int j = i + 1; j < count; j++)
+            if (strcmp(names[i], names[j]) > 0) {
+                char* tmp = names[i]; names[i] = names[j]; names[j] = tmp;
+            }
+    for (int i = 0; i < count; i++)
+        ((char**)out_arr)[i] = names[i];
+    return count;
+}
+
+// Check if path is a directory
+static int pg_is_directory(char* path) {
+    DIR* d = opendir(path);
+    if (d) { closedir(d); return 1; }
+    return 0;
+}
+
+static int pg_str_ends_with(char* s, char* suffix) {
+    int slen = strlen(s), plen = strlen(suffix);
+    if (plen > slen) return 0;
+    return strcmp(s + slen - plen, suffix) == 0 ? 1 : 0;
+}
 

@@ -206,6 +206,8 @@ func builtin_c_name(name string, arg_type int) string {
         return "pg_print_int";
     }
     if (str_eq(name, "exit") == 1) { return "exit"; }
+    if (str_eq(name, "panic") == 1) { return "pg_panic"; }
+    if (str_eq(name, "system") == 1) { return "pg_system"; }
     if (str_eq(name, "str_len") == 1) { return "pg_str_len"; }
     if (str_eq(name, "str_char_at") == 1) { return "pg_str_char_at"; }
     if (str_eq(name, "char_to_str") == 1) { return "pg_char_to_str"; }
@@ -227,6 +229,9 @@ func builtin_c_name(name string, arg_type int) string {
     if (str_eq(name, "str_array_set") == 1) { return "pg_str_array_set"; }
     if (str_eq(name, "args") == 1) { return "pg_args"; }
     if (str_eq(name, "args_count") == 1) { return "pg_args_count"; }
+    if (str_eq(name, "find_pgl_files") == 1) { return "pg_find_pgl_files"; }
+    if (str_eq(name, "is_directory") == 1) { return "pg_is_directory"; }
+    if (str_eq(name, "str_ends_with") == 1) { return "pg_str_ends_with"; }
     return name;
 }
 
@@ -537,7 +542,7 @@ func emit_func_body(ctx string, id int, prefix string) string {
     scope_restore(ctx, saved);
 
     if (str_eq(fname, "main") == 1 && str_len(prefix) == 0) {
-        return str_concat("int main(int argc, char** argv) {\n    _pg_argc = argc;\n    _pg_argv = argv;\n", str_concat(body, "    return 0;\n}\n\n"));
+        return str_concat("int main(int argc, char** argv) {\n    _pg_argc = argc;\n    _pg_argv = argv;\n    pg_install_signal_handlers();\n", str_concat(body, "    return 0;\n}\n\n"));
     }
     c_fname := c_func_name(str_concat(prefix, fname));
     return str_concat(type_to_c(rtype), str_concat(" ", str_concat(c_fname, str_concat("(", str_concat(params, str_concat(") {\n", str_concat(body, "}\n\n")))))));

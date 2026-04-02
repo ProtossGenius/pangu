@@ -21,15 +21,16 @@ using FunctionTable = std::map<std::string, FunctionSig>;
 using ModuleTable   = std::map<std::string, FunctionTable>;
 
 const std::set<std::string> BUILTIN_FUNCTIONS = {
-    "println", "print", "exit",
+    "println", "print", "exit", "panic", "system",
     "str_concat", "str_len", "str_eq", "str_substr",
-    "str_index_of", "str_starts_with", "str_replace",
+    "str_index_of", "str_starts_with", "str_ends_with", "str_replace",
     "int_to_str", "str_to_int",
     "read_file", "write_file",
     "str_char_at", "char_to_str",
     "make_array", "array_get", "array_set",
     "make_str_array", "str_array_get", "str_array_set",
     "args", "args_count",
+    "find_pgl_files", "is_directory",
 };
 
 bool isBuiltin(const std::string &name) {
@@ -38,6 +39,8 @@ bool isBuiltin(const std::string &name) {
 
 size_t builtinParamCount(const std::string &name) {
     if (name == "println" || name == "print" || name == "exit") return 1;
+    if (name == "panic") return 1;
+    if (name == "system") return 1;
     if (name == "str_len" || name == "int_to_str" || name == "str_to_int")
         return 1;
     if (name == "read_file" || name == "char_to_str") return 1;
@@ -46,8 +49,13 @@ size_t builtinParamCount(const std::string &name) {
     if (name == "args_count") return 0;
     if (name == "str_concat" || name == "str_eq") return 2;
     if (name == "str_index_of" || name == "str_starts_with") return 2;
+    if (name == "str_ends_with") return 2;
     if (name == "write_file" || name == "str_char_at") return 2;
     if (name == "array_get" || name == "str_array_get") return 2;
+    if (name == "find_pgl_files" || name == "is_directory") {
+        if (name == "find_pgl_files") return 2;
+        return 1;
+    }
     if (name == "str_substr") return 3;
     if (name == "str_replace") return 3;
     if (name == "array_set" || name == "str_array_set") return 3;

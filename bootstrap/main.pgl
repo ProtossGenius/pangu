@@ -3,19 +3,18 @@ package main;
 // ============================================================
 // Pangu Bootstrap Compiler
 // Usage:
-//   pangu run bootstrap/ compile <file1.pgl> [file2.pgl ...]
-//   pangu run bootstrap/ parse   <file.pgl>
+//   bootstrap compile <file.pgl|dir/> [-o output]
+//   bootstrap emit-c  <file.pgl|dir/>
+//   bootstrap parse   <file.pgl|dir/>
 // ============================================================
 
 func merge_programs(kinds string, lefts string, rights string, root1 int, root2 int) {
-    // Find last LISTNODE in root1's children
     w := array_get(lefts, root1);
     last := -1;
     while (w != -1) {
         last = w;
         w = array_get(rights, w);
     }
-    // Get root2's first child, skip PACKAGE (first LISTNODE)
     w2 := array_get(lefts, root2);
     if (w2 != -1) { w2 = array_get(rights, w2); }
     if (last != -1 && w2 != -1) {
@@ -23,12 +22,66 @@ func merge_programs(kinds string, lefts string, rights string, root1 int, root2 
     }
 }
 
+func parse_file(filepath string, kinds string, svals string, ivals string,
+                lefts string, rights string, extras string, ncount string) int {
+    source := read_file(filepath);
+    tok_types := make_array(50000);
+    tok_values := make_str_array(50000);
+    tok_lines := make_array(50000);
+    tok_cols := make_array(50000);
+    tok_count := tokenize(source, tok_types, tok_values, tok_lines, tok_cols);
+    pos_arr := make_array(1);
+    array_set(pos_arr, 0, 0);
+    return parse_program(tok_types, tok_values, tok_lines, tok_count, pos_arr, filepath,
+                         kinds, svals, ivals, lefts, rights, extras, ncount);
+}
+
+func print_usage() {
+    println("Pangu Bootstrap Compiler");
+    println("");
+    println("USAGE:");
+    println("  bootstrap <command> <file.pgl|dir/> [options]");
+    println("");
+    println("COMMANDS:");
+    println("  compile <input> [-o output]  Compile to native executable via C");
+    println("  emit-c  <input>              Emit C code to stdout");
+    println("  parse   <input>              Parse and dump AST");
+    println("");
+    println("OPTIONS:");
+    println("  -o <path>     Set output binary path (default: a.out)");
+    println("  --help, -h    Show this help message");
+}
+
 func main() {
-    if (args_count() < 3) {
-        println("Usage: pangu run bootstrap/ <compile|parse> <file.pgl> [file2.pgl ...]");
+    if (args_count() < 2) {
+        print_usage();
         exit(1);
     }
+
+    // Check for --help
+    if (str_eq(args(1), "--help") == 1 || str_eq(args(1), "-h") == 1) {
+        print_usage();
+        exit(0);
+    }
+
+    if (args_count() < 3) {
+        print_usage();
+        exit(1);
+    }
+
     mode := args(1);
+    input_path := args(2);
+    output_path := "a.out";
+
+    // Parse -o flag
+    i := 3;
+    while (i < args_count()) {
+        if (str_eq(args(i), "-o") == 1 && i + 1 < args_count()) {
+            i = i + 1;
+            output_path = args(i);
+        }
+        i = i + 1;
+    }
 
     // Shared AST arrays
     kinds := make_array(200000);
@@ -41,38 +94,74 @@ func main() {
     array_set(ncount, 0, 0);
 
     root := -1;
-    fi := 2;
-    while (fi < args_count()) {
-        filepath := args(fi);
-        source := read_file(filepath);
 
-        tok_types := make_array(50000);
-        tok_values := make_str_array(50000);
-        tok_lines := make_array(50000);
-        tok_cols := make_array(50000);
-        tok_count := tokenize(source, tok_types, tok_values, tok_lines, tok_cols);
-
-        pos_arr := make_array(1);
-        array_set(pos_arr, 0, 0);
-        file_root := parse_program(tok_types, tok_values, tok_lines, tok_count, pos_arr, filepath,
-                                   kinds, svals, ivals, lefts, rights, extras, ncount);
-        if (root == -1) {
-            root = file_root;
-        } else {
-            merge_programs(kinds, lefts, rights, root, file_root);
+    if (is_directory(input_path) == 1) {
+        // Directory mode: discover .pgl files
+        file_arr := make_str_array(1000);
+        n_files := find_pgl_files(input_path, file_arr);
+        if (n_files == 0) {
+            println(str_concat("No .pgl files found in: ", input_path));
+            exit(1);
         }
-        fi = fi + 1;
+        fi := 0;
+        while (fi < n_files) {
+            filepath := str_array_get(file_arr, fi);
+            file_root := parse_file(filepath, kinds, svals, ivals, lefts, rights, extras, ncount);
+            if (root == -1) {
+                root = file_root;
+            } else {
+                merge_programs(kinds, lefts, rights, root, file_root);
+            }
+            fi = fi + 1;
+        }
+    } else {
+        // Explicit file list (remaining non-option args)
+        fi := 2;
+        while (fi < args_count()) {
+            filepath := args(fi);
+            if (str_eq(filepath, "-o") == 1) {
+                fi = fi + 2;
+                continue;
+            }
+            file_root := parse_file(filepath, kinds, svals, ivals, lefts, rights, extras, ncount);
+            if (root == -1) {
+                root = file_root;
+            } else {
+                merge_programs(kinds, lefts, rights, root, file_root);
+            }
+            fi = fi + 1;
+        }
+    }
+
+    if (root == -1) {
+        println("No input files");
+        exit(1);
     }
 
     if (str_eq(mode, "parse") == 1) {
         dump_ast(kinds, svals, ivals, lefts, rights, extras, root, 0);
         println(str_concat("Nodes: ", int_to_str(array_get(ncount, 0))));
-    } else if (str_eq(mode, "compile") == 1) {
+    } else if (str_eq(mode, "emit-c") == 1) {
         runtime_code := read_file("bootstrap/runtime.c");
         c_code := emit_c(root, kinds, svals, ivals, lefts, rights, extras, runtime_code);
         print(c_code);
+    } else if (str_eq(mode, "compile") == 1) {
+        runtime_code := read_file("bootstrap/runtime.c");
+        c_code := emit_c(root, kinds, svals, ivals, lefts, rights, extras, runtime_code);
+        // Write to temp C file
+        tmp_c := str_concat(output_path, ".c");
+        write_file(tmp_c, c_code);
+        // Compile with gcc
+        cmd := str_concat("gcc -O2 -rdynamic -o ", str_concat(output_path, str_concat(" ", tmp_c)));
+        ret := system(cmd);
+        if (ret != 0) {
+            println(str_concat("gcc failed with exit code: ", int_to_str(ret)));
+            exit(1);
+        }
+        println(output_path);
     } else {
-        println(str_concat("Unknown mode: ", mode));
+        println(str_concat("Unknown command: ", mode));
+        print_usage();
         exit(1);
     }
 }

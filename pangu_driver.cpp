@@ -35,18 +35,20 @@ struct LoadedPackage {
 void printUsage(std::ostream &os, const char *argv0) {
     os << "Pangu Programming Language Compiler\n\n"
        << "USAGE:\n"
-       << "  " << argv0 << " <command> <file.pgl> [args...]\n\n"
+       << "  " << argv0 << " <command> <file.pgl|dir/> [options]\n\n"
        << "COMMANDS:\n"
        << "  run <file.pgl> [args]   Compile and run via JIT\n"
-       << "  compile <file.pgl>      Compile to native executable (output: build/<name>)\n"
+       << "  compile <file.pgl>      Compile to native executable (default: build/<name>)\n"
        << "  emit-ir <file.pgl>      Print generated LLVM IR\n"
        << "  parse <file.pgl>        Parse and print AST\n\n"
        << "OPTIONS:\n"
+       << "  -o, --output <path>     Set output path for compile command\n"
        << "  --help, -h              Show this help message\n"
        << "  --version               Show version information\n\n"
        << "EXAMPLES:\n"
        << "  " << argv0 << " run hello.pgl\n"
        << "  " << argv0 << " compile hello.pgl\n"
+       << "  " << argv0 << " compile hello.pgl -o build/hello\n"
        << "  " << argv0 << " run lexer.pgl input.pgl\n";
 }
 
@@ -93,7 +95,15 @@ bool parseArgs(int argc, const char *argv[], Options &options) {
         return false;
     }
     options.input_path = argv[ 2 ];
-    return argc >= 3;
+
+    // Parse remaining flags
+    for (int i = 3; i < argc; ++i) {
+        std::string arg = argv[i];
+        if ((arg == "-o" || arg == "--output") && i + 1 < argc) {
+            options.output_path = argv[++i];
+        }
+    }
+    return true;
 }
 
 bool tryParseWithPrinter(const std::string &input_path, std::string &error) {
@@ -400,7 +410,7 @@ int runDirect(const std::string &input_path, int pgl_argc,
     return exit_code;
 }
 
-int compileSource(const std::string &input_path) {
+int compileSource(const std::string &input_path, const std::string &output_path_override) {
     if (!ensureReadable(input_path)) {
         return -1;
     }
@@ -417,7 +427,9 @@ int compileSource(const std::string &input_path) {
     if (!runSemaChecks(program)) {
         return -1;
     }
-    const std::string output_path = "build/" + moduleNameFromPath(input_path);
+    const std::string output_path = output_path_override.empty()
+        ? "build/" + moduleNameFromPath(input_path)
+        : output_path_override;
     if (!llvm_backend::compileProgramToExecutable(program, input_path,
                                                   output_path, error)) {
         std::cerr << "compile failed: " << error << std::endl;
@@ -447,7 +459,7 @@ int run(int argc, const char *argv[]) {
     switch (options.mode) {
     case Mode::PARSE: return runParsePipeline(options.input_path);
     case Mode::EMIT_IR: return emitIR(options.input_path);
-    case Mode::COMPILE: return compileSource(options.input_path);
+    case Mode::COMPILE: return compileSource(options.input_path, options.output_path);
     case Mode::RUN:
         // Pass remaining args (from argv[2]) to the PGL program
         return runDirect(options.input_path, argc - 2, argv + 2);

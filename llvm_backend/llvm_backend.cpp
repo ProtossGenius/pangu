@@ -92,6 +92,7 @@ class ModuleBuilder {
         declareArgcArgvGlobals();
         declareStructTypes();
         declareEnumTypes();
+        declareRuntimeHelpers();
         declareFunctions();
         defineFunctions();
         if (_declared_functions.count(
@@ -139,6 +140,35 @@ class ModuleBuilder {
             llvm::ConstantPointerNull::get(
                 llvm::PointerType::get(*_context, 0)),
             "__pangu_argv");
+    }
+
+    // Declare C runtime helper functions (defined in runtime/pangu_builtins.c)
+    void declareRuntimeHelpers() {
+        auto *void_ty = _builder.getVoidTy();
+        auto *i32_ty = _builder.getInt32Ty();
+        auto *ptr_ty = _builder.getPtrTy();
+
+        // void pg_install_signal_handlers(void)
+        _module->getOrInsertFunction("pg_install_signal_handlers",
+            llvm::FunctionType::get(void_ty, {}, false));
+        // void pg_panic(const char* msg)
+        _module->getOrInsertFunction("pg_panic",
+            llvm::FunctionType::get(void_ty, {ptr_ty}, false));
+        // int pg_system(const char* cmd)
+        _module->getOrInsertFunction("pg_system",
+            llvm::FunctionType::get(i32_ty, {ptr_ty}, false));
+        // int pg_str_ends_with(const char* s, const char* suffix)
+        _module->getOrInsertFunction("pg_str_ends_with",
+            llvm::FunctionType::get(i32_ty, {ptr_ty, ptr_ty}, false));
+        // int pg_is_directory(const char* path)
+        _module->getOrInsertFunction("pg_is_directory",
+            llvm::FunctionType::get(i32_ty, {ptr_ty}, false));
+        // int pg_find_pgl_files(const char* dir, char** out_arr)
+        _module->getOrInsertFunction("pg_find_pgl_files",
+            llvm::FunctionType::get(i32_ty, {ptr_ty, ptr_ty}, false));
+        // void pg_print_backtrace(void)
+        _module->getOrInsertFunction("pg_print_backtrace",
+            llvm::FunctionType::get(void_ty, {}, false));
     }
 
     void declareStructTypes() {
@@ -282,6 +312,12 @@ class ModuleBuilder {
             argv_val->setName("argv");
             _builder.CreateStore(argc_val, _argc_global);
             _builder.CreateStore(argv_val, _argv_global);
+
+            // Install signal handlers for crash debugging
+            auto install_fn = _module->getFunction("pg_install_signal_handlers");
+            if (install_fn) {
+                _builder.CreateCall(install_fn, {});
+            }
         } else {
             bindParameters(function);
         }
@@ -1600,6 +1636,25 @@ class ModuleBuilder {
             _terminated = true;
             return code;
         }
+        if (callee == "panic") {
+            auto args = emitCallArgs(args_code);
+            auto *msg =
+                args.empty()
+                    ? _builder.CreateGlobalStringPtr("panic")
+                    : args.front();
+            auto *panic_fn = _module->getFunction("pg_panic");
+            _builder.CreateCall(panic_fn, {msg});
+            _builder.CreateUnreachable();
+            _terminated = true;
+            return msg;
+        }
+        if (callee == "system") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 1)
+                throw std::runtime_error("system() takes exactly 1 argument");
+            auto *sys_fn = _module->getFunction("pg_system");
+            return _builder.CreateCall(sys_fn, {args.front()}, "sysret");
+        }
         if (callee == "return") {
             auto args = emitCallArgs(args_code);
             auto *value =
@@ -1743,6 +1798,27 @@ class ModuleBuilder {
                                                  {idx64}, "arg_ptr");
             return _builder.CreateLoad(_builder.getPtrTy(), elem_ptr, "arg");
         }
+        if (callee == "str_ends_with") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 2)
+                throw std::runtime_error("str_ends_with expects 2 arguments");
+            auto *fn = _module->getFunction("pg_str_ends_with");
+            return _builder.CreateCall(fn, args, "ends_with");
+        }
+        if (callee == "is_directory") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 1)
+                throw std::runtime_error("is_directory expects 1 argument");
+            auto *fn = _module->getFunction("pg_is_directory");
+            return _builder.CreateCall(fn, args, "is_dir");
+        }
+        if (callee == "find_pgl_files") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 2)
+                throw std::runtime_error("find_pgl_files expects 2 arguments");
+            auto *fn = _module->getFunction("pg_find_pgl_files");
+            return _builder.CreateCall(fn, args, "n_files");
+        }
         if (callee_function == nullptr) {
             throw std::runtime_error("unsupported function call: " + callee);
         }
@@ -1811,6 +1887,176 @@ class ModuleBuilder {
                                                   exit_args, false);
         _exit = _module->getOrInsertFunction("exit", exit_type);
         return _exit;
+    }
+
+    llvm::FunctionCallee getSystem() {
+        return _module->getOrInsertFunction(
+            "system",
+            llvm::FunctionType::get(_builder.getInt32Ty(),
+                                    {_builder.getPtrTy()}, false));
+    }
+
+    llvm::FunctionCallee getAbort() {
+        return _module->getOrInsertFunction(
+            "abort",
+            llvm::FunctionType::get(_builder.getVoidTy(), {}, false));
+    }
+
+    llvm::FunctionCallee getFprintf() {
+        return _module->getOrInsertFunction(
+            "fprintf",
+            llvm::FunctionType::get(_builder.getInt32Ty(),
+                                    {_builder.getPtrTy(), _builder.getPtrTy()},
+                                    true));
+    }
+
+    llvm::FunctionCallee getSignal() {
+        auto *handler_ty = llvm::FunctionType::get(_builder.getVoidTy(),
+                                                   {_builder.getInt32Ty()}, false);
+        auto *handler_ptr_ty = handler_ty->getPointerTo();
+        return _module->getOrInsertFunction(
+            "signal",
+            llvm::FunctionType::get(handler_ptr_ty,
+                                    {_builder.getInt32Ty(), handler_ptr_ty}, false));
+    }
+
+    llvm::FunctionCallee getBacktrace() {
+        return _module->getOrInsertFunction(
+            "backtrace",
+            llvm::FunctionType::get(_builder.getInt32Ty(),
+                                    {_builder.getPtrTy(), _builder.getInt32Ty()}, false));
+    }
+
+    llvm::FunctionCallee getBacktraceSymbols() {
+        return _module->getOrInsertFunction(
+            "backtrace_symbols",
+            llvm::FunctionType::get(_builder.getPtrTy(),
+                                    {_builder.getPtrTy(), _builder.getInt32Ty()}, false));
+    }
+
+    llvm::FunctionCallee getStderr() {
+        auto *gv = _module->getOrInsertGlobal("stderr", _builder.getPtrTy());
+        (void)gv;
+        return getFprintf();
+    }
+
+    // Generate pg_print_backtrace helper function
+    void emitPrintBacktraceFunc() {
+        auto *void_ty = _builder.getVoidTy();
+        auto *func_ty = llvm::FunctionType::get(void_ty, {}, false);
+        auto *func = llvm::Function::Create(
+            func_ty, llvm::Function::InternalLinkage,
+            "pg_print_backtrace", _module.get());
+        auto *entry = llvm::BasicBlock::Create(*_context, "entry", func);
+        _builder.SetInsertPoint(entry);
+
+        // void* buffer[64];
+        auto *buf = _builder.CreateAlloca(
+            _builder.getPtrTy(),
+            llvm::ConstantInt::get(_builder.getInt32Ty(), 64), "bt_buf");
+        // int nframes = backtrace(buffer, 64);
+        auto *nframes = _builder.CreateCall(
+            getBacktrace(), {buf, llvm::ConstantInt::get(_builder.getInt32Ty(), 64)}, "nframes");
+        // char** symbols = backtrace_symbols(buffer, nframes);
+        auto *symbols = _builder.CreateCall(
+            getBacktraceSymbols(), {buf, nframes}, "symbols");
+
+        // Get stderr
+        auto *stderr_gv = _module->getOrInsertGlobal("stderr", _builder.getPtrTy());
+        auto *stderr_val = _builder.CreateLoad(_builder.getPtrTy(), stderr_gv, "stderr");
+
+        // Print header
+        auto *hdr_fmt = _builder.CreateGlobalStringPtr("Stack trace:\n");
+        _builder.CreateCall(getFprintf(), {stderr_val, hdr_fmt});
+
+        // Loop: for (int i = 0; i < nframes; i++) fprintf(stderr, "  %s\n", symbols[i]);
+        auto *loop_bb = llvm::BasicBlock::Create(*_context, "bt_loop", func);
+        auto *end_bb = llvm::BasicBlock::Create(*_context, "bt_end", func);
+        _builder.CreateBr(loop_bb);
+
+        _builder.SetInsertPoint(loop_bb);
+        auto *i_phi = _builder.CreatePHI(_builder.getInt32Ty(), 2, "i");
+        i_phi->addIncoming(llvm::ConstantInt::get(_builder.getInt32Ty(), 0), entry);
+        auto *cmp = _builder.CreateICmpSLT(i_phi, nframes, "cmp");
+        auto *body_bb = llvm::BasicBlock::Create(*_context, "bt_body", func);
+        _builder.CreateCondBr(cmp, body_bb, end_bb);
+
+        _builder.SetInsertPoint(body_bb);
+        auto *i64 = _builder.CreateSExt(i_phi, _builder.getInt64Ty());
+        auto *sym_ptr = _builder.CreateGEP(_builder.getPtrTy(), symbols, {i64}, "sym_ptr");
+        auto *sym = _builder.CreateLoad(_builder.getPtrTy(), sym_ptr, "sym");
+        auto *line_fmt = _builder.CreateGlobalStringPtr("  %s\n");
+        _builder.CreateCall(getFprintf(), {stderr_val, line_fmt, sym});
+        auto *next_i = _builder.CreateAdd(i_phi, llvm::ConstantInt::get(_builder.getInt32Ty(), 1));
+        i_phi->addIncoming(next_i, body_bb);
+        _builder.CreateBr(loop_bb);
+
+        _builder.SetInsertPoint(end_bb);
+        _builder.CreateRetVoid();
+    }
+
+    // Generate pg_panic(const char* msg) function
+    void emitPanicFunc() {
+        auto *void_ty = _builder.getVoidTy();
+        auto *func_ty = llvm::FunctionType::get(void_ty, {_builder.getPtrTy()}, false);
+        auto *func = llvm::Function::Create(
+            func_ty, llvm::Function::ExternalLinkage,
+            "pg_panic", _module.get());
+        auto *entry = llvm::BasicBlock::Create(*_context, "entry", func);
+        _builder.SetInsertPoint(entry);
+
+        auto *msg = func->getArg(0);
+        auto *stderr_gv = _module->getOrInsertGlobal("stderr", _builder.getPtrTy());
+        auto *stderr_val = _builder.CreateLoad(_builder.getPtrTy(), stderr_gv, "stderr");
+        auto *panic_fmt = _builder.CreateGlobalStringPtr("panic: %s\n");
+        _builder.CreateCall(getFprintf(), {stderr_val, panic_fmt, msg});
+
+        // Print backtrace
+        auto *bt_func = _module->getFunction("pg_print_backtrace");
+        if (bt_func) _builder.CreateCall(bt_func, {});
+
+        // Use _exit(1) to avoid triggering SIGABRT handler
+        _builder.CreateCall(get_Exit(), {llvm::ConstantInt::get(_builder.getInt32Ty(), 1)});
+        _builder.CreateUnreachable();
+    }
+
+    // Generate signal handler that prints backtrace on crash
+    void emitSignalHandler() {
+        auto *void_ty = _builder.getVoidTy();
+        auto *handler_ty = llvm::FunctionType::get(void_ty, {_builder.getInt32Ty()}, false);
+        auto *handler = llvm::Function::Create(
+            handler_ty, llvm::Function::InternalLinkage,
+            "pg_signal_handler", _module.get());
+        auto *entry = llvm::BasicBlock::Create(*_context, "entry", handler);
+        _builder.SetInsertPoint(entry);
+
+        auto *sig = handler->getArg(0);
+        auto *stderr_gv = _module->getOrInsertGlobal("stderr", _builder.getPtrTy());
+        auto *stderr_val = _builder.CreateLoad(_builder.getPtrTy(), stderr_gv, "stderr");
+        auto *fmt = _builder.CreateGlobalStringPtr("\nFatal signal %d received\n");
+        _builder.CreateCall(getFprintf(), {stderr_val, fmt, sig});
+
+        auto *bt_func = _module->getFunction("pg_print_backtrace");
+        if (bt_func) _builder.CreateCall(bt_func, {});
+
+        _builder.CreateCall(get_Exit(), {llvm::ConstantInt::get(_builder.getInt32Ty(), 1)});
+        _builder.CreateUnreachable();
+    }
+
+    // _exit() - immediate exit without cleanup (avoids re-triggering signal handlers)
+    llvm::FunctionCallee get_Exit() {
+        llvm::Type *args[] = {_builder.getInt32Ty()};
+        auto *ty = llvm::FunctionType::get(_builder.getVoidTy(), args, false);
+        return _module->getOrInsertFunction("_exit", ty);
+    }
+
+    llvm::FunctionCallee getPgPanic() {
+        auto *func = _module->getFunction("pg_panic");
+        if (func) return func;
+        // Declare if not yet emitted (will be generated during buildAllFunctions)
+        auto *func_ty = llvm::FunctionType::get(_builder.getVoidTy(),
+                                                {_builder.getPtrTy()}, false);
+        return _module->getOrInsertFunction("pg_panic", func_ty);
     }
 
     // C runtime helpers for string operations
@@ -2353,9 +2599,25 @@ bool compileProgramToExecutable(const Program            &program,
     ir_file << ir_text;
     ir_file.close();
 
-    const std::string command = "clang -Wno-override-module -x ir " +
-                                quotePath(ir_path) + " -o " +
-                                quotePath(output_path);
+    // Look for pangu_builtins.c relative to the executable or source tree
+    std::string runtime_path;
+    const char *candidates[] = {
+        "runtime/pangu_builtins.c",
+        "../runtime/pangu_builtins.c",         // when running from build/
+    };
+    for (auto *cand : candidates) {
+        if (std::ifstream(cand).good()) {
+            runtime_path = cand;
+            break;
+        }
+    }
+
+    std::string command = "clang -Wno-override-module -rdynamic -x ir " +
+                                quotePath(ir_path);
+    if (!runtime_path.empty()) {
+        command += " -x c " + quotePath(runtime_path);
+    }
+    command += " -o " + quotePath(output_path);
     const int rc = std::system(command.c_str());
     if (rc != 0) {
         error = "clang failed when compiling llvm ir";
