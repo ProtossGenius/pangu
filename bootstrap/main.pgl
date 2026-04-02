@@ -3,27 +3,34 @@ package main;
 // ============================================================
 // Pangu Bootstrap Compiler
 // Usage:
-//   pangu run bootstrap/ compile <file.pgl>   → outputs C code
-//   pangu run bootstrap/ parse   <file.pgl>   → dumps AST
+//   pangu run bootstrap/ compile <file1.pgl> [file2.pgl ...]
+//   pangu run bootstrap/ parse   <file.pgl>
 // ============================================================
+
+func merge_programs(kinds string, lefts string, rights string, root1 int, root2 int) {
+    // Find last LISTNODE in root1's children
+    w := array_get(lefts, root1);
+    last := -1;
+    while (w != -1) {
+        last = w;
+        w = array_get(rights, w);
+    }
+    // Get root2's first child, skip PACKAGE (first LISTNODE)
+    w2 := array_get(lefts, root2);
+    if (w2 != -1) { w2 = array_get(rights, w2); }
+    if (last != -1 && w2 != -1) {
+        array_set(rights, last, w2);
+    }
+}
 
 func main() {
     if (args_count() < 3) {
-        println("Usage: pangu run bootstrap/ <compile|parse> <file.pgl>");
+        println("Usage: pangu run bootstrap/ <compile|parse> <file.pgl> [file2.pgl ...]");
         exit(1);
     }
     mode := args(1);
-    filepath := args(2);
-    source := read_file(filepath);
 
-    // Tokenize
-    tok_types := make_array(50000);
-    tok_values := make_str_array(50000);
-    tok_lines := make_array(50000);
-    tok_cols := make_array(50000);
-    tok_count := tokenize(source, tok_types, tok_values, tok_lines, tok_cols);
-
-    // Parse
+    // Shared AST arrays
     kinds := make_array(200000);
     svals := make_str_array(200000);
     ivals := make_array(200000);
@@ -32,11 +39,30 @@ func main() {
     extras := make_array(200000);
     ncount := make_array(1);
     array_set(ncount, 0, 0);
-    pos_arr := make_array(1);
-    array_set(pos_arr, 0, 0);
 
-    root := parse_program(tok_types, tok_values, tok_lines, tok_count, pos_arr, filepath,
-                          kinds, svals, ivals, lefts, rights, extras, ncount);
+    root := -1;
+    fi := 2;
+    while (fi < args_count()) {
+        filepath := args(fi);
+        source := read_file(filepath);
+
+        tok_types := make_array(50000);
+        tok_values := make_str_array(50000);
+        tok_lines := make_array(50000);
+        tok_cols := make_array(50000);
+        tok_count := tokenize(source, tok_types, tok_values, tok_lines, tok_cols);
+
+        pos_arr := make_array(1);
+        array_set(pos_arr, 0, 0);
+        file_root := parse_program(tok_types, tok_values, tok_lines, tok_count, pos_arr, filepath,
+                                   kinds, svals, ivals, lefts, rights, extras, ncount);
+        if (root == -1) {
+            root = file_root;
+        } else {
+            merge_programs(kinds, lefts, rights, root, file_root);
+        }
+        fi = fi + 1;
+    }
 
     if (str_eq(mode, "parse") == 1) {
         dump_ast(kinds, svals, ivals, lefts, rights, extras, root, 0);

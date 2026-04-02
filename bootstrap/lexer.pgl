@@ -218,10 +218,10 @@ func tokenize(source string,
             while (pos < src_len && str_char_at(source, pos) != 34) {
                 ch := str_char_at(source, pos);
                 if (ch == 92 && pos + 1 < src_len) {
-                    val = str_concat(val, char_to_str(ch));
                     pos = pos + 1;
                     col = col + 1;
-                    val = str_concat(val, char_to_str(str_char_at(source, pos)));
+                    esc_char := resolve_escape(str_char_at(source, pos));
+                    val = str_concat(val, char_to_str(esc_char));
                     pos = pos + 1;
                     col = col + 1;
                 } else {
