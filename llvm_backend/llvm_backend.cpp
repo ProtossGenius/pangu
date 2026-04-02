@@ -96,10 +96,12 @@ class ModuleBuilder {
         declareArgcArgvGlobals();
         declareStructTypes();
         declareEnumTypes();
+        collectPipelineMetadata();
         emitTypeMetadata();
         declareRuntimeHelpers();
         declareFunctions();
         defineFunctions();
+        emitPipelineFunctions();
         emitJitDebugRegistration();
         if (_declared_functions.count(
                 functionKey(_program.entry_module_id, "main")) == 0) {
@@ -136,6 +138,17 @@ class ModuleBuilder {
     // Enum variant registry: EnumName → { VariantName → ordinal }
     struct EnumInfo {
         std::map<std::string, int> variants; // variant → ordinal value
+    };
+    // Pipeline auto-dispatch metadata
+    struct PipelineWorkerEntry {
+        std::string impl_name;    // e.g., "WIdent"
+        std::string process_func; // e.g., "WIdent.process"
+        int         enum_ordinal; // ordinal in WorkerID enum
+    };
+    struct PipelineInfo {
+        std::string name;         // pipeline name, e.g., "CharToToken"
+        std::string module_id;
+        std::vector<PipelineWorkerEntry> workers;
     };
 
     void declareArgcArgvGlobals() {
@@ -401,6 +414,47 @@ class ModuleBuilder {
         }
     }
 
+    // Collect pipeline metadata: match pipeline type_defs with worker impls
+    // and resolve worker IDs from enum types.
+    void collectPipelineMetadata() {
+        for (const auto &unit : _program.packages) {
+            for (const auto &td : unit.package->function_defs.items()) {
+                if (td.second->getDeclKeyword() != "pipeline") continue;
+                const std::string &pname = td.second->name();
+
+                PipelineInfo info;
+                info.name = pname;
+                info.module_id = unit.module_id;
+
+                // Find workers: impls with base==pname and "worker" modifier
+                for (const auto &impl_pair : unit.package->impls.items()) {
+                    const auto *impl = impl_pair.second.get();
+                    bool is_worker = false;
+                    for (const auto &mod : impl->modifiers()) {
+                        if (mod == "worker") { is_worker = true; break; }
+                    }
+                    if (!is_worker || impl->base() != pname) continue;
+
+                    const std::string &wname = impl->name();
+                    int ordinal = -1;
+                    for (const auto &[ename, einfo] : _enum_types) {
+                        auto vit = einfo.variants.find(wname);
+                        if (vit != einfo.variants.end()) {
+                            ordinal = vit->second;
+                            break;
+                        }
+                    }
+                    if (ordinal >= 0) {
+                        info.workers.push_back({wname, wname + ".process", ordinal});
+                    }
+                }
+                if (!info.workers.empty()) {
+                    _pipeline_types[pname] = std::move(info);
+                }
+            }
+        }
+    }
+
     // Create a global string constant (no insert point needed)
     llvm::Constant *createGlobalString(const std::string &str, const std::string &name) {
         auto *strConst = llvm::ConstantDataArray::getString(*_context, str, true);
@@ -647,6 +701,56 @@ class ModuleBuilder {
         _builder.CreateRetVoid();
     }
 
+    // Generate LLVM IR for auto-generated pipeline __dispatch functions.
+    // Each dispatch function is a switch on worker ID that forwards to
+    // the corresponding Worker.process method.
+    void emitPipelineFunctions() {
+        for (const auto &[pname, pinfo] : _pipeline_types) {
+            std::string dispatch_name = pname + ".__dispatch";
+            auto fkey = functionKey(pinfo.module_id, dispatch_name);
+            auto it = _declared_functions.find(fkey);
+            if (it == _declared_functions.end()) continue;
+
+            llvm::Function *dispatch_fn = it->second;
+            auto *entry = llvm::BasicBlock::Create(*_context, "entry", dispatch_fn);
+            _builder.SetInsertPoint(entry);
+            clearDebugLocation();
+
+            // First arg is wid, rest are forwarded to workers
+            auto arg_it = dispatch_fn->arg_begin();
+            llvm::Value *wid = &*arg_it++;
+            std::vector<llvm::Value *> worker_args;
+            while (arg_it != dispatch_fn->arg_end()) {
+                worker_args.push_back(&*arg_it++);
+            }
+
+            auto *default_bb = llvm::BasicBlock::Create(
+                *_context, "default", dispatch_fn);
+            auto *sw = _builder.CreateSwitch(
+                wid, default_bb, pinfo.workers.size());
+
+            for (const auto &w : pinfo.workers) {
+                auto wkey = functionKey(pinfo.module_id, w.process_func);
+                auto wfn_it = _declared_functions.find(wkey);
+                if (wfn_it == _declared_functions.end()) continue;
+
+                auto *case_bb = llvm::BasicBlock::Create(
+                    *_context, "case_" + w.impl_name, dispatch_fn);
+                sw->addCase(
+                    llvm::ConstantInt::get(_builder.getInt32Ty(), w.enum_ordinal),
+                    case_bb);
+
+                _builder.SetInsertPoint(case_bb);
+                auto *result = _builder.CreateCall(wfn_it->second, worker_args);
+                _builder.CreateRet(result);
+            }
+
+            // Default: return 0 (Signal::CONTINUE)
+            _builder.SetInsertPoint(default_bb);
+            _builder.CreateRet(llvm::ConstantInt::get(_builder.getInt32Ty(), 0));
+        }
+    }
+
     llvm::FunctionType *makeFunctionType(const grammer::GFunction &function) {
         if (function.result.size() > 1) {
             throw std::runtime_error("multiple return values are not supported");
@@ -680,6 +784,9 @@ class ModuleBuilder {
     }
 
     void defineFunction(const PackageUnit &unit, const grammer::GFunction &function) {
+        // Skip synthetic pipeline functions — they're generated by emitPipelineFunctions
+        if (function.code == nullptr) return;
+
         _current_module_id   = unit.module_id;
         _current_imports     = &unit.import_alias_to_module;
         _current_function =
@@ -2996,6 +3103,7 @@ class ModuleBuilder {
     std::map<std::string, llvm::AllocaInst *>  _variables;
     std::map<std::string, StructInfo>          _struct_types;
     std::map<std::string, EnumInfo>            _enum_types;
+    std::map<std::string, PipelineInfo>        _pipeline_types;
     std::vector<LoopContext>                    _loop_stack;
     std::string                                _current_module_id;
     const std::map<std::string, std::string>  *_current_imports = nullptr;

@@ -60,6 +60,7 @@ class GTypeFunctContainer {
     virtual ~GTypeFunctContainer() {}
     void   write_string(std::ostream &ss);
     size_t size() const { return _functions.size(); }
+    const std::map<std::string, PFuncDef> &items() const { return _functions; }
 
   protected:
     std::map<std::string, PFuncDef> _functions;
@@ -123,6 +124,8 @@ class GImpl : public IGrammer {
     int  getBraceDepth() const { return _brace_depth; }
     void addMethod(PFunction &&func) { _methods.push_back(std::move(func)); }
     std::vector<PFunction> &methods() { return _methods; }
+    const std::string &base() const { return _base; }
+    const std::vector<std::string> &modifiers() const { return _modifiers; }
     std::string to_string() override;
 
   private:
@@ -138,6 +141,7 @@ class GImplContainer {
     void addImpl(PImpl &&impl);
     void write_string(std::ostream &ss);
     size_t size() const { return _impls.size(); }
+    const std::map<std::string, PImpl> &items() const { return _impls; }
     void mergeFrom(GImplContainer &other) {
         for (auto &kv : other._impls)
             _impls[kv.first] = std::move(kv.second);

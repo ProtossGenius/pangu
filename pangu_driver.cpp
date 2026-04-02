@@ -437,6 +437,62 @@ bool loadPackageRecursive(
     return true;
 }
 
+// Auto-generate pipeline __dispatch functions from pipeline declarations and impl blocks.
+// For each pipeline with workers, creates a synthetic function that switches on worker ID.
+void registerPipelineFunctions(grammer::GPackage &pkg) {
+    for (const auto &td : pkg.function_defs.items()) {
+        if (td.second->getDeclKeyword() != "pipeline") continue;
+        const std::string &pipeline_name = td.second->name();
+
+        // Collect workers: impls with base == pipeline_name and "worker" modifier
+        std::vector<std::string> worker_names;
+        for (const auto &impl_pair : pkg.impls.items()) {
+            const auto *impl = impl_pair.second.get();
+            bool is_worker = false;
+            for (const auto &mod : impl->modifiers()) {
+                if (mod == "worker") { is_worker = true; break; }
+            }
+            if (is_worker && impl->base() == pipeline_name) {
+                worker_names.push_back(impl->name());
+            }
+        }
+        if (worker_names.empty()) continue;
+
+        // Get process method signature from first worker
+        std::string first_process = worker_names[0] + ".process";
+        const auto *process_func = pkg.functions.getFunction(first_process);
+        if (!process_func) continue;
+
+        // Create PipelineName.__dispatch(wid int, ...process_params...) -> ret_type
+        auto dispatch = std::make_unique<grammer::GFunction>();
+        dispatch->setName(pipeline_name + ".__dispatch");
+
+        auto wid_var = std::make_unique<grammer::GVarDef>();
+        wid_var->setName("wid");
+        wid_var->getType()->setName("int");
+        dispatch->params.addVariable(std::move(wid_var));
+
+        for (const auto &pname : process_func->params.orderedNames()) {
+            const auto *pvar = process_func->params.getVariable(pname);
+            auto new_var = std::make_unique<grammer::GVarDef>();
+            new_var->setName(pname);
+            new_var->getType()->setName(pvar->getType()->name());
+            dispatch->params.addVariable(std::move(new_var));
+        }
+
+        if (process_func->result.size() > 0) {
+            const auto &rname = process_func->result.orderedNames().front();
+            const auto *rvar = process_func->result.getVariable(rname);
+            auto ret_var = std::make_unique<grammer::GVarDef>();
+            ret_var->setName(rname);
+            ret_var->getType()->setName(rvar->getType()->name());
+            dispatch->result.addVariable(std::move(ret_var));
+        }
+        // code remains nullptr — backend generates the switch implementation
+        pkg.functions.addFunction(std::move(dispatch));
+    }
+}
+
 bool buildProgram(const std::string &entry_path, llvm_backend::Program &program,
                   std::string &error) {
     std::map<std::string, LoadedPackage> loaded_packages;
@@ -458,6 +514,11 @@ bool buildProgram(const std::string &entry_path, llvm_backend::Program &program,
     if (!loadPackageRecursive(entry_path, loaded_packages, load_order, error,
                               pgs_ptr, project_root)) {
         return false;
+    }
+
+    // Register auto-generated pipeline dispatch functions before sema
+    for (auto &it : loaded_packages) {
+        registerPipelineFunctions(*it.second.package);
     }
 
     const std::string canonical_entry = canonicalPath(entry_path);
