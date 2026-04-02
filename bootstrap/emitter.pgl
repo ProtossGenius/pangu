@@ -1,0 +1,621 @@
+package main;
+
+// ============================================================
+// Pangu Bootstrap C Emitter
+// Walks AST parallel arrays (with LISTNODE wrappers), outputs C code.
+// ============================================================
+
+// --- Context layout (str_array, 12 slots) ---
+// 0=kinds 1=svals 2=ivals 3=lefts 4=rights 5=extras
+// 6=vnames 7=vtypes 8=vcount 9=fn_names 10=fn_types 11=fn_count
+
+func ctx_new(kinds string, svals string, ivals string,
+             lefts string, rights string, extras string) string {
+    ctx := make_str_array(12);
+    str_array_set(ctx, 0, kinds);
+    str_array_set(ctx, 1, svals);
+    str_array_set(ctx, 2, ivals);
+    str_array_set(ctx, 3, lefts);
+    str_array_set(ctx, 4, rights);
+    str_array_set(ctx, 5, extras);
+    str_array_set(ctx, 6, make_str_array(10000));
+    str_array_set(ctx, 7, make_array(10000));
+    str_array_set(ctx, 8, make_array(1));
+    str_array_set(ctx, 9, make_str_array(1000));
+    str_array_set(ctx, 10, make_array(1000));
+    str_array_set(ctx, 11, make_array(1));
+    array_set(str_array_get(ctx, 8), 0, 0);
+    array_set(str_array_get(ctx, 11), 0, 0);
+    return ctx;
+}
+
+// --- Node accessors ---
+func nkind(ctx string, id int) int    { return array_get(str_array_get(ctx, 0), id); }
+func nsval(ctx string, id int) string { return str_array_get(str_array_get(ctx, 1), id); }
+func nival(ctx string, id int) int    { return array_get(str_array_get(ctx, 2), id); }
+func nleft(ctx string, id int) int    { return array_get(str_array_get(ctx, 3), id); }
+func nright(ctx string, id int) int   { return array_get(str_array_get(ctx, 4), id); }
+func nextra(ctx string, id int) int   { return array_get(str_array_get(ctx, 5), id); }
+
+// --- List traversal helpers (LISTNODE = kind 39) ---
+func lval(ctx string, w int) int {
+    if (w < 0) { return -1; }
+    if (nkind(ctx, w) == 39) { return nleft(ctx, w); }
+    return w;
+}
+func lnext(ctx string, w int) int {
+    if (w < 0) { return -1; }
+    return nright(ctx, w);
+}
+
+// --- Scope management ---
+func scope_push(ctx string, name string, tp int) {
+    vc := array_get(str_array_get(ctx, 8), 0);
+    str_array_set(str_array_get(ctx, 6), vc, name);
+    array_set(str_array_get(ctx, 7), vc, tp);
+    array_set(str_array_get(ctx, 8), 0, vc + 1);
+}
+func scope_find(ctx string, name string) int {
+    vc := array_get(str_array_get(ctx, 8), 0);
+    i := vc - 1;
+    while (i >= 0) {
+        if (str_eq(str_array_get(str_array_get(ctx, 6), i), name) == 1) {
+            return array_get(str_array_get(ctx, 7), i);
+        }
+        i = i - 1;
+    }
+    return -1;
+}
+func scope_save(ctx string) int {
+    return array_get(str_array_get(ctx, 8), 0);
+}
+func scope_restore(ctx string, saved int) {
+    array_set(str_array_get(ctx, 8), 0, saved);
+}
+
+// --- Function return type table ---
+func fn_push(ctx string, name string, tp int) {
+    fc := array_get(str_array_get(ctx, 11), 0);
+    str_array_set(str_array_get(ctx, 9), fc, name);
+    array_set(str_array_get(ctx, 10), fc, tp);
+    array_set(str_array_get(ctx, 11), 0, fc + 1);
+}
+func fn_find(ctx string, name string) int {
+    fc := array_get(str_array_get(ctx, 11), 0);
+    i := 0;
+    while (i < fc) {
+        if (str_eq(str_array_get(str_array_get(ctx, 9), i), name) == 1) {
+            return array_get(str_array_get(ctx, 10), i);
+        }
+        i = i + 1;
+    }
+    return 0;
+}
+
+// --- String helpers ---
+func split_left(s string) string {
+    idx := str_index_of(s, ":");
+    if (idx < 0) { return s; }
+    return str_substr(s, 0, idx);
+}
+func split_right(s string) string {
+    idx := str_index_of(s, ":");
+    if (idx < 0) { return ""; }
+    return str_substr(s, idx + 1, str_len(s) - idx - 1);
+}
+func indent_str(n int) string {
+    s := "";
+    i := 0;
+    while (i < n) {
+        s = str_concat(s, "    ");
+        i = i + 1;
+    }
+    return s;
+}
+
+// --- Type system ---
+// 0=int, 1=string (also used for pointers/arrays), 2=void
+func type_to_c(t int) string {
+    if (t == 1) { return "char*"; }
+    if (t == 2) { return "void"; }
+    return "int";
+}
+func pgl_type_to_code(t string) int {
+    if (str_eq(t, "string") == 1) { return 1; }
+    return 0;
+}
+
+// --- C identifier helpers ---
+func c_escape(s string) string {
+    bs := char_to_str(92);
+    dq := char_to_str(34);
+    result := "";
+    i := 0;
+    len := str_len(s);
+    while (i < len) {
+        ch := str_char_at(s, i);
+        if (ch == 10) { result = str_concat(result, str_concat(bs, "n")); }
+        else if (ch == 9) { result = str_concat(result, str_concat(bs, "t")); }
+        else if (ch == 13) { result = str_concat(result, str_concat(bs, "r")); }
+        else if (ch == 0) { result = str_concat(result, str_concat(bs, "0")); }
+        else if (ch == 92) { result = str_concat(result, str_concat(bs, bs)); }
+        else if (ch == 34) { result = str_concat(result, str_concat(bs, dq)); }
+        else { result = str_concat(result, char_to_str(ch)); }
+        i = i + 1;
+    }
+    return result;
+}
+
+func c_func_name(name string) string {
+    result := "";
+    i := 0;
+    len := str_len(name);
+    while (i < len) {
+        ch := str_char_at(name, i);
+        if (ch == 46) { result = str_concat(result, "_"); }
+        else { result = str_concat(result, char_to_str(ch)); }
+        i = i + 1;
+    }
+    return result;
+}
+
+// --- Type inference ---
+func infer_type(ctx string, id int) int {
+    if (id < 0) { return 0; }
+    k := nkind(ctx, id);
+    sv := nsval(ctx, id);
+    if (k == 20) { return 0; }
+    if (k == 21) { return 1; }
+    if (k == 19) {
+        t := scope_find(ctx, sv);
+        if (t >= 0) { return t; }
+        return 0;
+    }
+    if (k == 16) {
+        if (str_eq(sv, "+") == 1) {
+            lt := infer_type(ctx, nleft(ctx, id));
+            if (lt == 1) { return 1; }
+        }
+        return 0;
+    }
+    if (k == 17) { return infer_type(ctx, nleft(ctx, id)); }
+    if (k == 18) {
+        if (str_eq(sv, "str_concat") == 1) { return 1; }
+        if (str_eq(sv, "char_to_str") == 1) { return 1; }
+        if (str_eq(sv, "int_to_str") == 1) { return 1; }
+        if (str_eq(sv, "str_substr") == 1) { return 1; }
+        if (str_eq(sv, "read_file") == 1) { return 1; }
+        if (str_eq(sv, "args") == 1) { return 1; }
+        if (str_eq(sv, "str_array_get") == 1) { return 1; }
+        if (str_eq(sv, "str_replace") == 1) { return 1; }
+        if (str_eq(sv, "make_array") == 1) { return 1; }
+        if (str_eq(sv, "make_str_array") == 1) { return 1; }
+        return fn_find(ctx, sv);
+    }
+    return 0;
+}
+
+// --- Builtin C name mapping ---
+func builtin_c_name(name string, arg_type int) string {
+    if (str_eq(name, "println") == 1) {
+        if (arg_type == 1) { return "pg_println_str"; }
+        return "pg_println_int";
+    }
+    if (str_eq(name, "print") == 1) {
+        if (arg_type == 1) { return "pg_print_str"; }
+        return "pg_print_int";
+    }
+    if (str_eq(name, "exit") == 1) { return "exit"; }
+    if (str_eq(name, "str_len") == 1) { return "pg_str_len"; }
+    if (str_eq(name, "str_char_at") == 1) { return "pg_str_char_at"; }
+    if (str_eq(name, "char_to_str") == 1) { return "pg_char_to_str"; }
+    if (str_eq(name, "str_concat") == 1) { return "pg_str_concat"; }
+    if (str_eq(name, "str_eq") == 1) { return "pg_str_eq"; }
+    if (str_eq(name, "str_substr") == 1) { return "pg_str_substr"; }
+    if (str_eq(name, "str_index_of") == 1) { return "pg_str_index_of"; }
+    if (str_eq(name, "str_starts_with") == 1) { return "pg_str_starts_with"; }
+    if (str_eq(name, "str_replace") == 1) { return "pg_str_replace"; }
+    if (str_eq(name, "str_to_int") == 1) { return "pg_str_to_int"; }
+    if (str_eq(name, "int_to_str") == 1) { return "pg_int_to_str"; }
+    if (str_eq(name, "read_file") == 1) { return "pg_read_file"; }
+    if (str_eq(name, "write_file") == 1) { return "pg_write_file"; }
+    if (str_eq(name, "make_array") == 1) { return "pg_make_array"; }
+    if (str_eq(name, "array_get") == 1) { return "pg_array_get"; }
+    if (str_eq(name, "array_set") == 1) { return "pg_array_set"; }
+    if (str_eq(name, "make_str_array") == 1) { return "pg_make_str_array"; }
+    if (str_eq(name, "str_array_get") == 1) { return "pg_str_array_get"; }
+    if (str_eq(name, "str_array_set") == 1) { return "pg_str_array_set"; }
+    if (str_eq(name, "args") == 1) { return "pg_args"; }
+    if (str_eq(name, "args_count") == 1) { return "pg_args_count"; }
+    return name;
+}
+
+func is_builtin(name string) int {
+    if (str_eq(builtin_c_name(name, 0), name) == 0) { return 1; }
+    return 0;
+}
+
+// ============================================================
+// Expression emitter
+// ============================================================
+func emit_expr(ctx string, id int) string {
+    if (id < 0) { return "0"; }
+    k := nkind(ctx, id);
+    sv := nsval(ctx, id);
+
+    // NUMBER
+    if (k == 20) { return sv; }
+
+    // STRING
+    if (k == 21) {
+        dq := char_to_str(34);
+        return str_concat(dq, str_concat(c_escape(sv), dq));
+    }
+
+    // IDENT
+    if (k == 19) { return sv; }
+
+    // BINOP
+    if (k == 16) {
+        l := emit_expr(ctx, nleft(ctx, id));
+        r := emit_expr(ctx, nright(ctx, id));
+        lt := infer_type(ctx, nleft(ctx, id));
+        if (str_eq(sv, "+") == 1 && lt == 1) {
+            return str_concat("pg_str_concat(", str_concat(l, str_concat(", ", str_concat(r, ")"))));
+        }
+        if (lt == 1 && str_eq(sv, "==") == 1) {
+            return str_concat("(strcmp(", str_concat(l, str_concat(", ", str_concat(r, ") == 0)"))));
+        }
+        if (lt == 1 && str_eq(sv, "!=") == 1) {
+            return str_concat("(strcmp(", str_concat(l, str_concat(", ", str_concat(r, ") != 0)"))));
+        }
+        return str_concat("(", str_concat(l, str_concat(" ", str_concat(sv, str_concat(" ", str_concat(r, ")"))))));
+    }
+
+    // UNARYOP
+    if (k == 17) {
+        return str_concat("(", str_concat(sv, str_concat(emit_expr(ctx, nleft(ctx, id)), ")")));
+    }
+
+    // PREINC
+    if (k == 37) {
+        return str_concat("(", str_concat(sv, str_concat(emit_expr(ctx, nleft(ctx, id)), ")")));
+    }
+
+    // POSTINC
+    if (k == 38) {
+        return str_concat("(", str_concat(emit_expr(ctx, nleft(ctx, id)), str_concat(sv, ")")));
+    }
+
+    // CALL
+    if (k == 18) {
+        args_str := "";
+        w := nleft(ctx, id);
+        first := 1;
+        while (w != -1) {
+            a := lval(ctx, w);
+            if (first == 0) { args_str = str_concat(args_str, ", "); }
+            args_str = str_concat(args_str, emit_expr(ctx, a));
+            first = 0;
+            w = lnext(ctx, w);
+        }
+        if (is_builtin(sv) == 1) {
+            arg_type := 0;
+            if (str_eq(sv, "println") == 1 || str_eq(sv, "print") == 1) {
+                first_a := lval(ctx, nleft(ctx, id));
+                if (first_a != -1) { arg_type = infer_type(ctx, first_a); }
+            }
+            return str_concat(builtin_c_name(sv, arg_type), str_concat("(", str_concat(args_str, ")")));
+        }
+        return str_concat(c_func_name(sv), str_concat("(", str_concat(args_str, ")")));
+    }
+
+    // FIELD access (x.y → x_y for enums/qualified, x.y for structs)
+    if (k == 22) {
+        return str_concat(emit_expr(ctx, nleft(ctx, id)), str_concat("_", sv));
+    }
+
+    return "0";
+}
+
+// ============================================================
+// Statement emitter
+// ============================================================
+func emit_if(ctx string, id int, ind int) string {
+    pad := indent_str(ind);
+    result := "";
+    cur := id;
+    first := 1;
+    while (cur != -1 && nkind(ctx, cur) == 10) {
+        cond := emit_expr(ctx, nleft(ctx, cur));
+        then_body := emit_block(ctx, nright(ctx, cur), ind);
+        if (first == 1) {
+            result = str_concat(pad, str_concat("if (", str_concat(cond, str_concat(") {\n", str_concat(then_body, str_concat(pad, "}"))))));
+            first = 0;
+        } else {
+            result = str_concat(result, str_concat(" else if (", str_concat(cond, str_concat(") {\n", str_concat(then_body, str_concat(pad, "}"))))));
+        }
+        cur = nextra(ctx, cur);
+    }
+    if (cur != -1) {
+        result = str_concat(result, str_concat(" else {\n", str_concat(emit_block(ctx, cur, ind), str_concat(pad, "}"))));
+    }
+    return str_concat(result, "\n");
+}
+
+func emit_stmt(ctx string, id int, ind int) string {
+    if (id < 0) { return ""; }
+    k := nkind(ctx, id);
+    pad := indent_str(ind);
+
+    // VARDECL
+    if (k == 7) {
+        name := nsval(ctx, id);
+        val := nleft(ctx, id);
+        tp := infer_type(ctx, val);
+        scope_push(ctx, name, tp);
+        return str_concat(pad, str_concat(type_to_c(tp), str_concat(" ", str_concat(name, str_concat(" = ", str_concat(emit_expr(ctx, val), ";\n"))))));
+    }
+
+    // ASSIGN
+    if (k == 8) {
+        return str_concat(pad, str_concat(emit_expr(ctx, nleft(ctx, id)), str_concat(" = ", str_concat(emit_expr(ctx, nright(ctx, id)), ";\n"))));
+    }
+
+    // COMPOUND_ASSIGN
+    if (k == 36) {
+        return str_concat(pad, str_concat(emit_expr(ctx, nleft(ctx, id)), str_concat(" ", str_concat(nsval(ctx, id), str_concat(" ", str_concat(emit_expr(ctx, nright(ctx, id)), ";\n"))))));
+    }
+
+    // RETURN
+    if (k == 9) {
+        val := nleft(ctx, id);
+        if (val == -1) { return str_concat(pad, "return;\n"); }
+        return str_concat(pad, str_concat("return ", str_concat(emit_expr(ctx, val), ";\n")));
+    }
+
+    // BREAK
+    if (k == 13) { return str_concat(pad, "break;\n"); }
+
+    // CONTINUE
+    if (k == 14) { return str_concat(pad, "continue;\n"); }
+
+    // EXPRSTMT
+    if (k == 15) {
+        return str_concat(pad, str_concat(emit_expr(ctx, nleft(ctx, id)), ";\n"));
+    }
+
+    // IF
+    if (k == 10) { return emit_if(ctx, id, ind); }
+
+    // WHILE
+    if (k == 11) {
+        cond := emit_expr(ctx, nleft(ctx, id));
+        body := emit_block(ctx, nright(ctx, id), ind);
+        return str_concat(pad, str_concat("while (", str_concat(cond, str_concat(") {\n", str_concat(body, str_concat(pad, "}\n"))))));
+    }
+
+    // FOR
+    if (k == 12) {
+        init_id := nextra(ctx, id);
+        cond_id := nleft(ctx, id);
+        step_id := nival(ctx, id);
+        body_id := nright(ctx, id);
+
+        init_s := "";
+        if (init_id != -1) {
+            ik := nkind(ctx, init_id);
+            if (ik == 7) {
+                nm := nsval(ctx, init_id);
+                vl := nleft(ctx, init_id);
+                tp := infer_type(ctx, vl);
+                scope_push(ctx, nm, tp);
+                init_s = str_concat(type_to_c(tp), str_concat(" ", str_concat(nm, str_concat(" = ", emit_expr(ctx, vl)))));
+            } else if (ik == 8) {
+                init_s = str_concat(emit_expr(ctx, nleft(ctx, init_id)), str_concat(" = ", emit_expr(ctx, nright(ctx, init_id))));
+            }
+        }
+        cond_s := "";
+        if (cond_id != -1) { cond_s = emit_expr(ctx, cond_id); }
+        step_s := "";
+        if (step_id >= 0) {
+            sk := nkind(ctx, step_id);
+            if (sk == 37 || sk == 38) {
+                step_s = emit_expr(ctx, step_id);
+            } else if (sk == 8) {
+                step_s = str_concat(emit_expr(ctx, nleft(ctx, step_id)), str_concat(" = ", emit_expr(ctx, nright(ctx, step_id))));
+            } else if (sk == 36) {
+                step_s = str_concat(emit_expr(ctx, nleft(ctx, step_id)), str_concat(" ", str_concat(nsval(ctx, step_id), str_concat(" ", emit_expr(ctx, nright(ctx, step_id))))));
+            }
+        }
+        body := emit_block(ctx, body_id, ind);
+        return str_concat(pad, str_concat("for (", str_concat(init_s, str_concat("; ", str_concat(cond_s, str_concat("; ", str_concat(step_s, str_concat(") {\n", str_concat(body, str_concat(pad, "}\n"))))))))));
+    }
+
+    // SWITCH
+    if (k == 28) {
+        cond := emit_expr(ctx, nleft(ctx, id));
+        result := str_concat(pad, str_concat("switch (", str_concat(cond, ") {\n")));
+        w := nright(ctx, id);
+        while (w != -1) {
+            c := lval(ctx, w);
+            if (c != -1) {
+                ck := nkind(ctx, c);
+                if (ck == 29) {
+                    result = str_concat(result, str_concat(indent_str(ind + 1), str_concat("case ", str_concat(emit_expr(ctx, nleft(ctx, c)), ":\n"))));
+                    result = str_concat(result, emit_block(ctx, nright(ctx, c), ind + 1));
+                    result = str_concat(result, str_concat(indent_str(ind + 2), "break;\n"));
+                } else if (ck == 30) {
+                    result = str_concat(result, str_concat(indent_str(ind + 1), "default:\n"));
+                    result = str_concat(result, emit_block(ctx, nleft(ctx, c), ind + 1));
+                    result = str_concat(result, str_concat(indent_str(ind + 2), "break;\n"));
+                }
+            }
+            w = lnext(ctx, w);
+        }
+        return str_concat(result, str_concat(pad, "}\n"));
+    }
+
+    return "";
+}
+
+// ============================================================
+// Block emitter
+// ============================================================
+func emit_block(ctx string, id int, ind int) string {
+    if (id < 0) { return ""; }
+    k := nkind(ctx, id);
+    if (k != 6) { return emit_stmt(ctx, id, ind + 1); }
+    result := "";
+    w := nleft(ctx, id);
+    while (w != -1) {
+        s := lval(ctx, w);
+        result = str_concat(result, emit_stmt(ctx, s, ind + 1));
+        w = lnext(ctx, w);
+    }
+    return result;
+}
+
+// ============================================================
+// Function emitter
+// ============================================================
+func emit_func_fwd(ctx string, id int, prefix string) string {
+    sv := nsval(ctx, id);
+    fname := split_left(sv);
+    rtype_s := split_right(sv);
+    rtype := 2;
+    if (str_len(rtype_s) > 0) { rtype = pgl_type_to_code(rtype_s); }
+
+    if (str_eq(fname, "main") == 1 && str_len(prefix) == 0) { return ""; }
+
+    params := "";
+    w := nleft(ctx, id);
+    first := 1;
+    while (w != -1) {
+        p := lval(ctx, w);
+        if (p != -1 && nkind(ctx, p) == 5) {
+            if (first == 0) { params = str_concat(params, ", "); }
+            params = str_concat(params, type_to_c(pgl_type_to_code(split_right(nsval(ctx, p)))));
+            first = 0;
+        }
+        w = lnext(ctx, w);
+    }
+
+    fn_push(ctx, str_concat(prefix, fname), rtype);
+    return str_concat(type_to_c(rtype), str_concat(" ", str_concat(c_func_name(str_concat(prefix, fname)), str_concat("(", str_concat(params, ");\n")))));
+}
+
+func emit_func_body(ctx string, id int, prefix string) string {
+    sv := nsval(ctx, id);
+    fname := split_left(sv);
+    rtype_s := split_right(sv);
+    rtype := 2;
+    if (str_len(rtype_s) > 0) { rtype = pgl_type_to_code(rtype_s); }
+
+    saved := scope_save(ctx);
+
+    // Build parameter list
+    params := "";
+    w := nleft(ctx, id);
+    first := 1;
+    while (w != -1) {
+        p := lval(ctx, w);
+        if (p != -1 && nkind(ctx, p) == 5) {
+            if (first == 0) { params = str_concat(params, ", "); }
+            psv := nsval(ctx, p);
+            pname := split_left(psv);
+            ptype := pgl_type_to_code(split_right(psv));
+            scope_push(ctx, pname, ptype);
+            params = str_concat(params, str_concat(type_to_c(ptype), str_concat(" ", pname)));
+            first = 0;
+        }
+        w = lnext(ctx, w);
+    }
+
+    body_id := nright(ctx, id);
+    body := emit_block(ctx, body_id, 0);
+    scope_restore(ctx, saved);
+
+    if (str_eq(fname, "main") == 1 && str_len(prefix) == 0) {
+        return str_concat("int main(int argc, char** argv) {\n    _pg_argc = argc;\n    _pg_argv = argv;\n", str_concat(body, "    return 0;\n}\n\n"));
+    }
+    c_fname := c_func_name(str_concat(prefix, fname));
+    return str_concat(type_to_c(rtype), str_concat(" ", str_concat(c_fname, str_concat("(", str_concat(params, str_concat(") {\n", str_concat(body, "}\n\n")))))));
+}
+
+// ============================================================
+// C runtime — loaded from external file by main.pgl
+// ============================================================
+
+// ============================================================
+// Program emitter (entry point)
+// ============================================================
+func emit_c(root int, kinds string, svals string, ivals string,
+            lefts string, rights string, extras string,
+            runtime_code string) string {
+    ctx := ctx_new(kinds, svals, ivals, lefts, rights, extras);
+    result := str_concat(runtime_code, "\n");
+
+    // First pass: forward declarations + enums
+    fwd := "";
+    w := nleft(ctx, root);
+    while (w != -1) {
+        child := lval(ctx, w);
+        if (child != -1) {
+            ck := nkind(ctx, child);
+            if (ck == 4) {
+                fwd = str_concat(fwd, emit_func_fwd(ctx, child, ""));
+            } else if (ck == 31) {
+                prefix := str_concat(split_left(nsval(ctx, child)), ".");
+                mw := nleft(ctx, child);
+                while (mw != -1) {
+                    m := lval(ctx, mw);
+                    if (m != -1 && nkind(ctx, m) == 4) {
+                        fwd = str_concat(fwd, emit_func_fwd(ctx, m, prefix));
+                    }
+                    mw = lnext(ctx, mw);
+                }
+            } else if (ck == 32) {
+                ename := nsval(ctx, child);
+                ew := nleft(ctx, child);
+                idx := 0;
+                while (ew != -1) {
+                    ei := lval(ctx, ew);
+                    if (ei != -1) {
+                        fwd = str_concat(fwd, str_concat("#define ", str_concat(ename, str_concat("_", str_concat(nsval(ctx, ei), str_concat(" ", str_concat(int_to_str(idx), "\n")))))));
+                        idx = idx + 1;
+                    }
+                    ew = lnext(ctx, ew);
+                }
+                fwd = str_concat(fwd, "\n");
+            }
+        }
+        w = lnext(ctx, w);
+    }
+    result = str_concat(result, str_concat(fwd, "\n"));
+
+    // Second pass: function bodies
+    w = nleft(ctx, root);
+    while (w != -1) {
+        child := lval(ctx, w);
+        if (child != -1) {
+            ck := nkind(ctx, child);
+            if (ck == 4) {
+                result = str_concat(result, emit_func_body(ctx, child, ""));
+            } else if (ck == 31) {
+                prefix := str_concat(split_left(nsval(ctx, child)), ".");
+                mw := nleft(ctx, child);
+                while (mw != -1) {
+                    m := lval(ctx, mw);
+                    if (m != -1 && nkind(ctx, m) == 4) {
+                        result = str_concat(result, emit_func_body(ctx, m, prefix));
+                    }
+                    mw = lnext(ctx, mw);
+                }
+            }
+        }
+        w = lnext(ctx, w);
+    }
+
+    return result;
+}

@@ -54,14 +54,20 @@ func list_append(kinds string, svals string, ivals string,
                  ncount string,
                  head_arr string, tail_arr string, slot int,
                  child int) {
+    // Wrap child in LISTNODE (kind=39) so that the child's own
+    // rights field is never overwritten by sibling linking.
+    w := node_new(kinds, svals, ivals, lefts, rights, extras, ncount);
+    array_set(kinds, w, 39);
+    array_set(lefts, w, child);
+
     h := array_get(head_arr, slot);
     if (h == -1) {
-        array_set(head_arr, slot, child);
-        array_set(tail_arr, slot, child);
+        array_set(head_arr, slot, w);
+        array_set(tail_arr, slot, w);
     } else {
         t := array_get(tail_arr, slot);
-        array_set(rights, t, child);
-        array_set(tail_arr, slot, child);
+        array_set(rights, t, w);
+        array_set(tail_arr, slot, w);
     }
 }
 
@@ -837,6 +843,11 @@ func parse_for(tok_types string, tok_values string, tok_lines string,
         } else {
             operand := parse_postfix(tok_types, tok_values, tok_lines, pos_arr, src_file,
                                      kinds, svals, ivals, lefts, rights, extras, ncount);
+            // parse_postfix may have already consumed i++ / i--
+            op_kind := array_get(kinds, operand);
+            if (op_kind == 38 || op_kind == 37) {
+                step = operand;
+            } else {
             step_tv2 := p_tok_val(tok_values, pos_arr);
             if (step_tv2 == "++" || step_tv2 == "--") {
                 p_advance(pos_arr);
@@ -853,6 +864,7 @@ func parse_for(tok_types string, tok_values string, tok_lines string,
                     step = node_new(kinds, svals, ivals, lefts, rights, extras, ncount);
                     node_set(kinds, svals, ivals, lefts, rights, extras, step, 36, step_tv2, 0, operand, rhs, -1);
                 }
+            }
             }
         }
     }
@@ -1279,6 +1291,7 @@ func node_kind_name(k int) string {
     if (k == 36) { return "CASSIGN"; }
     if (k == 37) { return "PREINC"; }
     if (k == 38) { return "POSTINC"; }
+    if (k == 39) { return "LIST"; }
     return "?";
 }
 
@@ -1286,12 +1299,20 @@ func dump_ast(kinds string, svals string, ivals string,
               lefts string, rights string, extras string,
               id int, indent int) {
     if (id == -1) { return; }
+    k := array_get(kinds, id);
+
+    // LISTNODE: unwrap transparently (caller iterates via rights)
+    if (k == 39) {
+        l := array_get(lefts, id);
+        if (l >= 0) { dump_ast(kinds, svals, ivals, lefts, rights, extras, l, indent); }
+        return;
+    }
+
     i := 0;
     while (i < indent) {
         print("  ");
         i = i + 1;
     }
-    k := array_get(kinds, id);
     print(node_kind_name(k));
     sv := str_array_get(svals, id);
     if (str_len(sv) > 0) {
@@ -1306,25 +1327,25 @@ func dump_ast(kinds string, svals string, ivals string,
     }
     println("");
 
-    // For list nodes (linked via right), print children
     left := array_get(lefts, id);
     right := array_get(rights, id);
     extra := array_get(extras, id);
 
-    // Nodes that use left as list head: PROGRAM, BLOCK, FUNC(params), SWITCH, STRUCT, ENUM, IMPL
-    if (k == 1 || k == 6 || k == 28 || k == 24 || k == 32 || k == 31) {
+    // Nodes whose left is a list head
+    if (k == 1 || k == 6 || k == 24 || k == 32 || k == 31) {
         child := left;
         while (child != -1) {
             dump_ast(kinds, svals, ivals, lefts, rights, extras, child, indent + 1);
             child = array_get(rights, child);
         }
-        if (k == 28) {
-            // switch: right = cases list head
-            child = right;
-            while (child != -1) {
-                dump_ast(kinds, svals, ivals, lefts, rights, extras, child, indent + 1);
-                child = array_get(rights, child);
-            }
+    }
+    else if (k == 28) {
+        // SWITCH: left=cond, right=cases list
+        dump_ast(kinds, svals, ivals, lefts, rights, extras, left, indent + 1);
+        child := right;
+        while (child != -1) {
+            dump_ast(kinds, svals, ivals, lefts, rights, extras, child, indent + 1);
+            child = array_get(rights, child);
         }
     }
     else if (k == 4) {
@@ -1359,43 +1380,4 @@ func dump_ast(kinds string, svals string, ivals string,
     }
 }
 
-// ============================================================
-// Standalone test
-// Usage: pangu run bootstrap/parser.pgl <file.pgl>
-// ============================================================
-
-func main() {
-    if (args_count() < 2) {
-        println("Usage: pangu run bootstrap/parser.pgl <file.pgl>");
-        exit(1);
-    }
-    filepath := args(1);
-    source := read_file(filepath);
-
-    // Tokenize
-    tok_types := make_array(50000);
-    tok_values := make_str_array(50000);
-    tok_lines := make_array(50000);
-    tok_cols := make_array(50000);
-    tok_count := tokenize(source, tok_types, tok_values, tok_lines, tok_cols);
-
-    // Parse
-    kinds := make_array(100000);
-    svals := make_str_array(100000);
-    ivals := make_array(100000);
-    lefts := make_array(100000);
-    rights := make_array(100000);
-    extras := make_array(100000);
-    ncount := make_array(1);
-    array_set(ncount, 0, 0);
-
-    pos_arr := make_array(1);
-    array_set(pos_arr, 0, 0);
-
-    root := parse_program(tok_types, tok_values, tok_lines, tok_count, pos_arr, filepath,
-                          kinds, svals, ivals, lefts, rights, extras, ncount);
-
-    // Dump AST
-    dump_ast(kinds, svals, ivals, lefts, rights, extras, root, 0);
-    println(str_concat("Nodes: ", int_to_str(array_get(ncount, 0))));
-}
+// End of parser.pgl — entry point is in main.pgl

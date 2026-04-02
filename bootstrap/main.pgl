@@ -1,0 +1,52 @@
+package main;
+
+// ============================================================
+// Pangu Bootstrap Compiler
+// Usage:
+//   pangu run bootstrap/ compile <file.pgl>   → outputs C code
+//   pangu run bootstrap/ parse   <file.pgl>   → dumps AST
+// ============================================================
+
+func main() {
+    if (args_count() < 3) {
+        println("Usage: pangu run bootstrap/ <compile|parse> <file.pgl>");
+        exit(1);
+    }
+    mode := args(1);
+    filepath := args(2);
+    source := read_file(filepath);
+
+    // Tokenize
+    tok_types := make_array(50000);
+    tok_values := make_str_array(50000);
+    tok_lines := make_array(50000);
+    tok_cols := make_array(50000);
+    tok_count := tokenize(source, tok_types, tok_values, tok_lines, tok_cols);
+
+    // Parse
+    kinds := make_array(200000);
+    svals := make_str_array(200000);
+    ivals := make_array(200000);
+    lefts := make_array(200000);
+    rights := make_array(200000);
+    extras := make_array(200000);
+    ncount := make_array(1);
+    array_set(ncount, 0, 0);
+    pos_arr := make_array(1);
+    array_set(pos_arr, 0, 0);
+
+    root := parse_program(tok_types, tok_values, tok_lines, tok_count, pos_arr, filepath,
+                          kinds, svals, ivals, lefts, rights, extras, ncount);
+
+    if (str_eq(mode, "parse") == 1) {
+        dump_ast(kinds, svals, ivals, lefts, rights, extras, root, 0);
+        println(str_concat("Nodes: ", int_to_str(array_get(ncount, 0))));
+    } else if (str_eq(mode, "compile") == 1) {
+        runtime_code := read_file("bootstrap/runtime.c");
+        c_code := emit_c(root, kinds, svals, ivals, lefts, rights, extras, runtime_code);
+        print(c_code);
+    } else {
+        println(str_concat("Unknown mode: ", mode));
+        exit(1);
+    }
+}
