@@ -1,0 +1,39 @@
+package main;
+
+type Color enum {
+    RED,
+    GREEN,
+    BLUE,
+}
+
+type TokenType enum {
+    KEYWORD,
+    IDENT,
+    NUMBER,
+    STRING,
+    SYMBOL,
+}
+
+func color_name(c int) string {
+    switch (c) {
+        case Color::RED: { return "red"; }
+        case Color::GREEN: { return "green"; }
+        case Color::BLUE: { return "blue"; }
+    }
+    return "unknown";
+}
+
+func main() {
+    println(Color::RED);
+    println(Color::GREEN);
+    println(Color::BLUE);
+    println(color_name(Color::RED));
+    println(color_name(Color::BLUE));
+    println(color_name(99));
+    
+    c := Color::GREEN;
+    println(color_name(c));
+    
+    println(TokenType::KEYWORD);
+    println(TokenType::SYMBOL);
+}

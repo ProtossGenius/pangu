@@ -91,6 +91,7 @@ class ModuleBuilder {
     void buildAllFunctions() {
         declareArgcArgvGlobals();
         declareStructTypes();
+        declareEnumTypes();
         declareFunctions();
         defineFunctions();
         if (_declared_functions.count(
@@ -120,6 +121,10 @@ class ModuleBuilder {
     struct LoopContext {
         llvm::BasicBlock *break_block;
         llvm::BasicBlock *continue_block;
+    };
+    // Enum variant registry: EnumName → { VariantName → ordinal }
+    struct EnumInfo {
+        std::map<std::string, int> variants; // variant → ordinal value
     };
 
     void declareArgcArgvGlobals() {
@@ -171,6 +176,22 @@ class ModuleBuilder {
         }
     }
 
+    void declareEnumTypes() {
+        for (const auto &unit : _program.packages) {
+            for (const auto &it : unit.package->type_defs.items()) {
+                const auto *genum =
+                    dynamic_cast<const grammer::GEnum *>(it.second.get());
+                if (genum == nullptr) continue;
+                EnumInfo info;
+                int ordinal = 0;
+                for (const auto &variant : genum->items()) {
+                    info.variants[variant] = ordinal++;
+                }
+                _enum_types[genum->name()] = std::move(info);
+            }
+        }
+    }
+
     llvm::Type *resolveTypeName(const std::string &name) {
         if (name == "int")    return _builder.getInt32Ty();
         if (name == "bool")   return _builder.getInt32Ty();
@@ -178,6 +199,9 @@ class ModuleBuilder {
         auto it = _struct_types.find(name);
         if (it != _struct_types.end()) {
             return it->second.llvm_type;
+        }
+        if (_enum_types.count(name)) {
+            return _builder.getInt32Ty();
         }
         throw std::runtime_error("unsupported type: " + name);
     }
@@ -590,8 +614,12 @@ class ModuleBuilder {
             }
         }
 
-        // If there are no cases or not all terminated, we need the end block
-        if (!all_terminated || cases.empty()) {
+        // The end block is needed when:
+        // - Not all cases terminate (need a merge point)
+        // - No default case exists (switch default target needs a valid block)
+        bool need_end = !all_terminated || cases.empty() ||
+                        default_case == nullptr;
+        if (need_end) {
             function->insert(function->end(), end_block);
             _builder.SetInsertPoint(end_block);
             _terminated = false;
@@ -781,6 +809,9 @@ class ModuleBuilder {
         if (isComparisonOperator(oper)) {
             return emitComparison(code, oper);
         }
+        if (oper == "::") {
+            return emitEnumVariant(code);
+        }
         if (oper == "(") {
             return emitParenOrCall(code);
         }
@@ -826,6 +857,9 @@ class ModuleBuilder {
         }
 
         const std::string oper = code->getOper();
+        if (oper == "::") {
+            return emitEnumVariant(code);
+        }
         if (oper == "+") {
             return _builder.CreateAdd(emitReturnExpressionTree(code->getLeft()),
                                       emitReturnExpressionTree(code->getRight()),
@@ -997,6 +1031,32 @@ class ModuleBuilder {
     // ── Struct support ─────────────────────────────────────────────
 
     // Emit StructName{field: val, field: val, ...}
+    llvm::Value *emitEnumVariant(const pgcodes::GCode *code) {
+        const auto *left = code->getLeft();
+        const auto *right = code->getRight();
+        if (left == nullptr || right == nullptr) {
+            throw std::runtime_error("invalid enum variant expression");
+        }
+        const std::string enum_name =
+            left->getValueType() != pgcodes::ValueType::NOT_VALUE
+                ? left->getValue()
+                : "";
+        const std::string variant_name =
+            right->getValueType() != pgcodes::ValueType::NOT_VALUE
+                ? right->getValue()
+                : "";
+        auto eit = _enum_types.find(enum_name);
+        if (eit == _enum_types.end()) {
+            throw std::runtime_error("unknown enum type: " + enum_name);
+        }
+        auto vit = eit->second.variants.find(variant_name);
+        if (vit == eit->second.variants.end()) {
+            throw std::runtime_error("enum '" + enum_name +
+                                     "' has no variant '" + variant_name + "'");
+        }
+        return llvm::ConstantInt::get(_builder.getInt32Ty(), vit->second);
+    }
+
     llvm::Value *emitStructLiteral(const std::string &struct_name,
                                    const pgcodes::GCode *fields_code) {
         auto it = _struct_types.find(struct_name);
@@ -2035,6 +2095,7 @@ class ModuleBuilder {
     std::map<std::string, llvm::Function *>    _declared_functions;
     std::map<std::string, llvm::AllocaInst *>  _variables;
     std::map<std::string, StructInfo>          _struct_types;
+    std::map<std::string, EnumInfo>            _enum_types;
     std::vector<LoopContext>                    _loop_stack;
     std::string                                _current_module_id;
     const std::map<std::string, std::string>  *_current_imports = nullptr;

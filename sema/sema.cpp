@@ -132,6 +132,15 @@ class ProgramChecker {
             for (const auto &it : unit.package->structs.items()) {
                 _struct_names.insert(it.first);
             }
+
+            // Collect enum type names
+            for (const auto &it : unit.package->type_defs.items()) {
+                const auto *genum =
+                    dynamic_cast<const grammer::GEnum *>(it.second.get());
+                if (genum != nullptr) {
+                    _enum_names.insert(genum->name());
+                }
+            }
         }
     }
 
@@ -281,6 +290,10 @@ class ProgramChecker {
         }
         if (oper == ".") {
             checkDotExpression(code);
+            return;
+        }
+        if (oper == "::") {
+            // Enum variant: EnumName::Variant — validated in backend
             return;
         }
         // Generic binary/unary operator: recurse both sides.
@@ -480,6 +493,8 @@ class ProgramChecker {
         if (isBuiltin(name)) return;
         // Skip struct type names.
         if (_struct_names.count(name) != 0) return;
+        // Skip enum type names.
+        if (_enum_names.count(name) != 0) return;
         // Skip function names (they might appear as identifiers in some AST shapes).
         auto mod_it = _module_functions.find(_current_module_id);
         if (mod_it != _module_functions.end() &&
@@ -543,6 +558,7 @@ class ProgramChecker {
     const std::map<std::string, std::string>   *_current_imports = nullptr;
     std::set<std::string>                       _defined_vars;
     std::set<std::string>                       _struct_names;
+    std::set<std::string>                       _enum_names;
 };
 
 } // namespace

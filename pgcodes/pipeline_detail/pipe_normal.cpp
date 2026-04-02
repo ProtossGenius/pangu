@@ -156,6 +156,18 @@ void PipeNormal::on_PRE_VIEW_NEXT(IPipelineFactory *factory, PData &&data) {
         return;
     }
     pgassert_msg(isSymbol(lex), lex->to_string());
+    // High-precedence infix operators that extend a value expression
+    // must not be cut short by stack packing.
+    if ((str == "::" || str == ".") && topProduct->isValue() &&
+        factory->productStackSize() > 1) {
+        GCode *newTop = new GCode();
+        newTop->setOper(str);
+        newTop->setLocation(lex->location());
+        newTop->setStep(int(Steps::WAIT_RIGHT));
+        auto oldTop = factory->swapTopProduct(newTop);
+        newTop->setLeft(static_cast<GCode *>(oldTop.release()));
+        return;
+    }
     if (topProduct->isValue() ||
         lexer::symbol_power(topProduct->getOper()) >
             lexer::symbol_power(lex->get()) ||

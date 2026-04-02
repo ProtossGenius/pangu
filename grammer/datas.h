@@ -70,6 +70,7 @@ class GTypeDefContainer {
     void addTypeDef(PTypeDef &&type_def);
     void write_string(std::ostream &ss);
     size_t size() const { return _type_defs.size(); }
+    const std::map<std::string, PTypeDef> &items() const { return _type_defs; }
 
   private:
     std::map<std::string, PTypeDef> _type_defs;
@@ -246,6 +247,7 @@ class GTypeDef : public IGrammer {
 class GEnum : public GTypeDef {
   public:
     void addItem(const std::string &item) { _items.push_back(item); }
+    const std::vector<std::string> &items() const { return _items; }
     std::string to_string() override;
 
   private:
