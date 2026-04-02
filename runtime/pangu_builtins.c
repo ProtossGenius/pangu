@@ -145,3 +145,96 @@ int pg_find_pgl_files(const char *dir, char **out_arr) {
         out_arr[i] = names[i];
     return count;
 }
+
+// === Pipeline Runtime ===
+// Pipeline state: opaque struct managed by these functions.
+// Layout: { int worker_id, char* cache_buf, int cache_len, int cache_cap,
+//           void** out_buf, int out_count, int out_cap, int elem_size }
+// All fields stored as a flat int64_t array for simplicity.
+
+typedef struct {
+    int worker_id;
+    char *cache_buf;
+    int cache_len;
+    int cache_cap;
+    char **out_buf;     // array of output pointers (each element is elem_size bytes)
+    int out_count;
+    int out_cap;
+    int elem_size;
+} PipelineState;
+
+void *pg_pipeline_create(int elem_size) {
+    PipelineState *s = (PipelineState *)calloc(1, sizeof(PipelineState));
+    s->cache_cap = 256;
+    s->cache_buf = (char *)calloc(s->cache_cap, 1);
+    s->out_cap = 64;
+    s->elem_size = elem_size > 0 ? elem_size : sizeof(void *);
+    s->out_buf = (char **)calloc(s->out_cap, sizeof(char *));
+    return s;
+}
+
+void pg_pipeline_destroy(void *state) {
+    PipelineState *s = (PipelineState *)state;
+    if (!s) return;
+    free(s->cache_buf);
+    for (int i = 0; i < s->out_count; i++) free(s->out_buf[i]);
+    free(s->out_buf);
+    free(s);
+}
+
+void pg_pipeline_cache_append(void *state, int ch) {
+    PipelineState *s = (PipelineState *)state;
+    if (s->cache_len >= s->cache_cap - 1) {
+        s->cache_cap *= 2;
+        s->cache_buf = (char *)realloc(s->cache_buf, s->cache_cap);
+    }
+    s->cache_buf[s->cache_len++] = (char)ch;
+    s->cache_buf[s->cache_len] = '\0';
+}
+
+const char *pg_pipeline_cache_str(void *state) {
+    PipelineState *s = (PipelineState *)state;
+    char *result = (char *)malloc(s->cache_len + 1);
+    memcpy(result, s->cache_buf, s->cache_len + 1);
+    s->cache_len = 0;
+    s->cache_buf[0] = '\0';
+    return result;
+}
+
+void pg_pipeline_cache_reset(void *state) {
+    PipelineState *s = (PipelineState *)state;
+    s->cache_len = 0;
+    s->cache_buf[0] = '\0';
+}
+
+void pg_pipeline_emit(void *state, void *elem) {
+    PipelineState *s = (PipelineState *)state;
+    if (s->out_count >= s->out_cap) {
+        s->out_cap *= 2;
+        s->out_buf = (char **)realloc(s->out_buf, s->out_cap * sizeof(char *));
+    }
+    char *copy = (char *)malloc(s->elem_size);
+    memcpy(copy, elem, s->elem_size);
+    s->out_buf[s->out_count++] = copy;
+}
+
+int pg_pipeline_output_count(void *state) {
+    PipelineState *s = (PipelineState *)state;
+    return s->out_count;
+}
+
+void *pg_pipeline_output_get(void *state, int index) {
+    PipelineState *s = (PipelineState *)state;
+    if (index < 0 || index >= s->out_count) return NULL;
+    return s->out_buf[index];
+}
+
+void pg_pipeline_set_worker(void *state, int worker_id) {
+    PipelineState *s = (PipelineState *)state;
+    s->worker_id = worker_id;
+}
+
+int pg_pipeline_get_worker(void *state) {
+    PipelineState *s = (PipelineState *)state;
+    return s->worker_id;
+}

@@ -1,0 +1,52 @@
+package main;
+
+// Simple pipeline test: tokenize "abc 123" into words
+// Uses manual pipeline state management
+
+func is_space(ch int) int {
+    if (ch == ' ') { return 1; }
+    if (ch == '\t') { return 1; }
+    if (ch == '\n') { return 1; }
+    return 0;
+}
+
+func process_char(state ptr, ch int) {
+    wid := pipeline_get_worker(state);
+    if (wid == 0) {
+        // Switcher: decide which worker handles this char
+        if (is_space(ch) == 1) {
+            return;
+        }
+        // Start word worker (worker 1)
+        pipeline_set_worker(state, 1);
+        pipeline_cache_append(state, ch);
+    } else {
+        // Word worker: accumulate non-space chars
+        if (is_space(ch) == 1) {
+            word := pipeline_cache_str(state);
+            println(word);
+            pipeline_set_worker(state, 0);
+        } else {
+            pipeline_cache_append(state, ch);
+        }
+    }
+}
+
+func main() {
+    state := pipeline_create(8);
+    src := "hello world foo";
+    len := str_len(src);
+    i := 0;
+    while (i < len) {
+        ch := str_char_at(src, i);
+        process_char(state, ch);
+        i = i + 1;
+    }
+    // Flush remaining word
+    wid := pipeline_get_worker(state);
+    if (wid != 0) {
+        word := pipeline_cache_str(state);
+        println(word);
+    }
+    pipeline_destroy(state);
+}

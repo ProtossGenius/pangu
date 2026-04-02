@@ -31,6 +31,11 @@ const std::set<std::string> BUILTIN_FUNCTIONS = {
     "make_str_array", "str_array_get", "str_array_set",
     "args", "args_count",
     "find_pgl_files", "is_directory",
+    // Pipeline builtins
+    "pipeline_create", "pipeline_destroy",
+    "pipeline_cache_append", "pipeline_cache_str", "pipeline_cache_reset",
+    "pipeline_emit", "pipeline_output_count", "pipeline_output_get",
+    "pipeline_set_worker", "pipeline_get_worker",
 };
 
 bool isBuiltin(const std::string &name) {
@@ -59,6 +64,17 @@ size_t builtinParamCount(const std::string &name) {
     if (name == "str_substr") return 3;
     if (name == "str_replace") return 3;
     if (name == "array_set" || name == "str_array_set") return 3;
+    // Pipeline builtins
+    if (name == "pipeline_create") return 1;
+    if (name == "pipeline_destroy") return 1;
+    if (name == "pipeline_cache_append") return 2;
+    if (name == "pipeline_cache_str") return 1;
+    if (name == "pipeline_cache_reset") return 1;
+    if (name == "pipeline_emit") return 2;
+    if (name == "pipeline_output_count") return 1;
+    if (name == "pipeline_output_get") return 2;
+    if (name == "pipeline_set_worker") return 2;
+    if (name == "pipeline_get_worker") return 1;
     return 0;
 }
 
@@ -504,6 +520,7 @@ class ProgramChecker {
         if (name == "return" || name == "true" || name == "false" ||
             name == "nil" || name == "null" ||
             name == "break" || name == "continue" ||
+            name == "CONTINUE" || name == "FINISH" || name == "TRANSFER_FINISH" ||
             name == "_") {
             return;
         }

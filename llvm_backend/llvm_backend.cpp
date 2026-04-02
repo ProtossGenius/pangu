@@ -268,6 +268,38 @@ class ModuleBuilder {
         // void pg_print_backtrace(void)
         _module->getOrInsertFunction("pg_print_backtrace",
             llvm::FunctionType::get(void_ty, {}, false));
+
+        // Pipeline runtime helpers
+        // void* pg_pipeline_create(int elem_size)
+        _module->getOrInsertFunction("pg_pipeline_create",
+            llvm::FunctionType::get(ptr_ty, {i32_ty}, false));
+        // void pg_pipeline_destroy(void* state)
+        _module->getOrInsertFunction("pg_pipeline_destroy",
+            llvm::FunctionType::get(void_ty, {ptr_ty}, false));
+        // void pg_pipeline_cache_append(void* state, int ch)
+        _module->getOrInsertFunction("pg_pipeline_cache_append",
+            llvm::FunctionType::get(void_ty, {ptr_ty, i32_ty}, false));
+        // const char* pg_pipeline_cache_str(void* state)
+        _module->getOrInsertFunction("pg_pipeline_cache_str",
+            llvm::FunctionType::get(ptr_ty, {ptr_ty}, false));
+        // void pg_pipeline_cache_reset(void* state)
+        _module->getOrInsertFunction("pg_pipeline_cache_reset",
+            llvm::FunctionType::get(void_ty, {ptr_ty}, false));
+        // void pg_pipeline_emit(void* state, void* elem)
+        _module->getOrInsertFunction("pg_pipeline_emit",
+            llvm::FunctionType::get(void_ty, {ptr_ty, ptr_ty}, false));
+        // int pg_pipeline_output_count(void* state)
+        _module->getOrInsertFunction("pg_pipeline_output_count",
+            llvm::FunctionType::get(i32_ty, {ptr_ty}, false));
+        // void* pg_pipeline_output_get(void* state, int index)
+        _module->getOrInsertFunction("pg_pipeline_output_get",
+            llvm::FunctionType::get(ptr_ty, {ptr_ty, i32_ty}, false));
+        // void pg_pipeline_set_worker(void* state, int worker_id)
+        _module->getOrInsertFunction("pg_pipeline_set_worker",
+            llvm::FunctionType::get(void_ty, {ptr_ty, i32_ty}, false));
+        // int pg_pipeline_get_worker(void* state)
+        _module->getOrInsertFunction("pg_pipeline_get_worker",
+            llvm::FunctionType::get(i32_ty, {ptr_ty}, false));
     }
 
     void declareStructTypes() {
@@ -325,6 +357,7 @@ class ModuleBuilder {
         if (name == "int")    return _builder.getInt32Ty();
         if (name == "bool")   return _builder.getInt32Ty();
         if (name == "string") return _builder.getPtrTy();
+        if (name == "ptr")    return _builder.getPtrTy();
         auto it = _struct_types.find(name);
         if (it != _struct_types.end()) {
             return it->second.llvm_type;
@@ -1258,6 +1291,13 @@ class ModuleBuilder {
                 return llvm::ConstantInt::get(_builder.getInt32Ty(), 1);
             if (name == "false")
                 return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+            // Pipeline control flow constants
+            if (name == "CONTINUE")
+                return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+            if (name == "FINISH")
+                return llvm::ConstantInt::get(_builder.getInt32Ty(), 1);
+            if (name == "TRANSFER_FINISH")
+                return llvm::ConstantInt::get(_builder.getInt32Ty(), 2);
             // break/continue are keywords that appear as identifiers
             if (name == "break") {
                 if (_loop_stack.empty())
@@ -1936,6 +1976,65 @@ class ModuleBuilder {
                 throw std::runtime_error("find_pgl_files expects 2 arguments");
             auto *fn = _module->getFunction("pg_find_pgl_files");
             return _builder.CreateCall(fn, args, "n_files");
+        }
+        // Pipeline builtins
+        if (callee == "pipeline_create") {
+            auto args = emitCallArgs(args_code);
+            auto *elem_size = args.empty()
+                ? llvm::ConstantInt::get(_builder.getInt32Ty(), 8)
+                : args.front();
+            auto *fn = _module->getFunction("pg_pipeline_create");
+            return _builder.CreateCall(fn, {elem_size}, "pipe_state");
+        }
+        if (callee == "pipeline_destroy") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("pg_pipeline_destroy");
+            _builder.CreateCall(fn, {args.front()});
+            return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+        }
+        if (callee == "pipeline_cache_append") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("pg_pipeline_cache_append");
+            _builder.CreateCall(fn, {args[0], args[1]});
+            return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+        }
+        if (callee == "pipeline_cache_str") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("pg_pipeline_cache_str");
+            return _builder.CreateCall(fn, {args.front()}, "cache_str");
+        }
+        if (callee == "pipeline_cache_reset") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("pg_pipeline_cache_reset");
+            _builder.CreateCall(fn, {args.front()});
+            return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+        }
+        if (callee == "pipeline_emit") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("pg_pipeline_emit");
+            _builder.CreateCall(fn, {args[0], args[1]});
+            return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+        }
+        if (callee == "pipeline_output_count") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("pg_pipeline_output_count");
+            return _builder.CreateCall(fn, {args.front()}, "out_count");
+        }
+        if (callee == "pipeline_output_get") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("pg_pipeline_output_get");
+            return _builder.CreateCall(fn, {args[0], args[1]}, "out_elem");
+        }
+        if (callee == "pipeline_set_worker") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("pg_pipeline_set_worker");
+            _builder.CreateCall(fn, {args[0], args[1]});
+            return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+        }
+        if (callee == "pipeline_get_worker") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("pg_pipeline_get_worker");
+            return _builder.CreateCall(fn, {args.front()}, "worker_id");
         }
         if (callee_function == nullptr) {
             throw std::runtime_error("unsupported function call: " + callee);
