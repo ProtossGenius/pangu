@@ -457,15 +457,36 @@ s <> to_upper;
 println(s);  // "HELLO"
 ```
 
+### `>>` Dispatch
+
+Routes a value through predicate-based dispatch:
+
+```pgl
+c >> [is_alpha -> handle_alpha, is_digit -> handle_digit];
+```
+
+Evaluates predicates in order. The first match calls the handler with the value.
+Returns the handler result, or 0 if no predicate matched.
+
 ### `==>` Pipeline Chain (Planned)
 
 Chains pipeline stages together for end-to-end data processing.
 
+## Function References
+
+Functions can be used as first-class values:
+
+```pgl
+fn := add_one;        // store function reference
+println(fn(5));       // indirect call through variable
+println(apply(fn, 3)); // pass as argument
+```
+
 ## Planned / Not Yet Implemented
 
 - Interface dispatch
-- Closures / function values
-- For-in loop over arrays (currently only numeric ranges)
+- Generics / type parameters
 - Range patterns in match expressions
 - Auto-generated pipeline `run` state machine
+- Full pipeline body syntax (`type X pipeline { def in T; ... }`)
 - Generics
