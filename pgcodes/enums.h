@@ -14,6 +14,7 @@ enum ECodeType {
     Ignore,
     Block, // {...}
     Case,
+    Match,
 };
 }
 } // namespace pangu

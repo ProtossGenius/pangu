@@ -198,5 +198,38 @@ void PipeCase::on_FINISH(IPipelineFactory *factory, PData &&data) {
     finishKeywordStatement(factory, std::move(data));
 }
 
+// --- Match expression pipeline ---
+// Handles `match(expr) { val => body; val => body; _ => body; }`
+// AST: oper="match", left=condition, right=body (containing => arms)
+
+bool PipeMatch::ignoreStepDeal(IPipelineFactory *factory, PData &data) {
+    return false;
+}
+void PipeMatch::on_START(IPipelineFactory *factory, PData &&data) {
+    GET_LEX(data);
+    GET_TOP(factory, GCode);
+    if (lexer::ELexPipeline::Space == type) {
+        return;
+    }
+    if (lexer::makeIdentifier("match") != *lex) {
+        factory->onFail("in step START, should get identifier 'match'");
+    }
+    topProduct->setOper("match");
+    topProduct->setLocation(lex->location());
+    topProduct->setStep(int(Steps::WAIT_CONDITION));
+}
+void PipeMatch::on_WAIT_CONDITION(IPipelineFactory *factory, PData &&data) {
+    GET_TOP(factory, GCode);
+    parseKeywordCondition(factory, topProduct, std::move(data), "match",
+                          int(Steps::WAIT_ACTION));
+}
+void PipeMatch::on_WAIT_ACTION(IPipelineFactory *factory, PData &&data) {
+    GET_TOP(factory, GCode);
+    parseKeywordAction(factory, topProduct, std::move(data), int(Steps::FINISH));
+}
+void PipeMatch::on_FINISH(IPipelineFactory *factory, PData &&data) {
+    finishKeywordStatement(factory, std::move(data));
+}
+
 } // namespace pgcodes
 } // namespace pangu

@@ -206,6 +206,11 @@ class ProgramChecker {
             checkStatement(code->getRight());
             return;
         }
+        if (oper == "match") {
+            checkExpression(code->getLeft());
+            checkMatchBody(code->getRight());
+            return;
+        }
         checkExpression(code);
     }
 
@@ -294,6 +299,11 @@ class ProgramChecker {
         }
         if (oper == "::") {
             // Enum variant: EnumName::Variant — validated in backend
+            return;
+        }
+        if (oper == "match") {
+            checkExpression(code->getLeft());
+            checkMatchBody(code->getRight());
             return;
         }
         // Generic binary/unary operator: recurse both sides.
@@ -485,7 +495,8 @@ class ProgramChecker {
         // Skip keywords that appear as identifiers in GCode.
         if (name == "return" || name == "true" || name == "false" ||
             name == "nil" || name == "null" ||
-            name == "break" || name == "continue") {
+            name == "break" || name == "continue" ||
+            name == "_") {
             return;
         }
         // Skip builtins (they're called, not referenced as variables usually,
@@ -529,6 +540,30 @@ class ProgramChecker {
             // Single expression (shouldn't happen in well-formed struct literal)
             checkExpression(body);
         }
+    }
+
+    // Check match expression body: `{ val => expr; val => expr; _ => expr; }`
+    // The body is a tree of `;`-separated `=>` nodes.
+    void checkMatchBody(const pgcodes::GCode *body) {
+        if (body == nullptr) return;
+        if (body->getValueType() == pgcodes::ValueType::NOT_VALUE) {
+            const std::string &op = body->getOper();
+            if (op == "{") {
+                checkMatchBody(body->getRight());
+                return;
+            }
+            if (op == ";") {
+                checkMatchBody(body->getLeft());
+                checkMatchBody(body->getRight());
+                return;
+            }
+            if (op == "=>") {
+                // Left is pattern (skip variable check), right is result expression
+                checkExpression(body->getRight());
+                return;
+            }
+        }
+        checkExpression(body);
     }
 
     void emitError(const lexer::SourceLocation &loc, const std::string &detail,

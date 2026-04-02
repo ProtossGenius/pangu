@@ -330,6 +330,9 @@ class ModuleBuilder {
         if (oper == "switch") {
             return emitSwitchStatement(code);
         }
+        if (oper == "match") {
+            return emitMatchExpression(code);
+        }
         return emitExpression(code);
     }
 
@@ -629,6 +632,126 @@ class ModuleBuilder {
         return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
     }
 
+    // Collect => arms from match body (traversing ; and { wrappers)
+    void collectMatchArms(const pgcodes::GCode *code,
+                          std::vector<const pgcodes::GCode *> &arms) {
+        if (code == nullptr) return;
+        if (code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            code->getOper() == ";") {
+            collectMatchArms(code->getLeft(), arms);
+            collectMatchArms(code->getRight(), arms);
+            return;
+        }
+        if (code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            code->getOper() == "{") {
+            collectMatchArms(code->getRight(), arms);
+            return;
+        }
+        if (code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            code->getOper() == "=>") {
+            arms.push_back(code);
+            return;
+        }
+    }
+
+    // match(expr) { val => body; val => body; _ => body; }
+    // Lowered as an if/else chain with PHI node for result.
+    llvm::Value *emitMatchExpression(const pgcodes::GCode *code) {
+        auto *function = _current_function;
+        auto *cond_value = emitExpression(code->getLeft());
+
+        std::vector<const pgcodes::GCode *> arms;
+        collectMatchArms(code->getRight(), arms);
+
+        if (arms.empty()) {
+            return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+        }
+
+        auto *end_block = llvm::BasicBlock::Create(*_context, "match.end");
+        std::vector<std::pair<llvm::Value *, llvm::BasicBlock *>> results;
+
+        for (size_t i = 0; i < arms.size(); ++i) {
+            const auto *arm = arms[i];
+            const auto *pattern = arm->getLeft();
+            const auto *body = arm->getRight();
+
+            bool is_wildcard = (pattern != nullptr &&
+                pattern->getValueType() == pgcodes::ValueType::IDENTIFIER &&
+                pattern->getValue() == "_");
+
+            if (is_wildcard || pattern == nullptr) {
+                _terminated = false;
+                auto *val = emitExpression(body);
+                if (!_terminated) {
+                    results.push_back({val, _builder.GetInsertBlock()});
+                    _builder.CreateBr(end_block);
+                }
+            } else {
+                auto *pattern_val = emitExpression(pattern);
+                llvm::Value *cmp;
+                if (cond_value->getType()->isPointerTy() &&
+                    pattern_val->getType()->isPointerTy()) {
+                    auto strcmp_type = llvm::FunctionType::get(
+                        _builder.getInt32Ty(),
+                        {_builder.getPtrTy(), _builder.getPtrTy()}, false);
+                    auto strcmp_fn = _module->getOrInsertFunction(
+                        "strcmp", strcmp_type);
+                    auto *cmp_result = _builder.CreateCall(
+                        strcmp_fn, {cond_value, pattern_val}, "strcmp");
+                    cmp = _builder.CreateICmpEQ(cmp_result,
+                        llvm::ConstantInt::get(_builder.getInt32Ty(), 0),
+                        "match.cmp");
+                } else {
+                    cmp = _builder.CreateICmpEQ(cond_value, pattern_val,
+                        "match.cmp");
+                }
+
+                auto *then_block = llvm::BasicBlock::Create(
+                    *_context, "match.arm." + std::to_string(i));
+                auto *next_block = llvm::BasicBlock::Create(
+                    *_context, "match.next." + std::to_string(i));
+
+                _builder.CreateCondBr(cmp, then_block, next_block);
+
+                function->insert(function->end(), then_block);
+                _builder.SetInsertPoint(then_block);
+                _terminated = false;
+                auto *val = emitExpression(body);
+                if (!_terminated) {
+                    results.push_back({val, _builder.GetInsertBlock()});
+                    _builder.CreateBr(end_block);
+                }
+
+                function->insert(function->end(), next_block);
+                _builder.SetInsertPoint(next_block);
+                _terminated = false;
+            }
+        }
+
+        // If no wildcard, provide default
+        if (!_builder.GetInsertBlock()->getTerminator()) {
+            auto *default_val = llvm::ConstantInt::get(
+                _builder.getInt32Ty(), 0);
+            results.push_back({default_val, _builder.GetInsertBlock()});
+            _builder.CreateBr(end_block);
+        }
+
+        function->insert(function->end(), end_block);
+        _builder.SetInsertPoint(end_block);
+        _terminated = false;
+
+        if (results.empty()) {
+            return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+        }
+
+        auto *phi = _builder.CreatePHI(results[0].first->getType(),
+                                        results.size(), "match.val");
+        for (auto &[val, block] : results) {
+            phi->addIncoming(val, block);
+        }
+        return phi;
+    }
+
     bool isSuffixCallNode(const pgcodes::GCode *code) {
         return code != nullptr &&
                code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
@@ -765,6 +888,9 @@ class ModuleBuilder {
         }
         if (oper == ":=" || oper == "=") {
             return emitAssignment(code, oper == ":=");
+        }
+        if (oper == "match") {
+            return emitMatchExpression(code);
         }
         if (oper == "+") {
             auto *left  = emitExpression(code->getLeft());

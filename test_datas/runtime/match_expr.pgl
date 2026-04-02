@@ -1,0 +1,43 @@
+package main;
+
+type Color enum { RED, GREEN, BLUE }
+
+func color_code(c int) int {
+    return match(c) {
+        Color::RED => 255;
+        Color::GREEN => 128;
+        Color::BLUE => 64;
+        _ => 0;
+    };
+}
+
+func describe(x int) string {
+    return match(x) {
+        1 => "one";
+        2 => "two";
+        3 => "three";
+        _ => "other";
+    };
+}
+
+func classify(x int) int {
+    result := match(x) {
+        0 => 100;
+        1 => 200;
+        _ => 999;
+    };
+    return result;
+}
+
+func main() {
+    println(color_code(Color::RED));
+    println(color_code(Color::GREEN));
+    println(color_code(Color::BLUE));
+    println(color_code(99));
+    println(describe(1));
+    println(describe(2));
+    println(describe(5));
+    println(classify(0));
+    println(classify(1));
+    println(classify(42));
+}
