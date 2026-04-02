@@ -1,164 +1,111 @@
-// ============================================================
-// 管道式词法分析器 — 自举可行性评估
-// ============================================================
-//
-// 当前版本：纯命令式实现（可运行）
-// 目标版本：管道式实现（需要以下语法支持）
-//
-// === 缺失的语法/特性 ===
-//
-// 1. 管道运行时语义（pipeline runtime）
-//    - 当前 pipeline/worker/switcher 仅在 parser 层有识别
-//    - 没有代码生成和执行支持
-//    - 需要实现 state machine lowering
-//
-// 2. 流操作符（stream operators）
-//    - >> (redirect/push to stream)
-//    - <> (in-place transform)
-//    - 当前 lexer/parser 不识别这些操作符
-//
-// 3. impl worker/switcher 方法调度
-//    - onSTART / onXXX 步骤处理器需要映射到状态机
-//    - CONTINUE / FINISH / TRANSFER_FINISH 控制流返回值
-//    - create() 工厂方法语义
-//
-// 4. 枚举值（enum values）
-//    - case 中使用 enum variant: TokenType::KEYWORD
-//    - 当前 enum 仅有 parser 支持，无值/匹配语义
-//
-// 5. 模式匹配（pattern matching）
-//    - case(expr) { pattern => body } 语法
-//    - 当前 switch/case 仅支持整型常量
-//
-// === 自举可行性结论 ===
-//
-// 使用纯命令式 PGL 代码自举：✅ 可行（本文件即为证明）
-// 使用管道式 PGL 代码自举：❌ 不可行（需完成上述 1-5 全部特性）
-//
-// 推荐路径：先用命令式代码完成 stage-1 自举编译器，
-// 再逐步实现管道语义作为语言高级特性。
-//
-// ============================================================
-// 以下为理想的管道式写法（伪代码，仅供参考，无法编译）：
-//
-// type TokenType enum { KEYWORD, IDENT, NUMBER, STRING, SYMBOL }
-//
-// type Token struct {
-//     text string;
-//     kind TokenType;
-// }
-//
-// type CharToToken pipeline(c char)(t Token);
-//
-// impl CharToToken Switcher {
-//     func onSwitch(c char) {
-//         return case(c) {
-//             ' ', '\t', '\n', '\r' => CONTINUE;  // 跳过空白
-//             'a'..'z', 'A'..'Z', '_' => return PipeIdent;
-//             '0'..'9' => return PipeNumber;
-//             '"' => return PipeString;
-//             default => return PipeSymbol;
-//         }
-//     }
-// }
-//
-// impl PipeIdent CharToToken worker {
-//     func onSTART(c char) {
-//         if (!is_alpha(c) && !is_digit(c)) {
-//             word := cache_str();
-//             if (is_keyword(word)) {
-//                 {word, TokenType::KEYWORD} >> out;
-//             } else {
-//                 {word, TokenType::IDENT} >> out;
-//             }
-//             TRANSFER_FINISH;
-//         }
-//         APPEND;
-//         CONTINUE;
-//     }
-// }
-// ============================================================
-
 package main;
 
-func is_alpha(ch int) int {
-    if ((ch >= 'A') && (ch <= 'Z')) { return 1; }
-    if ((ch >= 'a') && (ch <= 'z')) { return 1; }
-    if (ch == '_') { return 1; }
-    return 0;
+func is_alpha(ch char) bool {
+    if ((ch >= 'A') && (ch <= 'Z')) { return true; }
+    if ((ch >= 'a') && (ch <= 'z')) { return true; }
+    if (ch == '_') { return true; }
+    return false;
 }
 
-func is_digit(ch int) int {
-    if ((ch >= '0') && (ch <= '9')) { return 1; }
-    return 0;
+func is_digit(ch char) bool {
+    if ((ch >= '0') && (ch <= '9')) { return true; }
+    return false;
 }
 
-func is_space(ch int) int {
-    if (ch == ' ') { return 1; }
-    if (ch == '\t') { return 1; }
-    if (ch == '\n') { return 1; }
-    if (ch == '\r') { return 1; }
-    return 0;
+func is_space(ch char) bool {
+    if (ch == ' ') { return true; }
+    if (ch == '\t') { return true; }
+    if (ch == '\n') { return true; }
+    if (ch == '\r') { return true; }
+    return false;
 }
 
-func tokenize(src string) {
-    len := str_len(src);
-    i := 0;
-    while (i < len) {
-        ch := str_char_at(src, i);
-        if (is_space(ch) == 1) {
-            i = i + 1;
-        } else {
-            if (is_alpha(ch) == 1) {
-                start := i;
-                while ((i < len) && ((is_alpha(str_char_at(src, i)) == 1) || (is_digit(str_char_at(src, i)) == 1))) {
-                    i = i + 1;
-                }
-                word := str_substr(src, start, i);
-                if ((str_eq(word, "package") == 1) || (str_eq(word, "func") == 1) || (str_eq(word, "import") == 1) || (str_eq(word, "type") == 1) || (str_eq(word, "struct") == 1) || (str_eq(word, "if") == 1) || (str_eq(word, "else") == 1) || (str_eq(word, "while") == 1) || (str_eq(word, "for") == 1) || (str_eq(word, "return") == 1)) {
-                    print("KEYWORD:");
-                } else {
-                    print("IDENT:");
-                }
-                println(word);
-            } else {
-                if (is_digit(ch) == 1) {
-                    start := i;
-                    while ((i < len) && (is_digit(str_char_at(src, i)) == 1)) {
-                        i = i + 1;
-                    }
-                    num := str_substr(src, start, i);
-                    print("NUMBER:");
-                    println(num);
-                } else {
-                    if (ch == '"') {
-                        i = i + 1;
-                        start := i;
-                        while ((i < len) && (str_char_at(src, i) != '"')) {
-                            i = i + 1;
-                        }
-                        s := str_substr(src, start, i);
-                        i = i + 1;
-                        print("STRING:");
-                        println(s);
-                    } else {
-                        sym := char_to_str(ch);
-                        print("SYMBOL:");
-                        println(sym);
-                        i = i + 1;
-                    }
-                }
-            }
-        }
+func to_lower(ch char) char{
+  if (ch >= 'A' && ch <= 'Z') {
+    return ch - ('a' - 'A');
+  }
+
+  return ch;
+}
+func show_to_lower() {
+  var str = "HE11O";
+  str <> to_lower; // str == "he11o";
+  str <> to_upper; // str == "HE11O";
+  str <> to_lower (_alloc_size=str.size())>> upper_str; // >> 左侧是参数是用来调用下一个流的constructor方法的。
+  def upper_str string; // 注意，这是一个特殊的语法，因为upper_str 是在流中创建的，需要在流的 *后面* 声明一下。
+  // upper_str == "hello";
+  target <> $.filter(!is_digit); // target == HEO，可以通过 $. 来调用流程特有的方法。$.filter 接收一个lambda表达式. !is_digit 是一个语法糖。
+}
+
+type TokenType enum { KEYWORD, IDENT, NUMBER, STRING, SYMBOL }
+
+type Token struct {
+    text string;
+    kind TokenType;
+}
+type NumberPipe pipeline {
+   def in char;
+   def out Token;
+   var token string;
+   func run(c char) {
+     if (is_digit) {
+        c >> token;
+        return;
+     }
+     c >> in; // 这里是将c重新放回in的队列，这里支持数组，逻辑是从in中出来是什么顺序放回去就是什么顺序
+              // 加入in中的值是 ['1', '2', '3'>> (这里是in的输出端，下一个要被吐出的字符是'3')
+              // 如果是数组，例如 ['a', 'b', 'c'] >> in, 那么in之后的顺序是 ['1', '2', '3', 'c', 'b', 'a' >> (下一个要被吐出的字符是'a')
+     {token->text, TokenType::NUMBER -> kind} >> out; 
+     // 等效写法 {text: token, kine: TokenType::NUMBER} >> out; 
+     // 等效写法 {text=token, kine=TokenType::NUMBER} >> out; 
+     if (c == EOF) end();
+   }
+
+   func resize() { // 在调用end的时候会隐式调用，也支持显式调用
+     token.resize();
+   }
+}
+
+type StringPipe pipeline {
+  def in char;
+  def out Token;
+  var token string;
+  func run(c char) {
+    // logic ...
+    if (c == EOF && !token.end_with('"')) {
+      // 这里展示管道内变量的用法，注意 (path) >> {+path=path} Tokenize ==> io.StdOut;
+      // 里面的 {+path=xxx} 这里就是定义了一个在整个流程中都可以用的变量，同样可以使用 {-path}的方法来去掉这个管道变量
+      // 在编译时检查使用该管道变量的pipeline的流程中是否定义了对应的管道变量，及该管道变量是否仍然有效。
+      panic("in file " + $.path + " not exist another '"', string parse fail.");
     }
+  }
 }
 
+type Tokenize pipeline {
+   def in char; // in 是一个char类型的读入流
+   def out Token; // out 是一个Token类型的输出流
+  
+   func constructor(path: string) { // pipeline的创建方法，只能有一个同名函数。
+     return iopp.FileIn; // 返回值是一个pipeline,pipeline的返回值是 in 对应类型的。
+   }
+   const set<string> keywords = {"type", "enums"};
+   func run(c char) {
+         c >> [ // 会按照下面的顺序依次检查是否有问题，命中哪个流程就进入哪个流程，都没命中就会执行下面的语句。
+          is_digit -> NumberPipe,
+          is_alpha -> IdentPipe,
+          keywords::contains -> KeywordPipe,
+          is_symbol -> SymbolPipe,
+          '"' -> StringPipe,
+         ] >> out;
+        // not catch:
+        if (c == EOF) end();
+   }
+}
 func main() {
     if (args_count() < 2) {
         println("usage: lexer <file.pgl>");
         exit(1);
     }
     path := args(1);
-    src := read_file(path);
-    tokenize(src);
+    (path) >> {+path=path} Tokenize ==> io.StdOut;
 }

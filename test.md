@@ -17,5 +17,15 @@
 6. git commit
 
 
-要先实现 @examples/bootstrap_lexer_pipeline.pgl  这里面的pipeline语法，然后再用pipeline语法实现自举。先补全语法再开始正式做自举
+要先实现 @examples/bootstrap_lexer_pipeline.pgl  这里面的pipeline语法，然后再用pipeline语法分析是否能够实现自举，补足缺失的语法之后再补充其他缺失的部分，最后开始正式做自举
 copilot --resume=f48f3658-4956-47c9-ac0e-602eee5d3d4a
+
+1. 继续下面的功能
+For-range 循环 + 闭包 —— 让代码更具表现力，提高信息密度。
+泛型 —— 替换自举代码中丑陋的并行数组模式。
+接口/Trait 代码生成 —— 实现多态（语法解析已完成）。
+
+2. 目前bootstrap 编译失败了，修复编译问题
+3. @examples/bootstrap_lexer_pipeline.pgl 重新定义了pipeline语法，和之前的语法有冲突之处以新的语法为准，例如在新的定义里去掉了Switcher等，只留下了pipeline这一种语法。修改语法描述文件，并实现它。
+    需要特别注意的是，和C语言不同，这个语言不支持<< 左移运算符。
+    首先检查它的语法是否严谨，如果不严谨就先补全语法上缺漏的地方，之后修改C++及pgl的代码，使该文件可编译。
