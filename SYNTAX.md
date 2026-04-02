@@ -1,438 +1,426 @@
-# Pangu Syntax and Execution Model
+# Pangu Language Reference
 
-## Status
+## Overview
 
-This document describes the current Pangu language surface in this repository.
+Pangu is a compiled programming language with an LLVM backend that also supports
+direct JIT execution. It is designed for dense, readable program structure:
 
-- `Implemented` means the syntax is accepted by the current front-end.
-- `Runnable` means the current LLVM direct-run path can execute it.
-- `Planned` means the syntax appears in `.pgl` design files or comments, but is not fully implemented yet.
-
-## Design goal
-
-Pangu is intended to make program structure dense and readable:
-
-- top-level files describe module structure first,
+- top-level files describe module structure,
 - mid-level files describe pipeline and type structure,
 - low-level files hold concrete algorithms.
 
-The repository currently provides:
+**Self-hosting status:** Pangu can compile itself. A bootstrap compiler in
+`bootstrap/` reads PGL source, emits C code, and achieves a fixed-point
+(3-generation self-bootstrap verified).
 
-- a lexer,
-- a grammar/parser,
-- a partial code tree builder,
-- a minimal LLVM IR backend,
-- a minimal LLVM JIT direct-run path,
-- a bootstrap-oriented standard library scaffold in `stdlib/`.
-
-## Toolchain modes
+## Toolchain
 
 ```bash
-make linux
-make tests
+make linux            # Build the compiler
+make tests            # Run all test suites
 
-./build/pangu parse   <file.pgl>
-./build/pangu emit-ir <file.pgl>
-./build/pangu run     <file.pgl>
-./build/pangu compile <file.pgl>
+./build/pangu run     <file.pgl|dir/> [args...]   # JIT execute
+./build/pangu compile <file.pgl|dir/> [-o path]   # Compile to native binary
+./build/pangu emit-ir <file.pgl|dir/>              # Print LLVM IR
+./build/pangu parse   <file.pgl|dir/>              # Parse and dump AST
+./build/pangu --help                                # Show usage
 ```
 
-`compile` currently writes the executable to `build/<source-stem>`.
+- `compile` writes to `build/<name>` by default, or `-o path` to override.
+- Directory arguments auto-discover `.pgl` files and merge same-package files.
 
-Syntax diagnostics now use a clang/LLVM-style format:
+### Diagnostics
+
+All errors use clang-style format with source location and caret:
 
 ```text
-path/file.pgl:line:column: error: message
-<source line>
-^
+path/file.pgl:4:13: error: undefined function 'foo'
+    println(foo(1));
+            ^~~
 ```
 
-## Lexical structure
+Panic and signal handlers print PGL source-level backtraces (file:line) in both
+JIT and AOT modes.
+
+## Lexical Structure
 
 ### Comments
 
-The current lexer accepts comment forms used in the repository examples:
+```pgl
+// line comment
+/* block comment */
+```
 
-- line comments: `// ...`
-- block comments: `/* ... */`
+### Literals
 
-### Strings and numbers
-
-- string literals are accepted by the lexer and parser
-- integer numbers are accepted and used by the current LLVM run path
-- float syntax appears in samples, but is not runnable in the current backend
+```pgl
+42          // integer
+0xFF        // hex integer
+"hello\n"   // string (supports \n \t \\ \" \0 \xNN \0NNN)
+'A'         // char literal → integer (ASCII value)
+true false  // bool → integer (1 / 0)
+```
 
 ### Keywords
 
-Current keyword set:
+`package` `import` `as` `type` `struct` `enum` `func` `pipeline` `impl`
+`if` `else` `for` `while` `do` `return` `switch` `case` `default` `match`
+`break` `continue` `goto` `try` `catch`
+`public` `static` `const` `final` `var` `class` `worker` `switcher`
 
-`package`, `import`, `as`, `type`, `struct`, `enum`, `func`, `pipeline`, `impl`, `if`, `else`, `for`, `while`, `do`, `return`, `switch`, `goto`, `try`, `catch`, `public`, `static`, `const`, `final`, `var`, `class`, `switcher`, `worker`
+### Operators
 
-### Important symbols
-
-The lexer recognizes symbols used by the current parser/code tree, including:
-
-`(` `)` `[` `]` `{` `}` `,` `;` `.` `:` `::` `:=` `?` `->`
-
-Arithmetic and comparison operators recognized by the lexer include:
-
-`+` `-` `*` `/` `%` `++` `--` `=` `==` `!=` `>` `<` `>=` `<=` `&&` `||`
-
-## Grammar
-
-The following grammar is a practical description of the current parser, not a claim that every production is fully semantic-checked.
-
-### Source file
-
-```ebnf
-source-file = package-decl top-level-decl* EOF ;
-
-top-level-decl =
-    import-decl
-  | type-struct-decl
-  | type-enum-decl
-  | type-func-decl
-  | type-pipeline-decl
-  | func-decl
-  | pipeline-decl
-  | impl-decl
-  | ignored-token ;
+```
++  -  *  /  %          // arithmetic
+== != > < >= <=        // comparison (works on int and string)
+&& ||  !               // logical (short-circuit)
+++ --                   // prefix increment/decrement
+=  :=                   // assignment / define-assignment
+.  ::                   // field access / enum variant
+( ) [ ] { } , ; : ->   // delimiters
 ```
 
-### Package and import
+## Types
 
-```ebnf
-package-decl = "package" identifier ";" ;
-import-decl  = "import" string-literal [ "as" identifier ] ";" ;
+### Primitive Types
+
+| Type     | LLVM     | Description                     |
+|----------|----------|---------------------------------|
+| `int`    | `i32`    | 32-bit signed integer           |
+| `bool`   | `i32`    | Boolean (true=1, false=0)       |
+| `string` | `ptr`    | C string pointer                |
+| `ptr`    | `ptr`    | Raw pointer (for pipeline state)|
+
+### Struct
+
+```pgl
+type Point struct {
+    x int;
+    y int;
+}
+
+// Construction
+p := Point{x: 1, y: 2};
+
+// Field access
+println(p.x);
+
+// Field mutation
+p.x = 10;
+
+// As function parameter and return value
+func translate(p Point, dx int) Point {
+    return Point{x: p.x + dx, y: p.y};
+}
 ```
 
-Examples:
+Structs support `@annotation` metadata for reflection:
+
+```pgl
+@json("point_data")
+type Point struct {
+    @required
+    x int;
+    y int;
+}
+```
+
+### Enum
+
+```pgl
+type Color enum { RED, GREEN, BLUE }
+
+// Enum variant access (ordinal integers: 0, 1, 2)
+c := Color::RED;
+if (c == Color::BLUE) { println("blue"); }
+```
+
+### Pipeline Type
+
+```pgl
+type CharToToken pipeline(c int)(kind int, text string);
+```
+
+Pipeline declarations define a processing stage with input and output parameters.
+See [Pipeline System](#pipeline-system) for full details.
+
+## Functions
+
+```pgl
+func add(a int, b int) int {
+    return a + b;
+}
+
+func greet(name string) {
+    println(str_concat("Hello, ", name));
+}
+
+func main() {
+    result := add(1, 2);
+    greet("world");
+}
+```
+
+### Struct Methods (impl blocks)
+
+```pgl
+type Counter struct { value int; }
+
+impl Counter {
+    func increment(c Counter) Counter {
+        return Counter{value: c.value + 1};
+    }
+}
+
+// Call as StructName.method(args)
+c := Counter{value: 0};
+c = Counter.increment(c);
+```
+
+## Control Flow
+
+### If / Else
+
+```pgl
+if (x > 0) {
+    println("positive");
+} else if (x == 0) {
+    println("zero");
+} else {
+    println("negative");
+}
+```
+
+### While Loop
+
+```pgl
+i := 0;
+while (i < 10) {
+    println(i);
+    i = i + 1;
+    if (i == 5) { break; }
+}
+```
+
+### For Loop
+
+```pgl
+for (i := 0; i < 10; ++i) {
+    if (i % 2 == 0) { continue; }
+    println(i);
+}
+```
+
+### Switch / Case
+
+```pgl
+switch (x) {
+    case 1: println("one");
+    case 2: println("two");
+    default: println("other");
+}
+```
+
+### Match Expression
+
+```pgl
+type Color enum { RED, GREEN, BLUE }
+
+name := match (c) {
+    Color::RED   => "red",
+    Color::GREEN => "green",
+    _            => "other",
+};
+```
+
+Match supports enum variants, integer literals, and wildcard `_`.
+
+## Modules and Imports
+
+### Package Declaration
 
 ```pgl
 package main;
-import "llvm" as llvm;
 ```
 
-### Struct type
-
-```ebnf
-type-struct-decl =
-  "type" identifier "struct" "{" field-decl* "}" ;
-
-field-decl =
-  identifier-list type-ref [ string-literal ] [ ";" ] ;
-```
-
-Examples:
+### Import
 
 ```pgl
-type Test struct {
-  a int;
-  b int;
-  c int `json: 'cat'`;
+import "stdlib/core/math" as math;    // stdlib module
+import "./utils" as utils;            // relative path
+```
+
+Multi-file compilation: `pangu compile dir/` auto-discovers `.pgl` files and
+merges files with the same package declaration.
+
+### Package Management (.pgs)
+
+Go-style package config via `pangu.pgs`:
+
+```pgl
+module "github.com/user/myapp";
+require "github.com/ProtossGenius/json_pgl" v0.1.0;
+replace "github.com/ProtossGenius/json_pgl" => "./vendor/github.com/ProtossGenius/json_pgl";
+```
+
+Third-party imports resolve through vendor directory with replace directives.
+
+## Pipeline System
+
+Pipelines are a state-machine pattern for streaming data processing (e.g., lexing).
+
+### Declaration
+
+```pgl
+type Signal enum { CONTINUE, FINISH, TRANSFER_FINISH, APPEND, APPEND_FINISH }
+type WorkerID enum { WIdent, WNumber, WString, WSymbol }
+type CharToToken pipeline(c int)(kind int, text string);
+```
+
+### Switcher and Workers
+
+```pgl
+// Switcher routes each input to a worker
+impl CharToToken Switcher {
+    func dispatch(c int) int {
+        if (c >= 'a' && c <= 'z') { return WorkerID::WIdent; }
+        if (c >= '0' && c <= '9') { return WorkerID::WNumber; }
+        return WorkerID::WSymbol;
+    }
+}
+
+// Workers process input and return a signal
+impl WIdent CharToToken worker {
+    func process(c int, buf_len int, first_char int) int {
+        if (c >= 'a' && c <= 'z') { return Signal::APPEND; }
+        return Signal::TRANSFER_FINISH;
+    }
 }
 ```
 
-### Enum type
+### Auto-Generated Dispatch
 
-Implemented in this repository.
-
-```ebnf
-type-enum-decl =
-  "type" identifier "enum" "{" enum-item ( "," enum-item )* [ "," ] "}" ;
-
-enum-item = identifier ;
-```
-
-Example:
+When a pipeline has workers whose names match enum variants, the compiler
+auto-generates `PipelineName.__dispatch(wid, ...)` which switches on worker ID:
 
 ```pgl
-type LexType enum {
-  STRING,
-  CHAR,
-  NUMBER,
-}
+// Auto-generated — no need to write manually
+sig := CharToToken.__dispatch(wrk, c, buf_len, first_char);
 ```
 
-### Function type and pipeline type declaration
+### Pipeline Runtime Builtins
 
-Implemented as declaration syntax, and `type ... pipeline` now also has a parser-only body form.
+Low-level state management for manual pipeline implementations:
 
-```ebnf
-type-func-decl =
-  "type" identifier "func" param-list [ result-list ] ";" ;
+| Function | Description |
+|----------|-------------|
+| `pipeline_create(elem_size)` | Create pipeline state |
+| `pipeline_destroy(state)` | Free pipeline state |
+| `pipeline_cache_append(state, char)` | Append char to buffer |
+| `pipeline_cache_str(state)` | Get buffer as string, reset |
+| `pipeline_cache_reset(state)` | Clear buffer |
+| `pipeline_set_worker(state, id)` | Set current worker |
+| `pipeline_get_worker(state)` | Get current worker |
+| `pipeline_emit(state, elem)` | Store output element |
+| `pipeline_output_count(state)` | Count stored outputs |
+| `pipeline_output_get(state, i)` | Get stored output by index |
 
-type-pipeline-decl =
-  "type" identifier "pipeline" param-list [ result-list ] ( ";" | raw-brace-block ) ;
+## Built-in Functions
+
+### I/O
+
+| Function | Description |
+|----------|-------------|
+| `println(val)` | Print with newline (auto-detects int/string) |
+| `print(val)` | Print without newline |
+| `read_file(path)` | Read file contents as string |
+| `write_file(path, content)` | Write string to file |
+| `args(index)` | Get command-line argument |
+| `args_count()` | Get argument count |
+| `exit(code)` | Exit with status code |
+| `panic(msg)` | Print error + backtrace, abort |
+| `system(cmd)` | Execute shell command |
+
+### Strings
+
+| Function | Description |
+|----------|-------------|
+| `str_concat(a, b)` | Concatenate (also `a + b`) |
+| `str_len(s)` | String length |
+| `str_eq(a, b)` | Equality check |
+| `str_substr(s, start, end)` | Substring |
+| `str_char_at(s, i)` | Char code at index |
+| `char_to_str(code)` | Char code to string |
+| `str_index_of(s, sub)` | Find substring |
+| `str_starts_with(s, prefix)` | Prefix check |
+| `str_ends_with(s, suffix)` | Suffix check |
+| `str_replace(s, old, new)` | Replace substring |
+| `int_to_str(n)` | Integer to string |
+| `str_to_int(s)` | String to integer |
+
+### Arrays
+
+| Function | Description |
+|----------|-------------|
+| `make_array(size)` | Create int array |
+| `array_get(arr, i)` | Get int element |
+| `array_set(arr, i, val)` | Set int element |
+| `make_str_array(size)` | Create string array |
+| `str_array_get(arr, i)` | Get string element |
+| `str_array_set(arr, i, val)` | Set string element |
+
+### File System
+
+| Function | Description |
+|----------|-------------|
+| `find_pgl_files(dir, arr)` | Find .pgl files in directory |
+| `is_directory(path)` | Check if path is directory |
+
+### Reflection
+
+| Function | Description |
+|----------|-------------|
+| `reflect_type_count()` | Number of registered types |
+| `reflect_type_name(i)` | Type name by index |
+| `reflect_field_count(type)` | Field count for type |
+| `reflect_field_name(type, i)` | Field name by index |
+| `reflect_field_type(type, i)` | Field type by index |
+| `reflect_annotation_count(type)` | Annotation count |
+| `reflect_annotation_key(type, i)` | Annotation key |
+| `reflect_annotation_value(type, i)` | Annotation value |
+
+## Semantic Analysis
+
+The `sema` module validates before LLVM lowering:
+
+- Function existence and argument count
+- Import alias validity and imported function existence
+- Variable definitions (`:=` or parameter)
+- Struct type names and enum type names recognized
+- Struct method calls validated (`StructName.method(args)`)
+
+## Self-Hosting Status
+
+**✅ Self-hosting achieved.** The bootstrap compiler in `bootstrap/` compiles
+itself to produce identical output across three generations:
+
+```bash
+pangu compile bootstrap/ -o build/bootstrap
+build/bootstrap compile bootstrap/ -o build/bootstrap2
+build/bootstrap2 compile bootstrap/ -o build/bootstrap3
+# strip bootstrap2 == strip bootstrap3  (fixed point verified)
 ```
 
-Examples:
-
-```pgl
-type TestFunc1 func (a int, b int, c string) int ;
-type PLexer pipeline(c char)(o Lex);
-type PipeSelf pipeline(i In)(o Out) { ... }
-```
-
-Note:
-
-- `type X func (...) ... { ... }` is still rejected with a readable parse error.
-
-### Interface type
-
-Implemented as parser-only body capture.
-
-```ebnf
-type-interface-decl =
-  "type" identifier "interface" raw-brace-block ;
-```
-
-Example:
-
-```pgl
-type Reader interface {
-  Accept(test Test) (bool, error);
-}
-```
-
-### Top-level function and top-level pipeline
-
-Implemented in the parser.
-
-```ebnf
-func-decl =
-  "func" identifier param-list [ result-list ] code-block ;
-
-pipeline-decl =
-  "pipeline" identifier param-list [ result-list ] code-block ;
-```
-
-Examples:
-
-```pgl
-func main() {
-  println(1 + 2);
-}
-
-pipeline Build(cfg Config) (out Reader) {
-  PipeReader -> PipeNormalize;
-}
-```
-
-### Implementation block
-
-Top-level `impl` blocks are now parsed.
-
-```ebnf
-impl-decl =
-  "impl" identifier identifier modifier* raw-brace-block ;
-
-modifier = identifier ;
-```
-
-Examples:
-
-```pgl
-impl Lexer Switcher {
-  []
-  func create() Lex { return Lex{}; }
-}
-
-impl PLexNumber PLexer worker {
-  [AFTER_POINT]
-}
-```
-
-Current implementation detail:
-
-- the parser recognizes the `impl` header and consumes the whole brace-balanced body,
-- the current AST stores the body as a summarized token count,
-- inner `impl` members are not yet semantically analyzed.
-
-### Parameter and result lists
-
-```ebnf
-param-list  = "(" [ variable-decl ( "," variable-decl )* ] ")" ;
-result-list = param-list | type-ref ;
-```
-
-Examples:
-
-```pgl
-func hello(a int) {}
-func f(a int, b string) (ok bool, err error) {}
-```
-
-### Expressions and statements
-
-The current code-tree parser supports a broad expression syntax used by existing tests:
-
-- assignment: `=`, `:=`
-- arithmetic: `+`, `-`, `*`, `/`
-- integer comparison: `==`, `!=`, `>`, `<`, `>=`, `<=`
-- precedence and parentheses
-- prefix/postfix `++`, `--`
-- function call form: `f(x, y)`
-- index form: `a[i]`
-- ternary form in samples: `cond ? a : b`
-- `if / else if / else`
-- `while`
-- `for`
-- `switch(expr) { ... }`
-- `return`
-- brace blocks
-
-Examples from current tests:
-
-```pgl
-a := 1;
-b = 3 * 4 * (1 + 5);
-println(a + b);
-if (a == 1) return;
-if (a > 1) { return 2; } else { return 3; }
-while (a < 3) { a = a + 1; }
-for (i := 0; i < 2; ++i) { println(i); }
-switch (a) {}
-```
-
-## Execution support matrix
-
-### Parser support
-
-Supported by `./build/pangu parse`:
-
-- `package`
-- `import`
-- `type ... struct`
-- `type ... enum`
-- `type ... func`
-- `type ... pipeline` declaration and parser-only body form
-- `type ... interface`
-- top-level `func`
-- top-level `pipeline`
-- top-level `impl`
-- arithmetic / comparison / assignment / call / `if` / `else if` / `else` / `while` / `for` / `switch` / `return` code trees
-
-### LLVM IR emission
-
-Supported today by `./build/pangu emit-ir`:
-
-- source parsing through the grammar front-end
-- recursive import loading for `stdlib/...` and relative module paths
-- generation of multiple top-level functions
-- integer and string parameters, single return value
-- integer and string variables (type-inferred via `:=`)
-- integer arithmetic `+ - * / %`
-- integer comparison `== != > < >= <=`
-- logical operators `&& || !` (short-circuit)
-- prefix `++` / `--`
-- assignment / define-assignment
-- user-defined function calls
-- imported function calls through `alias.func(...)`
-- `println(<expr>)` — auto-detects int (%d) vs string (%s)
-- `print(<expr>)` — same as println without trailing newline
-- `exit(<int>)` — terminates with exit code
-- `if / else if / else`
-- `while (cond) { ... }`
-- `for (init; cond; step) { ... }`
-- `return`
-- string literals with escape sequences (`\n`, `\t`, `\\`, `\"`)
-
-### Direct-run support
-
-Supported today by `./build/pangu run`:
-
-- all features listed in LLVM IR emission above
-- uses LLVM ORC JIT for in-process execution
-
-### Native compile support
-
-Supported today by `./build/pangu compile`:
-
-- all features listed in LLVM IR emission above
-- invokes system clang to produce a native executable
-- places the executable at `build/<source-stem>`
-
-### Planned but not implemented end-to-end
-
-- full type checking (types are parsed but not verified)
-- structs, enum semantics, and impl semantics in codegen
-- switch lowering
-- break / continue in loops
-- parser-only interface declarations
-- case expressions used in design files
-- full pipeline runtime semantics
-- array / slice types
-- string concatenation
-
-### Semantic analysis
-
-The `sema` module now performs the following checks before LLVM lowering:
-
-- **Function existence:** calls to undefined functions are reported.
-- **Argument count:** mismatch between actual and formal parameter count is reported.
-- **Import alias validity:** `alias.func()` calls with unknown aliases are reported.
-- **Imported function existence:** calling a function that does not exist in the imported module is reported.
-- **Variable definitions:** use of undefined variables (not declared with `:=` or as parameters) is reported.
-
-All errors use clang-style diagnostics with file:line:column, source line, and caret:
-
-```text
-/path/to/file.pgl:4:13: error: undefined function 'not_exist'
-    println(not_exist(1));
-            ^~~~~~~~~
-```
-
-## Bootstrap assessment
-
-## Conclusion
-
-Pangu is **approaching self-hostability**. Most foundational capabilities are in place.
-
-### Current capabilities
-
-1. **Control flow:** if/else, while, for loops all work end-to-end (parse → sema → LLVM → run/compile).
-2. **Types:** int, string, and user-defined structs are supported.
-3. **Operators:** arithmetic (+, -, *, /, %), comparison (==, !=, >, <, >=, <=), logical (&&, ||, !), increment (++, --). String operands auto-dispatch to strcmp/concat.
-4. **Strings:** literals with escapes, concatenation (`+`), length, substring, comparison, char access, int↔string conversion.
-5. **Structs:** definition, construction (`Point{x: 1, y: 2}`), field access (`p.x`), pass as function params and return values.
-6. **Arrays:** int arrays (`make_array`, `array_get`, `array_set`) and string arrays (`make_str_array`, `str_array_get`, `str_array_set`).
-7. **File I/O:** `read_file(path)` and `write_file(path, content)`.
-8. **Character ops:** `str_char_at(s, i)` and `char_to_str(code)`.
-9. **Modules:** import system works for stdlib and relative paths with multi-package compilation.
-10. **Sema:** function/variable/import/struct validation with clang-style diagnostics.
-11. **Builtins:** println, print, exit, plus all string/array/file ops above.
-
-### What is still missing for self-hosting
-
-1. **Type system gaps:**
-   - type checking in sema (argument types, return types)
-   - enum values and pattern matching
-
-2. **Control flow gaps:**
-   - switch/case lowering (parser needs `case:` support)
-   - break/continue in loops
-
-3. **Advanced features:**
-   - struct methods (impl blocks)
-   - interface dispatch
-   - closures or function values
-   - command-line argument access
-
-### Practical assessment
-
-- **Simple programs:** fully feasible — arithmetic, control flow, strings, structs, arrays, modules all work.
-- **Text processing utility:** fully feasible — string ops, file IO, arrays all available.
-- **Simple compiler (lexer + parser):** feasible — can read files, iterate chars, build token arrays, construct AST with structs, generate output. Missing switch/case (use if/else chains instead).
-- **Full bootstrap chain:** close but needs break/continue, command-line args, and more robust error handling.
-
-### Nearest milestones toward bootstrap
-
-1. ~~Add string operations~~ ✅
-2. ~~Add struct definition + field access~~ ✅
-3. ~~Add array/slice type with indexing~~ ✅
-4. ~~Add file IO builtins~~ ✅
-5. Add switch/case lowering (requires parser extension for `case:`)
-6. Add break/continue support in loops
-7. Add command-line argument access (`args()` builtin)
-8. Write a minimal PGL lexer in PGL itself as proof-of-concept
+The bootstrap reads PGL source, tokenizes it, parses to AST, and emits C code
+that is compiled with gcc. It supports multi-file compilation, the `-o` flag,
+and `--help`.
+
+## Planned / Not Yet Implemented
+
+- Full type checking (argument types, return types verified at compile time)
+- Interface dispatch
+- Closures / function values
+- Stream operators (`>>`, `<>`) for pipeline data flow
+- Range patterns in match expressions
+- Auto-generated pipeline `run` state machine
+- Generics
