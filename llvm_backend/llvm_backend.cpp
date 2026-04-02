@@ -1618,6 +1618,15 @@ class ModuleBuilder {
         if (oper == "++" || oper == "--") {
             return emitIncDec(code, oper == "++");
         }
+        if (oper == ">>") {
+            return emitStreamPush(code);
+        }
+        if (oper == "<>") {
+            return emitInPlaceTransform(code);
+        }
+        if (oper == "==>") {
+            return emitPipelineChain(code);
+        }
         {
             auto loc = code->location();
             throw std::runtime_error(
@@ -2143,6 +2152,129 @@ class ModuleBuilder {
                                : _builder.CreateSub(current, one, "dec");
         _builder.CreateStore(result, it->second);
         return result;
+    }
+
+    // ── >> stream push: c >> token (append char to string) ──────────
+    llvm::Value *emitStreamPush(const pgcodes::GCode *code) {
+        auto *lhs = emitExpression(code->getLeft());
+        auto *rhs_code = code->getRight();
+
+        // c >> string_var: append char(int) to string
+        if (rhs_code != nullptr &&
+            rhs_code->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+            const std::string &varName = rhs_code->getValue();
+            auto it = _variables.find(varName);
+            if (it != _variables.end()) {
+                auto *rhs = _builder.CreateLoad(it->second->getAllocatedType(),
+                                                it->second);
+                // If lhs is int and rhs is ptr (string): append char to string
+                if (lhs->getType()->isIntegerTy() && rhs->getType()->isPointerTy()) {
+                    auto *char_str = emitCharToStr(lhs);
+                    auto *result = emitStrConcat({rhs, char_str});
+                    _builder.CreateStore(result, it->second);
+                    return result;
+                }
+                // If both are strings: concat
+                if (lhs->getType()->isPointerTy() && rhs->getType()->isPointerTy()) {
+                    auto *result = emitStrConcat({rhs, lhs});
+                    _builder.CreateStore(result, it->second);
+                    return result;
+                }
+            }
+        }
+        // Fallback: evaluate both sides, return right
+        auto *rhs = emitExpression(rhs_code);
+        return rhs;
+    }
+
+    // ── <> in-place transform: str <> func ──────────────────────────
+    // Applies func to each character of string, modifying in-place
+    llvm::Value *emitInPlaceTransform(const pgcodes::GCode *code) {
+        auto *lhs_code = code->getLeft();
+        auto *rhs_code = code->getRight();
+
+        if (lhs_code == nullptr || rhs_code == nullptr) {
+            throw std::runtime_error("<> requires left and right operands");
+        }
+
+        // Left must be a string variable
+        if (lhs_code->getValueType() != pgcodes::ValueType::IDENTIFIER) {
+            throw std::runtime_error("<> left operand must be a variable");
+        }
+        const std::string &varName = lhs_code->getValue();
+        auto it = _variables.find(varName);
+        if (it == _variables.end()) {
+            throw std::runtime_error("<> on undefined variable: " + varName);
+        }
+
+        auto *str_val = _builder.CreateLoad(it->second->getAllocatedType(),
+                                            it->second);
+        if (!str_val->getType()->isPointerTy()) {
+            throw std::runtime_error("<> left operand must be a string");
+        }
+
+        // Right must be a function name
+        if (rhs_code->getValueType() != pgcodes::ValueType::IDENTIFIER) {
+            throw std::runtime_error("<> right operand must be a function name");
+        }
+        const std::string &funcName = rhs_code->getValue();
+        auto *func = resolveCurrentFunction(funcName);
+        if (func == nullptr) {
+            throw std::runtime_error("<> function not found: " + funcName);
+        }
+
+        // Get string length
+        auto *str_len = emitStrLen({str_val});
+        // Build new string by applying func to each char
+        auto *result_alloca = createVariableSlot("transform.result",
+                                                  _builder.getPtrTy());
+        auto *empty_str = _builder.CreateGlobalStringPtr("", "empty");
+        _builder.CreateStore(empty_str, result_alloca);
+
+        auto *function = _current_function;
+        auto *cond_block = llvm::BasicBlock::Create(*_context, "xform.cond", function);
+        auto *body_block = llvm::BasicBlock::Create(*_context, "xform.body");
+        auto *end_block  = llvm::BasicBlock::Create(*_context, "xform.end");
+
+        auto *idx_alloca = createVariableSlot("xform.idx", _builder.getInt32Ty());
+        _builder.CreateStore(llvm::ConstantInt::get(_builder.getInt32Ty(), 0),
+                             idx_alloca);
+        _builder.CreateBr(cond_block);
+
+        // Condition
+        _builder.SetInsertPoint(cond_block);
+        auto *idx = _builder.CreateLoad(_builder.getInt32Ty(), idx_alloca);
+        auto *cmp = _builder.CreateICmpSLT(idx, str_len, "xform.cmp");
+        _builder.CreateCondBr(cmp, body_block, end_block);
+
+        // Body: apply func to char, append to result
+        function->insert(function->end(), body_block);
+        _builder.SetInsertPoint(body_block);
+        auto *ch = emitStrCharAt(str_val, idx);
+        auto *transformed = _builder.CreateCall(func, {ch}, "xformed");
+        auto *new_char_str = emitCharToStr(transformed);
+        auto *cur_result = _builder.CreateLoad(_builder.getPtrTy(), result_alloca);
+        auto *new_result = emitStrConcat({cur_result, new_char_str});
+        _builder.CreateStore(new_result, result_alloca);
+        auto *next_idx = _builder.CreateAdd(
+            idx, llvm::ConstantInt::get(_builder.getInt32Ty(), 1));
+        _builder.CreateStore(next_idx, idx_alloca);
+        _builder.CreateBr(cond_block);
+
+        // End
+        function->insert(function->end(), end_block);
+        _builder.SetInsertPoint(end_block);
+        auto *final_result = _builder.CreateLoad(_builder.getPtrTy(), result_alloca);
+        _builder.CreateStore(final_result, it->second);
+        return final_result;
+    }
+
+    // ── ==> pipeline chain (placeholder) ────────────────────────────
+    llvm::Value *emitPipelineChain(const pgcodes::GCode *code) {
+        // TODO: Full pipeline chaining implementation
+        auto *lhs = emitExpression(code->getLeft());
+        auto *rhs = emitExpression(code->getRight());
+        return rhs;
     }
 
     const pgcodes::GCode *stripGrouping(const pgcodes::GCode *code) {
