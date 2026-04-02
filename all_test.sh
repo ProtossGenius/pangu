@@ -52,9 +52,24 @@ test_multifile () {
     done
 }
 
+test_vendor () {
+    echo "\033[32m ########## TEST VENDOR #########\033[0m";
+    for dir in test_datas/vendor_test/; do
+        [ -d "$dir" ] || continue
+        local target="$dir/target"
+        [ -f "$target" ] || continue
+        echo "\033[32m testing vendor $dir ......\033[0m";
+        ./build/pangu run "$dir/main.pgl" > "${dir}out" 2>&1;
+        if [ $? -ne 0 ]; then echo "\033[31m vendor run $dir fail \033[0m"; cat "${dir}out"; exit; fi
+        diff "$target" "${dir}out";
+        if [ $? -ne 0 ]; then echo "\033[31m vendor output mismatch $dir \033[0m"; exit; fi
+    done
+}
+
 test lexer 
 test grammer 
 test runtime
 test_compile
 test_compile_fail
 test_multifile
+test_vendor

@@ -193,13 +193,122 @@ std::string ensurePglSuffix(const std::string &path) {
                : path + ".pgl";
 }
 
+// --- .pgs Package Config ---
+struct PgsConfig {
+    std::string module_name;
+    std::map<std::string, std::string> requires;
+    std::map<std::string, std::string> replaces;
+};
+
+static std::string trimStr(const std::string &s) {
+    size_t start = s.find_first_not_of(" \t\r\n");
+    if (start == std::string::npos) return "";
+    size_t end = s.find_last_not_of(" \t\r\n");
+    return s.substr(start, end - start + 1);
+}
+
+static std::string unquote(const std::string &s) {
+    if (s.size() >= 2 && s.front() == '"' && s.back() == '"')
+        return s.substr(1, s.size() - 2);
+    return s;
+}
+
+bool parsePgsFile(const std::string &pgs_path, PgsConfig &config, std::string &error) {
+    std::ifstream ifs(pgs_path);
+    if (!ifs.is_open()) {
+        error = "cannot open .pgs file: " + pgs_path;
+        return false;
+    }
+    std::string line;
+    int line_no = 0;
+    while (std::getline(ifs, line)) {
+        line_no++;
+        line = trimStr(line);
+        if (line.empty() || line[0] == '#') continue;
+
+        if (!line.empty() && line.back() == ';') line.pop_back();
+        line = trimStr(line);
+
+        std::istringstream iss(line);
+        std::string keyword;
+        iss >> keyword;
+
+        if (keyword == "module") {
+            std::string mod;
+            iss >> mod;
+            config.module_name = unquote(mod);
+        } else if (keyword == "require") {
+            std::string mod, ver;
+            iss >> mod >> ver;
+            config.requires[unquote(mod)] = unquote(ver);
+        } else if (keyword == "replace") {
+            std::string mod, arrow, local;
+            iss >> mod >> arrow >> local;
+            if (arrow != "=>") {
+                error = pgs_path + ":" + std::to_string(line_no) +
+                    ": expected '=>' in replace directive";
+                return false;
+            }
+            config.replaces[unquote(mod)] = unquote(local);
+        } else {
+            error = pgs_path + ":" + std::to_string(line_no) +
+                ": unknown directive '" + keyword + "'";
+            return false;
+        }
+    }
+    return true;
+}
+
+std::string findPgsFile(const std::string &entry_path) {
+    std::string dir = isDirectory(entry_path) ? entry_path : directoryName(entry_path);
+    for (int i = 0; i < 4; i++) {
+        std::string candidate = dir + "/pangu.pgs";
+        if (access(candidate.c_str(), F_OK) == 0) {
+            return canonicalPath(candidate);
+        }
+        std::string parent = directoryName(dir);
+        if (parent == dir) break;
+        dir = parent;
+    }
+    return "";
+}
+
+bool isThirdPartyImport(const std::string &import_path) {
+    if (import_path.find('/') == std::string::npos) return false;
+    std::string first_segment = import_path.substr(0, import_path.find('/'));
+    return first_segment.find('.') != std::string::npos;
+}
+
 std::string findImportPath(const std::string &from_source,
-                           const std::string &import_path) {
+                           const std::string &import_path,
+                           const PgsConfig *pgs = nullptr,
+                           const std::string &project_root = "") {
     std::vector<std::string> candidates;
     // Determine the base directory for relative imports
     std::string base_dir = isDirectory(from_source)
                                ? from_source
                                : directoryName(from_source);
+
+    // Third-party import via .pgs config
+    if (pgs && isThirdPartyImport(import_path)) {
+        // Check replace directives first (vendor mapping)
+        auto rep_it = pgs->replaces.find(import_path);
+        if (rep_it != pgs->replaces.end()) {
+            std::string local = rep_it->second;
+            // Resolve relative to project root
+            if (!local.empty() && local[0] != '/') {
+                std::string pgs_dir = project_root.empty() ? base_dir : project_root;
+                local = pgs_dir + "/" + local;
+            }
+            candidates.push_back(local);
+            candidates.push_back(ensurePglSuffix(local));
+        }
+        // Also try vendor/ directory
+        if (!project_root.empty()) {
+            candidates.push_back(project_root + "/vendor/" + import_path);
+            candidates.push_back(ensurePglSuffix(project_root + "/vendor/" + import_path));
+        }
+    }
 
     if (import_path.rfind("stdlib/", 0) == 0) {
         candidates.push_back(ensurePglSuffix(import_path));
@@ -247,7 +356,9 @@ bool loadPackageRecursive(
     const std::string                         &source_path,
     std::map<std::string, LoadedPackage>      &loaded_packages,
     std::vector<std::string>                  &load_order,
-    std::string                               &error) {
+    std::string                               &error,
+    const PgsConfig *pgs = nullptr,
+    const std::string &project_root = "") {
     const std::string canonical_source = canonicalPath(source_path);
     if (canonical_source.empty()) {
         error = "can not read input file: " + source_path;
@@ -300,7 +411,7 @@ bool loadPackageRecursive(
     for (const auto &it : loaded.package->imports()) {
         const auto &imp = it.second;
         const std::string import_source =
-            findImportPath(canonical_source, imp->getPackage());
+            findImportPath(canonical_source, imp->getPackage(), pgs, project_root);
         if (import_source.empty()) {
             error = lexer::formatDiagnostic(
                 imp->location(),
@@ -308,7 +419,7 @@ bool loadPackageRecursive(
             return false;
         }
         if (!loadPackageRecursive(import_source, loaded_packages, load_order,
-                                  error)) {
+                                  error, pgs, project_root)) {
             return false;
         }
         loaded.import_alias_to_module[ imp->alias() ] =
@@ -330,7 +441,22 @@ bool buildProgram(const std::string &entry_path, llvm_backend::Program &program,
                   std::string &error) {
     std::map<std::string, LoadedPackage> loaded_packages;
     std::vector<std::string>             load_order;
-    if (!loadPackageRecursive(entry_path, loaded_packages, load_order, error)) {
+
+    // Look for pangu.pgs config file
+    PgsConfig pgs_config;
+    PgsConfig *pgs_ptr = nullptr;
+    std::string project_root;
+    std::string pgs_path = findPgsFile(entry_path);
+    if (!pgs_path.empty()) {
+        if (!parsePgsFile(pgs_path, pgs_config, error)) {
+            return false;
+        }
+        pgs_ptr = &pgs_config;
+        project_root = directoryName(pgs_path);
+    }
+
+    if (!loadPackageRecursive(entry_path, loaded_packages, load_order, error,
+                              pgs_ptr, project_root)) {
         return false;
     }
 

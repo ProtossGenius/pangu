@@ -1,0 +1,15 @@
+package main;
+
+import "github.com/ProtossGenius/json_pgl" as json;
+
+func main() {
+    data := "{\"name\": \"pangu\", \"version\": 42, \"lang\": \"pgl\"}";
+    name := json.json_get_string(data, "name");
+    println(name);
+    ver := json.json_get_number(data, "version");
+    println(ver);
+    lang := json.json_get_string(data, "lang");
+    println(lang);
+    missing := json.json_get_string(data, "missing");
+    println(missing);
+}

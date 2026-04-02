@@ -222,33 +222,55 @@ bool tryEscape(std::string &str, int flashPos, char lastChar) {
 }
 void PipeString::accept(IPipelineFactory *factory, PData &&data) {
     GET_CHAR(data);
+
+    // Resolve pending escape (previous char was a raw backslash from source)
+    if (_escape_pending) {
+        _escape_pending = false;
+        if (CAST_ESCAPE.count(c)) {
+            str += CAST_ESCAPE.at(c);
+            return;
+        }
+        // Not a simple escape — start multi-char escape (octal/hex).
+        // Store the backslash + char so getFlashPos/tryEscape can handle it.
+        _in_multi_escape = true;
+        str.push_back('\\');
+        str.push_back(c);
+        return;
+    }
+
     // Handle empty string: opening quote stored, next char is same quote
     if (str.size() == 1 && str[0] == c) {
         str = "";
         factory->packProduct();
         return;
     }
-    if (str.size() > 1) {
-        auto len = str.size();
-        if (str[ len - 1 ] == '\\') {
-            if (CAST_ESCAPE.count(c)) {
-                str.pop_back();
-                str += CAST_ESCAPE.at(c);
+
+    if (str.size() >= 1) {
+        // New escape sequence
+        if (c == '\\') {
+            _escape_pending = true;
+            return;
+        }
+
+        // Continue multi-char escape (octal \0xx, hex \xHH)
+        if (_in_multi_escape) {
+            auto flashPos = getFlashPos(str);
+            if (flashPos > 1 && tryEscape(str, flashPos, c)) {
                 return;
             }
-            str.push_back(c);
-            return;
+            _in_multi_escape = false;
+            // tryEscape returned false (escape finalized, c not consumed)
+            // or flashPos <= 1 (escape already resolved).  Fall through.
         }
-        auto flashPos = getFlashPos(str);
-        if (flashPos != -1 && tryEscape(str, flashPos, c)) {
-            return;
-        }
-        if (str[ 0 ] == c) {
+
+        // Closing quote
+        if (str[0] == c) {
             str = str.substr(1);
             factory->packProduct();
             return;
         }
     }
+
     str.push_back(c);
 }
 void PipeMacro::accept(IPipelineFactory *factory, PData &&data) {

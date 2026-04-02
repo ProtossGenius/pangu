@@ -52,7 +52,31 @@ LEXER_CLASS(PipeIdentifier, Identifier)
 LEXER_CLASS(PipeSpace, Space)
 LEXER_CLASS(PipeSymbol, Symbol)
 LEXER_CLASS(PipeComments, Comments)
-LEXER_CLASS(PipeString, String)
+// PipeString: manual class (not LEXER_CLASS) to support escape state tracking.
+// The flag-based approach prevents processed escape results (e.g. \\ → \) from
+// being re-interpreted as escape prefixes.
+class PipeString : public IPipeline {
+    bool _escape_pending  = false; // saw unprocessed backslash
+    bool _in_multi_escape = false; // in octal/hex multi-char escape
+  public:
+    void createProduct(IPipelineFactory *_factory) override {
+        _escape_pending  = false;
+        _in_multi_escape = false;
+        _factory->pushProduct(
+            std::unique_ptr<IProduct>((IProduct *) new DLex(ELexPipeline::String)));
+    }
+    void accept(IPipelineFactory *factory, PData &&data) override;
+};
+static Reg __reg_pipe_PipeString([]() {
+    LEX_PIPElINES[ELexPipeline::String] =
+        SinglePipelineGetter(new PipelinePtr(new PipeString()));
+    LEX_PIPE_ENUM[ELexPipeline::String] = "String";
+});
+inline bool   isString(DLex *lex) { return lex->typeId() == ELexPipeline::String; }
+inline DLex   makeString(const std::string &val) { return DLex(ELexPipeline::String, val); }
+inline DLex  *makeStringPtr(const std::string &val) {
+    return new DLex(ELexPipeline::String, val);
+}
 LEXER_CLASS(PipeMacro, Macro)
 LEXER_CLASS(PipeEof, Eof)
 

@@ -1,0 +1,5 @@
+module "test/vendor_test";
+
+require "github.com/ProtossGenius/json_pgl" v0.1.0;
+
+replace "github.com/ProtossGenius/json_pgl" => "../../vendor/github.com/ProtossGenius/json_pgl";
