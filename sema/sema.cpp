@@ -184,7 +184,7 @@ std::vector<std::string> builtinParamTypes(const std::string &name) {
     if (name == "str_array_set") return {"ptr", "int", "string"};
     if (name == "str_substr") return {"string", "int", "int"};
     if (name == "str_replace") return {"string", "string", "string"};
-    if (name == "find_pgl_files") return {"string", "int"};
+    if (name == "find_pgl_files") return {"string", "ptr"};
     if (name == "is_directory") return {"string"};
     // Pipeline builtins — use ptr for pipeline handle, int for others
     if (name == "pipeline_create") return {"int"};
