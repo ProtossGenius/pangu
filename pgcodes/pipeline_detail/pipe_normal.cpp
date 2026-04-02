@@ -57,6 +57,12 @@ void PipeNormal::on_START(IPipelineFactory *factory, PData &&data) {
     if (lexer::ELexPipeline::Space == type) {
         return;
     }
+    // Void expression: `;` as first token means empty expression (e.g. return;)
+    if (lexer::makeSymbol(";") == *lex) {
+        factory->undealData(std::move(data));
+        factory->packProduct();
+        return;
+    }
     if (lexer::makeIdentifier("return") == *lex) {
         topProduct->setStep(int(Steps::PRE_VIEW_NEXT));
         topProduct->setLocation(lex->location());

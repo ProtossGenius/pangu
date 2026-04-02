@@ -17,10 +17,5 @@
 6. git commit
 
 
-0. pangu 增加--help信息
-1. 现在不支持将char （‘0’） 隐式的转换成 数字，修复一下，增加对更多基础类型的支持，例如bool。
-2. 增加多pgl文件编译的支持
-3. 语法中增加管道式语法 参考 ./examples/bootstrap_lexer_pipeline.pgl, 
-        这一步先不急着编码，先调研使用这种方法是否足以自举,可以先试着用这种语法写几个例子，如果不可以的话，在原文件中补充欠缺的语法并用中文注释
-
-
+要先实现 @examples/bootstrap_lexer_pipeline.pgl  这里面的pipeline语法，然后再用pipeline语法实现自举。先补全语法再开始正式做自举
+copilot --resume=f48f3658-4956-47c9-ac0e-602eee5d3d4a

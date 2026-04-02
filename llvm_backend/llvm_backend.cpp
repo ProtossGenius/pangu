@@ -691,7 +691,14 @@ class ModuleBuilder {
             code->getLeft() != nullptr &&
             code->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER &&
             code->getLeft()->getValue() == "return") {
-            return emitExpression(code->getRight());
+            auto *rhs = code->getRight();
+            // void return: right is null or empty GCode
+            if (rhs == nullptr ||
+                (rhs->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                 rhs->getOper().empty() && rhs->getLeft() == nullptr)) {
+                return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+            }
+            return emitExpression(rhs);
         }
         return emitExpression(code);
     }
@@ -724,6 +731,10 @@ class ModuleBuilder {
         }
 
         const std::string oper = code->getOper();
+        // Empty GCode node (no value, no operator) — treat as 0
+        if (oper.empty()) {
+            return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+        }
         if (oper == ":=" || oper == "=") {
             return emitAssignment(code, oper == ":=");
         }
@@ -797,8 +808,13 @@ class ModuleBuilder {
         if (oper == "++" || oper == "--") {
             return emitIncDec(code, oper == "++");
         }
-        throw std::runtime_error("unsupported operator in LLVM backend: " +
-                                 oper);
+        {
+            auto loc = code->location();
+            throw std::runtime_error(
+                loc.file + ":" + std::to_string(loc.line) + ":" +
+                std::to_string(loc.column) +
+                ": unsupported operator in LLVM backend: " + oper);
+        }
     }
 
     llvm::Value *emitReturnExpressionTree(const pgcodes::GCode *code) {
@@ -901,7 +917,14 @@ class ModuleBuilder {
             if (code->getLeft() != nullptr &&
                 code->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER &&
                 code->getLeft()->getValue() == "return") {
-                return emitExpression(code->getRight());
+                auto *rhs = code->getRight();
+                // void return: right is null or empty GCode
+                if (rhs == nullptr ||
+                    (rhs->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                     rhs->getOper().empty() && rhs->getLeft() == nullptr)) {
+                    return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+                }
+                return emitExpression(rhs);
             }
             return emitParenOrCall(code);
         }

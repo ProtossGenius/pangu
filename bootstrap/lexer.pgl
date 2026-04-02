@@ -331,43 +331,4 @@ func tok_type_name(t int) string {
     return "UNKNOWN";
 }
 
-// ============================================================
-// Standalone test: tokenize a file and print all tokens
-// Usage: pangu run bootstrap/lexer.pgl <file.pgl>
-// ============================================================
-
-func main() {
-    if (args_count() < 2) {
-        println("Usage: pangu run bootstrap/lexer.pgl <file.pgl>");
-        exit(1);
-    }
-    filepath := args(1);
-    source := read_file(filepath);
-
-    tok_types := make_array(50000);
-    tok_values := make_str_array(50000);
-    tok_lines := make_array(50000);
-    tok_cols := make_array(50000);
-
-    count := tokenize(source, tok_types, tok_values, tok_lines, tok_cols);
-
-    i := 0;
-    while (i < count) {
-        t := array_get(tok_types, i);
-        v := str_array_get(tok_values, i);
-        ln := array_get(tok_lines, i);
-        cl := array_get(tok_cols, i);
-        print(int_to_str(ln));
-        print(":");
-        print(int_to_str(cl));
-        print("  ");
-        print(tok_type_name(t));
-        if (str_len(v) > 0) {
-            print("  ");
-            print(v);
-        }
-        println("");
-        i = i + 1;
-    }
-    println(str_concat("Total tokens: ", int_to_str(count)));
-}
+// Library — main is in parser.pgl or main.pgl
