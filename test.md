@@ -20,12 +20,9 @@
 要先实现 @examples/bootstrap_lexer_pipeline.pgl  这里面的pipeline语法，然后再用pipeline语法分析是否能够实现自举，补足缺失的语法之后再补充其他缺失的部分，最后开始正式做自举
 copilot --resume=f48f3658-4956-47c9-ac0e-602eee5d3d4a
 
-1. 继续下面的功能
-For-range 循环 + 闭包 —— 让代码更具表现力，提高信息密度。
-泛型 —— 替换自举代码中丑陋的并行数组模式。
-接口/Trait 代码生成 —— 实现多态（语法解析已完成）。
+1. examples/bootstrap_lexer_pipeline.pgl 这个编译会失败，看一下是不是有些语法功能还没有完成。
+    直接用pangu来编译的时候，出现pgassert_msg 错误，这个没有输出源码错误所在的行
+    用build/bootstrap 来编译的时候，报错 examples/bootstrap_lexer_pipeline.pgl:32: error: unexpected token '<' at start of statement
 
-2. 目前bootstrap 编译失败了，修复编译问题
-3. @examples/bootstrap_lexer_pipeline.pgl 重新定义了pipeline语法，和之前的语法有冲突之处以新的语法为准，例如在新的定义里去掉了Switcher等，只留下了pipeline这一种语法。修改语法描述文件，并实现它。
-    需要特别注意的是，和C语言不同，这个语言不支持<< 左移运算符。
-    首先检查它的语法是否严谨，如果不严谨就先补全语法上缺漏的地方，之后修改C++及pgl的代码，使该文件可编译。
+2. ==> 没有这个运算符，如果已经加了就删除掉，改为使用>>。
+3. (xx) >> pipeline_name  这个语法是用来新建pipeline的

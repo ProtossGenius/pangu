@@ -65,7 +65,13 @@ class IPipelineFactory : public IPipeline {
         std::cout << name() << " choicePipeline(" << _pipeline_name_map[ index ]
                   << ")" << std::endl;
 #endif
-        pgassert(_pipelines.count(index));
+        if (_pipelines.count(index) == 0) {
+            std::string idx_name = _pipeline_name_map.count(index)
+                ? _pipeline_name_map[index]
+                : std::to_string(index);
+            onFail("internal: unknown pipeline type '" + idx_name + "'");
+            return;
+        }
         _need_choise_pipeline = false;
         _pipeline_stack.push(_pipelines[ index ]());
         pgassert(_pipeline_stack.top().get()->isClean());

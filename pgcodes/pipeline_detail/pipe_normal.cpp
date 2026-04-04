@@ -155,7 +155,19 @@ void PipeNormal::on_PRE_VIEW_NEXT(IPipelineFactory *factory, PData &&data) {
         factory->packProduct();
         return;
     }
-    pgassert_msg(isSymbol(lex), lex->to_string());
+    if (!isSymbol(lex)) {
+        const auto &loc = lex->location();
+        std::string msg = loc.file + ":" + std::to_string(loc.line) + ":" +
+                          std::to_string(loc.column) +
+                          ": error: unexpected token '" + lex->get() +
+                          "', expected operator or symbol";
+        if (!loc.line_text.empty()) {
+            msg += "\n" + loc.line_text + "\n";
+            for (int i = 1; i < loc.column; ++i) msg += " ";
+            msg += "^";
+        }
+        throw std::runtime_error(msg);
+    }
     // High-precedence infix operators that extend a value expression
     // must not be cut short by stack packing.
     if ((str == "::" || str == ".") && topProduct->isValue() &&

@@ -20,92 +20,120 @@ func is_space(ch char) bool {
     return false;
 }
 
-func to_lower(ch char) char{
-  if (ch >= 'A' && ch <= 'Z') {
-    return ch - ('a' - 'A');
-  }
-
-  return ch;
-}
-func show_to_lower() {
-  var str = "HE11O";
-  str <> to_lower; // str == "he11o";
-  str <> to_upper; // str == "HE11O";
-  str <> to_lower (_alloc_size=str.size())>> upper_str; // >> 左侧是参数是用来调用下一个流的constructor方法的。
-  def upper_str string; // 注意，这是一个特殊的语法，因为upper_str 是在流中创建的，需要在流的 *后面* 声明一下。
-  // upper_str == "hello";
-  target <> $.filter(!is_digit); // target == HEO，可以通过 $. 来调用流程特有的方法。$.filter 接收一个lambda表达式. !is_digit 是一个语法糖。
-}
-
-type TokenType enum { KEYWORD, IDENT, NUMBER, STRING, SYMBOL }
-
-type Token struct {
-    text string;
-    kind TokenType;
-}
-type NumberPipe pipeline {
-   def in char;
-   def out Token;
-   var token string;
-   func run(c char) {
-     if (is_digit) {
-        c >> token;
-        return;
-     }
-     c >> in; // 这里是将c重新放回in的队列，这里支持数组，逻辑是从in中出来是什么顺序放回去就是什么顺序
-              // 加入in中的值是 ['1', '2', '3'>> (这里是in的输出端，下一个要被吐出的字符是'3')
-              // 如果是数组，例如 ['a', 'b', 'c'] >> in, 那么in之后的顺序是 ['1', '2', '3', 'c', 'b', 'a' >> (下一个要被吐出的字符是'a')
-     {token->text, TokenType::NUMBER -> kind} >> out; 
-     // 等效写法 {text: token, kine: TokenType::NUMBER} >> out; 
-     // 等效写法 {text=token, kine=TokenType::NUMBER} >> out; 
-     if (c == EOF) end();
-   }
-
-   func resize() { // 在调用end的时候会隐式调用，也支持显式调用
-     token.resize();
-   }
-}
-
-type StringPipe pipeline {
-  def in char;
-  def out Token;
-  var token string;
-  func run(c char) {
-    // logic ...
-    if (c == EOF && !token.end_with('"')) {
-      // 这里展示管道内变量的用法，注意 (path) >> {+path=path} Tokenize ==> io.StdOut;
-      // 里面的 {+path=xxx} 这里就是定义了一个在整个流程中都可以用的变量，同样可以使用 {-path}的方法来去掉这个管道变量
-      // 在编译时检查使用该管道变量的pipeline的流程中是否定义了对应的管道变量，及该管道变量是否仍然有效。
-      panic("in file " + $.path + " not exist another '"', string parse fail.");
+func to_lower(ch char) char {
+    if (ch >= 'A' && ch <= 'Z') {
+        return ch + 32;
     }
-  }
+    return ch;
 }
 
-type Tokenize pipeline {
-   def in char; // in 是一个char类型的读入流
-   def out Token; // out 是一个Token类型的输出流
-  
-   func constructor(path: string) { // pipeline的创建方法，只能有一个同名函数。
-     return iopp.FileIn; // 返回值是一个pipeline,pipeline的返回值是 in 对应类型的。
-   }
-   const set<string> keywords = {"type", "enums"};
-   func run(c char) {
-         c >> [ // 会按照下面的顺序依次检查是否有问题，命中哪个流程就进入哪个流程，都没命中就会执行下面的语句。
-          is_digit -> NumberPipe,
-          is_alpha -> IdentPipe,
-          keywords::contains -> KeywordPipe,
-          is_symbol -> SymbolPipe,
-          '"' -> StringPipe,
-         ] >> out;
-        // not catch:
-        if (c == EOF) end();
-   }
-}
-func main() {
-    if (args_count() < 2) {
-        println("usage: lexer <file.pgl>");
-        exit(1);
+func to_upper(ch char) char {
+    if (ch >= 'a' && ch <= 'z') {
+        return ch - 32;
     }
-    path := args(1);
-    (path) >> {+path=path} Tokenize ==> io.StdOut;
+    return ch;
 }
+
+// ── 已实现的语法示例 ──
+
+func show_transforms() {
+    str := "HE11O";
+    str <> to_lower;
+    println(str);
+    str <> to_upper;
+    println(str);
+}
+
+// ── dispatch 语法示例：使用 >> [...] 进行模式匹配分发 ──
+
+func handle_alpha(ch char) int { return 1; }
+func handle_digit(ch char) int { return 2; }
+
+func tokenize(input string) int {
+    count := 0;
+    buf := "";
+    kind := 0;
+
+    for ch in input {
+        if (kind == 0) {
+            if (is_space(ch)) { continue; }
+            kind = ch >> [is_alpha -> handle_alpha, is_digit -> handle_digit];
+            if (kind > 0) { ch >> buf; }
+            continue;
+        }
+
+        stays := 0;
+        if (kind == 1 && (is_alpha(ch) || is_digit(ch))) { stays = 1; }
+        if (kind == 2 && is_digit(ch)) { stays = 1; }
+
+        if (stays == 1) {
+            ch >> buf;
+        } else {
+            if (kind == 1) { print("ID:"); }
+            if (kind == 2) { print("NUM:"); }
+            println(buf);
+            count = count + 1;
+            buf = "";
+            kind = 0;
+
+            if (!is_space(ch)) {
+                kind = ch >> [is_alpha -> handle_alpha, is_digit -> handle_digit];
+                if (kind > 0) { ch >> buf; }
+            }
+        }
+    }
+    if (kind > 0) {
+        if (kind == 1) { print("ID:"); }
+        if (kind == 2) { print("NUM:"); }
+        println(buf);
+        count = count + 1;
+    }
+    return count;
+}
+
+func main() int {
+    show_transforms();
+    count := tokenize("func main 42 hello123");
+    print("Total: ");
+    println(count);
+    return 0;
+}
+
+// ============================================================
+// 以下是计划中的pipeline语法，目前尚未完全实现
+// ============================================================
+
+// --- 计划: pipeline body 内联语法 ---
+// type NumberPipe pipeline {
+//    def in char;              // 定义输入流类型
+//    def out Token;            // 定义输出流类型
+//    var token string;         // pipeline 内部状态变量
+//    func run(c char) {        // 自动入口函数
+//      if (is_digit(c)) {
+//         c >> token;          // 追加字符到 token buffer
+//         return;
+//      }
+//      c >> in;                // 将字符放回输入队列
+//      {text: token, kind: TokenType::NUMBER} >> out;  // 构造并输出 Token
+//      if (c == EOF) end();    // 结束信号
+//    }
+// }
+
+// --- 计划: pipeline 创建语法 ---
+// (path) >> Tokenize ==> io.StdOut;
+// 语法说明: (xx) >> pipeline_name 创建新的 pipeline 实例
+// ==> 将一个 pipeline 的输出连接到下一个 pipeline 的输入
+
+// --- 计划: pipeline 变量绑定 ---
+// (path) >> {+path=path} Tokenize ==> io.StdOut;
+// {+var=expr} 在pipeline流程中绑定变量, {-var} 移除变量
+// $.var 访问流程变量
+
+// --- 计划: <> 高级用法 ---
+// str <> to_lower (_alloc_size=str.size())>> upper_str;
+// def upper_str string;   // 流中创建的变量需要在后面声明
+// target <> $.filter(!is_digit);  // $.method() 调用流程方法
+
+// --- 计划: const 集合 ---
+// const set<string> keywords = {"type", "enums"};
+// keywords::contains -> KeywordPipe  // 集合方法作为 dispatch 谓词
