@@ -158,6 +158,17 @@ void PipeInterface::accept(IPipelineFactory *factory, PData &&data) {
         return;
     }
     case int(InterfaceStep::READ_BODY): {
+        // Parse method signatures via PipeFunc delegation
+        if (makeIdentifier("func") == *lex) {
+            factory->setNextPacker([](auto *factory, auto pro) {
+                auto *iface = static_cast<GInterface *>(factory->getTopProduct());
+                auto ptr = PFunction(static_cast<GFunction *>(pro.release()));
+                iface->addMethod(std::move(ptr));
+            });
+            factory->undealData(std::move(data));
+            factory->choicePipeline(EGrammer::Func);
+            return;
+        }
         if (makeSymbol("{") == *lex) {
             topProduct->setBraceDepth(topProduct->getBraceDepth() + 1);
             topProduct->addBodyToken();
@@ -919,6 +930,23 @@ void PipeFunc::accept(IPipelineFactory *factory, PData &&data) {
             topProduct->setStep(int(FuncStep::READ_CODE));
             return;
         }
+        // Interface method declaration: func name(params);
+        if (makeSymbol(";") == *lex) {
+            factory->packProduct();
+            return;
+        }
+        // Simple return type: just an identifier (e.g., int, string, MyStruct)
+        if (lexer::ELexPipeline::Identifier == type) {
+            auto *rv = new GVarDef();
+            rv->setName("return");
+            rv->getType()->read(str);
+            auto rvc = new GVarDefContainer();
+            rvc->addVariable(PVarDef(rv));
+            topProduct->result.swap(*rvc);
+            delete rvc;
+            topProduct->setStep(int(FuncStep::READ_CODE));
+            return;
+        }
         factory->undealData(std::move(data));
         factory->choicePipeline(EGrammer::VarArray);
         auto ptr = new GVarDefContainer();
@@ -929,6 +957,11 @@ void PipeFunc::accept(IPipelineFactory *factory, PData &&data) {
         return;
     }
     case int(FuncStep::READ_CODE): {
+        // Interface method declaration: func name(params) ret_type;
+        if (makeSymbol(";") == *lex) {
+            factory->packProduct();
+            return;
+        }
         factory->undealData(std::move(data));
         factory->choicePipeline(EGrammer::CodeBlock);
         factory->pushProduct(

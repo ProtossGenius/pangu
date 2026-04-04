@@ -328,6 +328,11 @@ class ProgramChecker {
                 if (genum != nullptr) {
                     _enum_names.insert(genum->name());
                 }
+                const auto *giface =
+                    dynamic_cast<const grammer::GInterface *>(it.second.get());
+                if (giface != nullptr) {
+                    _interface_names.insert(giface->name());
+                }
             }
         }
     }
@@ -916,6 +921,11 @@ class ProgramChecker {
                 checkCallArgs(args_code);
                 return;
             }
+            // Allow interface wrapping: InterfaceName(concrete_value)
+            if (_interface_names.count(name) != 0) {
+                checkCallArgs(args_code);
+                return;
+            }
             emitError(loc, "undefined function '" + name + "'", name_width);
             checkCallArgs(args_code);
             return;
@@ -1032,6 +1042,13 @@ class ProgramChecker {
         const auto &loc = alias_node->location();
         // Highlight width covers "alias.callee"
         size_t hw = alias.size() + 1 + callee.size();
+
+        // If alias is a local variable, it might be an interface method call
+        if (_defined_vars.count(alias) != 0) {
+            checkCallArgs(args_code);
+            return;
+        }
+
         if (_current_imports == nullptr ||
             _current_imports->count(alias) == 0) {
             emitError(loc, "undefined import alias '" + alias + "'", alias.size());
@@ -1192,6 +1209,7 @@ class ProgramChecker {
     std::map<std::string, std::string>          _defined_vars;   // name → type
     std::set<std::string>                       _struct_names;
     std::set<std::string>                       _enum_names;
+    std::set<std::string>                       _interface_names;
     std::set<std::string>                       _generic_type_params; // active type params
     StructFieldMap                              _struct_fields;
 };

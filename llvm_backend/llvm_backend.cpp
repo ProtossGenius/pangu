@@ -96,10 +96,13 @@ class ModuleBuilder {
         declareArgcArgvGlobals();
         declareStructTypes();
         declareEnumTypes();
+        declareInterfaceTypes();
+        generateVTables();
         collectPipelineMetadata();
         emitTypeMetadata();
         declareRuntimeHelpers();
         declareFunctions();
+        patchVTables();
         defineFunctions();
         emitPipelineFunctions();
         emitJitDebugRegistration();
@@ -149,6 +152,24 @@ class ModuleBuilder {
         std::string name;         // pipeline name, e.g., "CharToToken"
         std::string module_id;
         std::vector<PipelineWorkerEntry> workers;
+    };
+
+    // Interface method signature for vtable generation
+    struct InterfaceMethodInfo {
+        std::string name;
+        std::vector<std::string> param_types; // first param is "self" (ptr to concrete type)
+        std::string return_type;
+    };
+    struct InterfaceInfo {
+        std::string name;
+        std::vector<InterfaceMethodInfo> methods;
+        llvm::StructType *vtable_type = nullptr; // struct of function pointers
+    };
+    // VTable instance for a concrete type implementing an interface
+    struct VTableInfo {
+        std::string type_name;
+        std::string interface_name;
+        llvm::GlobalVariable *vtable_global = nullptr;
     };
 
     void declareArgcArgvGlobals() {
@@ -414,6 +435,184 @@ class ModuleBuilder {
         }
     }
 
+    void declareInterfaceTypes() {
+        for (const auto &unit : _program.packages) {
+            for (const auto &it : unit.package->type_defs.items()) {
+                const auto *giface =
+                    dynamic_cast<const grammer::GInterface *>(it.second.get());
+                if (giface == nullptr) continue;
+
+                InterfaceInfo info;
+                info.name = giface->name();
+
+                // Build vtable struct type: { func_ptr_0, func_ptr_1, ... }
+                std::vector<llvm::Type *> vtable_fields;
+                for (const auto &method : giface->methods()) {
+                    InterfaceMethodInfo minfo;
+                    minfo.name = method->name();
+                    for (const auto &pname : method->params.orderedNames()) {
+                        const auto *var = method->params.getVariable(pname);
+                        minfo.param_types.push_back(
+                            var && var->getType() ? var->getType()->name() : "int");
+                    }
+                    if (method->result.size() == 1) {
+                        const auto *rv = method->result.getVariable(
+                            method->result.orderedNames().front());
+                        minfo.return_type =
+                            rv && rv->getType() ? rv->getType()->name() : "int";
+                    } else {
+                        minfo.return_type = "int";
+                    }
+                    info.methods.push_back(std::move(minfo));
+                    vtable_fields.push_back(_builder.getPtrTy());
+                }
+
+                info.vtable_type = llvm::StructType::create(
+                    *_context, vtable_fields,
+                    "__vtable_" + giface->name());
+                _interface_types[giface->name()] = std::move(info);
+            }
+        }
+    }
+
+    // Generate vtable globals for impl blocks that target interfaces
+    void generateVTables() {
+        for (const auto &unit : _program.packages) {
+            for (const auto &impl_it : unit.package->impls.items()) {
+                const auto *impl = impl_it.second.get();
+                const std::string &type_name = impl->name();
+                const std::string &base_name = impl->base();
+
+                // Check if base is a known interface
+                auto iface_it = _interface_types.find(base_name);
+                if (iface_it == _interface_types.end()) continue;
+
+                const auto &iface = iface_it->second;
+                std::string vtkey = type_name + ":" + base_name;
+
+                // Build array of function pointers matching interface method order
+                // Methods are stored as TypeName.method_name in the package
+                std::vector<llvm::Constant *> method_ptrs;
+                for (const auto &minfo : iface.methods) {
+                    std::string mangled = type_name + "." + minfo.name;
+                    // Look up the function in declared functions
+                    std::string func_key = functionKey(unit.module_id, mangled);
+                    // We haven't declared functions yet, so just create forward
+                    // declarations here. The actual function will be defined later.
+                    // Store the method name for later resolution
+                    method_ptrs.push_back(
+                        llvm::ConstantPointerNull::get(_builder.getPtrTy()));
+                }
+
+                auto *vtable_val = llvm::ConstantStruct::get(
+                    iface.vtable_type, method_ptrs);
+                auto *vtable_global = new llvm::GlobalVariable(
+                    *_module, iface.vtable_type, true,
+                    llvm::GlobalValue::InternalLinkage,
+                    vtable_val,
+                    "__vtable_" + type_name + "_" + base_name);
+
+                VTableInfo vt;
+                vt.type_name = type_name;
+                vt.interface_name = base_name;
+                vt.vtable_global = vtable_global;
+                _vtables[vtkey] = std::move(vt);
+            }
+        }
+    }
+
+    // Patch vtable entries after functions are declared.
+    // For each vtable entry, generate a wrapper function that takes (ptr self, ...)
+    // and loads the concrete struct from the pointer before calling the impl method.
+    void patchVTables() {
+        for (auto &[key, vt] : _vtables) {
+            auto iface_it = _interface_types.find(vt.interface_name);
+            if (iface_it == _interface_types.end()) continue;
+            const auto &iface = iface_it->second;
+
+            std::vector<llvm::Constant *> method_ptrs;
+            for (const auto &minfo : iface.methods) {
+                std::string mangled = vt.type_name + "." + minfo.name;
+                llvm::Function *func = nullptr;
+                // Find the actual impl function
+                for (auto &[fkey, fval] : _declared_functions) {
+                    if (fkey.size() >= mangled.size() &&
+                        fkey.substr(fkey.size() - mangled.size()) == mangled) {
+                        func = fval;
+                        break;
+                    }
+                }
+                if (!func) func = _module->getFunction(mangled);
+
+                if (func) {
+                    // Generate wrapper: takes (ptr self, extra_args...) → calls func(loaded_struct, extra_args...)
+                    auto *wrapper = generateVTableWrapper(func, vt.type_name, minfo);
+                    method_ptrs.push_back(wrapper);
+                } else {
+                    method_ptrs.push_back(
+                        llvm::ConstantPointerNull::get(_builder.getPtrTy()));
+                }
+            }
+
+            auto *vtable_val = llvm::ConstantStruct::get(
+                iface.vtable_type, method_ptrs);
+            vt.vtable_global->setInitializer(vtable_val);
+        }
+    }
+
+    // Generate a vtable wrapper function that takes (ptr self, extra_params...)
+    // and calls the actual impl method with (loaded_struct, extra_params...)
+    llvm::Function *generateVTableWrapper(llvm::Function *impl_func,
+                                           const std::string &type_name,
+                                           const InterfaceMethodInfo &minfo) {
+        auto *ptr_ty = _builder.getPtrTy();
+        // Wrapper params: (ptr self, remaining params from impl_func after first)
+        std::vector<llvm::Type *> wrapper_params;
+        wrapper_params.push_back(ptr_ty); // ptr self
+        for (unsigned i = 1; i < impl_func->arg_size(); ++i) {
+            wrapper_params.push_back(impl_func->getFunctionType()->getParamType(i));
+        }
+        auto *ret_ty = impl_func->getReturnType();
+        auto *wrapper_type = llvm::FunctionType::get(ret_ty, wrapper_params, false);
+        auto *wrapper = llvm::Function::Create(
+            wrapper_type, llvm::Function::InternalLinkage,
+            "__vtable_wrap_" + type_name + "_" + minfo.name, *_module);
+
+        auto *saved_bb = _builder.GetInsertBlock();
+        auto *entry = llvm::BasicBlock::Create(*_context, "entry", wrapper);
+        _builder.SetInsertPoint(entry);
+        clearDebugLocation();
+
+        // Load struct from self pointer
+        auto st_it = _struct_types.find(type_name);
+        std::vector<llvm::Value *> call_args;
+        if (st_it != _struct_types.end() &&
+            impl_func->arg_size() > 0 &&
+            impl_func->getFunctionType()->getParamType(0) == st_it->second.llvm_type) {
+            // First param is a struct by value — load from ptr
+            auto *loaded = _builder.CreateLoad(
+                st_it->second.llvm_type, wrapper->getArg(0), "self");
+            call_args.push_back(loaded);
+        } else {
+            // First param is ptr — pass through
+            call_args.push_back(wrapper->getArg(0));
+        }
+        // Pass remaining args
+        for (unsigned i = 1; i < wrapper->arg_size(); ++i) {
+            call_args.push_back(wrapper->getArg(i));
+        }
+
+        auto *result = _builder.CreateCall(impl_func, call_args);
+        if (ret_ty->isVoidTy()) {
+            _builder.CreateRetVoid();
+        } else {
+            _builder.CreateRet(result);
+        }
+
+        if (saved_bb) _builder.SetInsertPoint(saved_bb);
+        return wrapper;
+    }
+
     // Collect pipeline metadata: match pipeline type_defs with worker impls
     // and resolve worker IDs from enum types.
     void collectPipelineMetadata() {
@@ -639,6 +838,10 @@ class ModuleBuilder {
         }
         if (_enum_types.count(name)) {
             return _builder.getInt32Ty();
+        }
+        // Interface types are fat pointers: { ptr data, ptr vtable }
+        if (_interface_types.count(name)) {
+            return _builder.getPtrTy();
         }
         throw std::runtime_error("unsupported type: " + name);
     }
@@ -2936,6 +3139,12 @@ class ModuleBuilder {
     llvm::Value *emitCall(llvm::Function *callee_function,
                           const std::string &callee,
                           const pgcodes::GCode *args_code) {
+        // Interface value creation: InterfaceName(concrete_value)
+        auto iface_it = _interface_types.find(callee);
+        if (iface_it != _interface_types.end()) {
+            return emitInterfaceWrap(callee, args_code);
+        }
+
         if (callee == "println") {
             auto args = emitCallArgs(args_code);
             if (args.size() != 1) {
@@ -3347,7 +3556,172 @@ class ModuleBuilder {
         if (callee_function != nullptr) {
             return emitCall(callee_function, mangled, args_code);
         }
+        // Try as an interface method dispatch: var.method(args)
+        auto var_it = _variables.find(module_alias);
+        if (var_it != _variables.end()) {
+            return emitInterfaceMethodCall(var_it->second, module_alias,
+                                           callee, args_code);
+        }
         throw std::runtime_error("unsupported qualified call: " + mangled);
+    }
+
+    // Dispatch method call through interface vtable
+    // Interface value layout: { ptr data, ptr vtable }
+    llvm::Value *emitInterfaceMethodCall(llvm::AllocaInst *iface_var,
+                                          const std::string &var_name,
+                                          const std::string &method_name,
+                                          const pgcodes::GCode *args_code) {
+        auto *ptr_ty = _builder.getPtrTy();
+        auto *i32_ty = _builder.getInt32Ty();
+
+        // Load the interface fat pointer (a ptr to {data, vtable})
+        auto *iface_ptr = _builder.CreateLoad(
+            ptr_ty, iface_var, var_name + ".iface");
+
+        // Load data pointer at offset 0
+        auto *data_ptr = _builder.CreateLoad(
+            ptr_ty, iface_ptr, var_name + ".data");
+
+        // Load vtable pointer at offset 8
+        auto *vtable_gep = _builder.CreateGEP(
+            _builder.getInt8Ty(), iface_ptr,
+            {llvm::ConstantInt::get(i32_ty, 8)}, "vtable_gep");
+        auto *vtable_cast = _builder.CreateBitCast(
+            vtable_gep, llvm::PointerType::get(ptr_ty, 0));
+        auto *vtable_ptr = _builder.CreateLoad(
+            ptr_ty, vtable_cast, var_name + ".vtable");
+
+        // Find the method index in the interface
+        int method_idx = -1;
+        std::string iface_name;
+        // Search all interfaces for this method
+        for (const auto &[name, info] : _interface_types) {
+            for (size_t i = 0; i < info.methods.size(); ++i) {
+                if (info.methods[i].name == method_name) {
+                    method_idx = (int)i;
+                    iface_name = name;
+                    break;
+                }
+            }
+            if (method_idx >= 0) break;
+        }
+        if (method_idx < 0) {
+            throw std::runtime_error(
+                "method '" + method_name + "' not found in any interface");
+        }
+
+        const auto &minfo = _interface_types[iface_name].methods[method_idx];
+
+        // Load function pointer from vtable at index
+        auto *func_gep = _builder.CreateGEP(
+            ptr_ty, vtable_ptr,
+            {llvm::ConstantInt::get(i32_ty, method_idx)}, "method_ptr_gep");
+        auto *func_ptr = _builder.CreateLoad(
+            ptr_ty, func_gep, method_name + ".fn");
+
+        // Build args: data_ptr as first arg (self), then user args
+        std::vector<llvm::Value *> call_args;
+        call_args.push_back(data_ptr);
+        auto user_args = emitCallArgs(args_code);
+        call_args.insert(call_args.end(), user_args.begin(), user_args.end());
+
+        // Build function type
+        std::vector<llvm::Type *> param_types;
+        for (auto *a : call_args) param_types.push_back(a->getType());
+
+        llvm::Type *ret_ty = resolveTypeName(minfo.return_type);
+        auto *ftype = llvm::FunctionType::get(ret_ty, param_types, false);
+
+        return _builder.CreateCall(ftype, func_ptr, call_args,
+                                    method_name + ".dispatch");
+    }
+
+    // Create an interface fat pointer: { ptr data, ptr vtable }
+    // Usage: InterfaceName(concrete_value)
+    llvm::Value *emitInterfaceWrap(const std::string &iface_name,
+                                    const pgcodes::GCode *args_code) {
+        auto *ptr_ty = _builder.getPtrTy();
+        auto *i32_ty = _builder.getInt32Ty();
+        auto *i64_ty = _builder.getInt64Ty();
+
+        auto args = emitCallArgs(args_code);
+        if (args.empty()) {
+            throw std::runtime_error(
+                "interface wrap requires at least one argument");
+        }
+        auto *data_val = args[0];
+
+        // Determine the concrete type name from the second arg or infer
+        std::string type_name;
+        if (args.size() >= 2 && args[1]->getType()->isPointerTy()) {
+            // Second arg is a string with type name — not practical
+            // Instead, look at the data value's type to find the concrete type
+        }
+
+        // Infer concrete type from the data value
+        llvm::Type *data_type = data_val->getType();
+        for (const auto &[sname, sinfo] : _struct_types) {
+            if (sinfo.llvm_type == data_type) {
+                type_name = sname;
+                break;
+            }
+        }
+        if (type_name.empty()) {
+            // If not a known struct, check vtables with any implementing type
+            for (const auto &[key, vt] : _vtables) {
+                if (vt.interface_name == iface_name) {
+                    type_name = vt.type_name;
+                    break;
+                }
+            }
+        }
+        if (type_name.empty()) {
+            throw std::runtime_error(
+                "cannot determine concrete type for interface '" +
+                iface_name + "'");
+        }
+
+        // Find vtable for this type+interface combination
+        std::string vtkey = type_name + ":" + iface_name;
+        auto vt_it = _vtables.find(vtkey);
+        if (vt_it == _vtables.end()) {
+            throw std::runtime_error(
+                "type '" + type_name + "' does not implement interface '" +
+                iface_name + "'");
+        }
+
+        // Allocate fat pointer: { ptr data, ptr vtable }
+        auto *fat_ptr = _builder.CreateCall(
+            ensureMalloc(),
+            {llvm::ConstantInt::get(i64_ty, 16)}, "iface");
+
+        // If data is a struct (by value), we need to copy it to heap
+        llvm::Value *data_ptr;
+        if (data_type->isStructTy()) {
+            // Allocate space for the struct and store it
+            auto *struct_mem = _builder.CreateCall(
+                ensureMalloc(),
+                {llvm::ConstantInt::get(
+                    i64_ty, _module->getDataLayout().getTypeAllocSize(data_type))},
+                "struct_copy");
+            _builder.CreateStore(data_val, struct_mem);
+            data_ptr = struct_mem;
+        } else {
+            data_ptr = data_val;
+        }
+
+        // Store data pointer
+        _builder.CreateStore(data_ptr, fat_ptr);
+
+        // Store vtable pointer at offset 8
+        auto *vtable_slot = _builder.CreateGEP(
+            _builder.getInt8Ty(), fat_ptr,
+            {llvm::ConstantInt::get(i32_ty, 8)}, "vtable_slot");
+        auto *vtable_cast = _builder.CreateBitCast(
+            vtable_slot, llvm::PointerType::get(ptr_ty, 0));
+        _builder.CreateStore(vt_it->second.vtable_global, vtable_cast);
+
+        return fat_ptr;
     }
 
     llvm::Value *emitParenOrCall(const pgcodes::GCode *code) {
@@ -3983,6 +4357,9 @@ class ModuleBuilder {
     std::map<std::string, StructInfo>          _struct_types;
     std::map<std::string, EnumInfo>            _enum_types;
     std::map<std::string, PipelineInfo>        _pipeline_types;
+    std::map<std::string, InterfaceInfo>       _interface_types;
+    // key: "TypeName:InterfaceName" → vtable global
+    std::map<std::string, VTableInfo>          _vtables;
     std::vector<LoopContext>                    _loop_stack;
     std::string                                _current_module_id;
     const std::map<std::string, std::string>  *_current_imports = nullptr;

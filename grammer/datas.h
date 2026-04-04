@@ -295,11 +295,15 @@ class GInterface : public GTypeDef {
     void addBodyToken() { ++_body_token_count; }
     void setBraceDepth(int depth) { _brace_depth = depth; }
     int  getBraceDepth() const { return _brace_depth; }
+    void addMethod(PFunction &&func) { _methods.push_back(std::move(func)); }
+    std::vector<PFunction> &methods() { return _methods; }
+    const std::vector<PFunction> &methods() const { return _methods; }
     std::string to_string() override;
 
   private:
     size_t _body_token_count = 0;
     int    _brace_depth      = 0;
+    std::vector<PFunction> _methods;
 };
 class GIgnore : public IGrammer {
   public:
