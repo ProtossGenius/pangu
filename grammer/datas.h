@@ -321,6 +321,9 @@ class GFuncDef : public IGrammer {
     bool                hasBody() const { return _body_token_count > 0; }
     void                setLocation(const lexer::SourceLocation &loc) { _location = loc; }
     const lexer::SourceLocation &location() const { return _location; }
+    void addTypeParam(const std::string &name) { _type_params.push_back(name); }
+    const std::vector<std::string> &typeParams() const { return _type_params; }
+    bool isGeneric() const { return !_type_params.empty(); }
     virtual std::string to_string() override;
     GVarDefContainer    params;
     GVarDefContainer    result;
@@ -330,6 +333,7 @@ class GFuncDef : public IGrammer {
     size_t      _body_token_count = 0;
     int         _brace_depth      = 0;
     lexer::SourceLocation _location;
+    std::vector<std::string> _type_params;
 };
 using pgcodes::GCode;
 using pgcodes::PCode;

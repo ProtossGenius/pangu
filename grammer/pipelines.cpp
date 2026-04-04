@@ -836,6 +836,7 @@ void PipeTypeFunc::accept(IPipelineFactory *factory, PData &&data) {
 enum class FuncStep {
     START = 0,
     READ_NAME,
+    READ_TYPE_PARAMS,
     READ_PARAM,
     READ_RETURN,
     READ_CODE,
@@ -870,6 +871,34 @@ void PipeFunc::accept(IPipelineFactory *factory, PData &&data) {
                             lex->to_string());
         }
         topProduct->setName(str);
+        topProduct->setStep(int(FuncStep::READ_TYPE_PARAMS));
+        return;
+    }
+
+    case int(FuncStep::READ_TYPE_PARAMS): {
+        if (str == "[") {
+            // Enter type parameter section
+            // Use brace_depth as a flag to track that we're inside []
+            topProduct->setBraceDepth(1);
+            return;
+        }
+        if (topProduct->getBraceDepth() == 1) {
+            // Inside type parameter brackets
+            if (str == "]") {
+                topProduct->setBraceDepth(0);
+                topProduct->setStep(int(FuncStep::READ_PARAM));
+                return;
+            }
+            if (str == ",") return;
+            if (lexer::isIdentifier(lex)) {
+                topProduct->addTypeParam(str);
+                return;
+            }
+            factory->onFail("unexpected token in type parameters: " +
+                            lex->to_string());
+        }
+        // No '[' seen — no type params, forward to READ_PARAM
+        factory->undealData(std::move(data));
         topProduct->setStep(int(FuncStep::READ_PARAM));
         return;
     }

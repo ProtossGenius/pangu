@@ -622,12 +622,17 @@ class ModuleBuilder {
     }
 
     llvm::Type *resolveTypeName(const std::string &name) {
+        // Check type parameter substitution map first (for generics)
+        auto tp_it = _type_param_map.find(name);
+        if (tp_it != _type_param_map.end()) {
+            return resolveTypeName(tp_it->second);
+        }
         if (name == "int")    return _builder.getInt32Ty();
         if (name == "char")   return _builder.getInt32Ty();
         if (name == "bool")   return _builder.getInt32Ty();
         if (name == "string") return _builder.getPtrTy();
         if (name == "ptr")    return _builder.getPtrTy();
-        if (name == "func")   return _builder.getPtrTy();  // function pointer
+        if (name == "func")   return _builder.getPtrTy();
         auto it = _struct_types.find(name);
         if (it != _struct_types.end()) {
             return it->second.llvm_type;
@@ -642,6 +647,12 @@ class ModuleBuilder {
         for (const auto &unit : _program.packages) {
             for (const auto &it : unit.package->functions.items()) {
                 const auto *function = it.second.get();
+                // Skip generic functions — they're instantiated on demand
+                if (function->isGeneric()) {
+                    std::string key = functionKey(unit.module_id, function->name());
+                    _generic_templates[key] = {function, &unit};
+                    continue;
+                }
                 auto       *type     = makeFunctionType(*function);
                 _declared_functions[ functionKey(unit.module_id, function->name()) ] =
                     llvm::Function::Create(
@@ -656,6 +667,7 @@ class ModuleBuilder {
     void defineFunctions() {
         for (const auto &unit : _program.packages) {
             for (const auto &it : unit.package->functions.items()) {
+                if (it.second->isGeneric()) continue;
                 defineFunction(unit, *it.second);
             }
         }
@@ -2808,6 +2820,119 @@ class ModuleBuilder {
         return it->second;
     }
 
+    // Map LLVM type back to a type name string for generic mangling
+    std::string llvmTypeToName(llvm::Type *ty) {
+        if (ty->isIntegerTy(32)) return "int";
+        if (ty->isPointerTy())   return "ptr";
+        if (ty->isIntegerTy(64)) return "i64";
+        if (ty->isIntegerTy(1))  return "bool";
+        return "unknown";
+    }
+
+    // Try to resolve a generic function call by monomorphizing.
+    // Returns nullptr if callee is not a generic function.
+    llvm::Function *resolveGenericCall(const std::string &callee,
+                                       const std::vector<llvm::Value *> &args,
+                                       std::vector<std::string> explicit_types = {}) {
+        // Look up generic template
+        std::string key = functionKey(_current_module_id, callee);
+        auto tmpl_it = _generic_templates.find(key);
+        if (tmpl_it == _generic_templates.end()) return nullptr;
+
+        const auto &tmpl = tmpl_it->second;
+        const auto &type_params = tmpl.function->typeParams();
+
+        // Infer concrete types from arguments or use explicit types
+        std::map<std::string, std::string> type_map;
+        if (!explicit_types.empty()) {
+            for (size_t i = 0; i < type_params.size() && i < explicit_types.size(); ++i) {
+                type_map[type_params[i]] = explicit_types[i];
+            }
+        } else {
+            const auto &param_names = tmpl.function->params.orderedNames();
+            for (size_t i = 0; i < param_names.size() && i < args.size(); ++i) {
+                const auto *var = tmpl.function->params.getVariable(param_names[i]);
+                const std::string &param_type = var->getType()->name();
+                for (const auto &tp : type_params) {
+                    if (param_type == tp) {
+                        type_map[tp] = llvmTypeToName(args[i]->getType());
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Ensure all type params are resolved
+        for (const auto &tp : type_params) {
+            if (type_map.find(tp) == type_map.end()) {
+                throw std::runtime_error(
+                    "cannot infer type parameter '" + tp + "' for generic function '" +
+                    callee + "'");
+            }
+        }
+
+        // Build mangled name: func__int__string
+        std::string mangled = callee;
+        for (const auto &tp : type_params) {
+            mangled += "__" + type_map[tp];
+        }
+        std::string mangled_key = functionKey(_current_module_id, mangled);
+
+        // Check if already instantiated
+        auto existing = _declared_functions.find(mangled_key);
+        if (existing != _declared_functions.end()) {
+            return existing->second;
+        }
+
+        // Monomorphize: emit specialized version with type params bound
+        auto saved_type_map = _type_param_map;
+        _type_param_map = type_map;
+
+        // Create function type with concrete types
+        auto *func_type = makeFunctionType(*tmpl.function);
+        auto *spec_func = llvm::Function::Create(
+            func_type, llvm::Function::InternalLinkage, mangled,
+            _module.get());
+        _declared_functions[mangled_key] = spec_func;
+
+        // Save and restore compilation context
+        auto *saved_function   = _current_function;
+        auto  saved_variables  = _variables;
+        auto  saved_func_ptrs  = _func_ptr_types;
+        auto *saved_bb         = _builder.GetInsertBlock();
+        auto  saved_terminated = _terminated;
+        auto  saved_module_id  = _current_module_id;
+        auto *saved_imports    = _current_imports;
+
+        _current_function = spec_func;
+        _current_module_id = tmpl.unit->module_id;
+        _current_imports = &tmpl.unit->import_alias_to_module;
+        _variables.clear();
+        _func_ptr_types.clear();
+        _terminated = false;
+
+        auto *entry = llvm::BasicBlock::Create(*_context, "entry", spec_func);
+        _builder.SetInsertPoint(entry);
+
+        bindParameters(*tmpl.function);
+        emitStatement(tmpl.function->code.get());
+        if (!_terminated) {
+            _builder.CreateRet(llvm::ConstantInt::get(_builder.getInt32Ty(), 0));
+        }
+
+        // Restore context
+        _current_function  = saved_function;
+        _variables         = saved_variables;
+        _func_ptr_types    = saved_func_ptrs;
+        _terminated        = saved_terminated;
+        _current_module_id = saved_module_id;
+        _current_imports   = saved_imports;
+        _type_param_map    = saved_type_map;
+        if (saved_bb) _builder.SetInsertPoint(saved_bb);
+
+        return spec_func;
+    }
+
     llvm::Value *emitCall(llvm::Function *callee_function,
                           const std::string &callee,
                           const pgcodes::GCode *args_code) {
@@ -3141,6 +3266,15 @@ class ModuleBuilder {
             return _builder.CreateCall(fn, {args[0], args[1]}, "ann_fidx");
         }
         if (callee_function == nullptr) {
+            // Try generic function instantiation
+            std::string gen_key = functionKey(_current_module_id, callee);
+            auto gen_it = _generic_templates.find(gen_key);
+            if (gen_it != _generic_templates.end()) {
+                // Emit args first to infer types
+                auto args = emitCallArgs(args_code);
+                auto *gen_func = resolveGenericCall(callee, args);
+                return _builder.CreateCall(gen_func, args, callee + ".call");
+            }
             // All function values are closure structs: { ptr func, ptr env }
             auto var_it = _variables.find(callee);
             if (var_it != _variables.end()) {
@@ -3830,6 +3964,11 @@ class ModuleBuilder {
     }
 
   private:
+    struct GenericTemplate {
+        const grammer::GFunction *function;
+        const PackageUnit *unit;
+    };
+
     std::unique_ptr<llvm::LLVMContext> _context;
     std::unique_ptr<llvm::Module>      _module;
     llvm::IRBuilder<>                  _builder;
@@ -3850,6 +3989,12 @@ class ModuleBuilder {
     bool                                      _terminated = false;
     llvm::GlobalVariable                      *_argc_global = nullptr;
     llvm::GlobalVariable                      *_argv_global = nullptr;
+    // Generics: type parameter substitution map (active during monomorphization)
+    std::map<std::string, std::string>         _type_param_map;
+    // Generics: template storage (key → generic function + package unit)
+    std::map<std::string, GenericTemplate>      _generic_templates;
+    // Generics: already-instantiated specializations (mangled_name → llvm::Function*)
+    std::set<std::string>                      _instantiated_generics;
     // DWARF debug info
     std::unique_ptr<llvm::DIBuilder>           _di_builder;
     llvm::DICompileUnit                       *_di_cu = nullptr;

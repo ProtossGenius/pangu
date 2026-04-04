@@ -50,6 +50,8 @@ struct FunctionSig {
     size_t                   param_count = 0;
     std::vector<std::string> param_types;    // type name per param
     std::string              return_type;    // "int", "string", struct name, etc.
+    bool                     is_generic = false;
+    std::vector<std::string> type_params;    // type parameter names (e.g. ["T", "U"])
 };
 
 // Struct field info for type inference of field access.
@@ -286,6 +288,8 @@ class ProgramChecker {
                 FunctionSig sig;
                 sig.name        = name;
                 sig.param_count = func->params.size();
+                sig.is_generic  = func->isGeneric();
+                sig.type_params = func->typeParams();
                 // Collect parameter types.
                 for (const auto &pname : func->params.orderedNames()) {
                     const auto *var = func->params.getVariable(pname);
@@ -335,6 +339,14 @@ class ProgramChecker {
             for (const auto &it : unit.package->functions.items()) {
                 _current_func_name = it.second->name();
                 _defined_vars.clear();
+                // For generic functions, register type params as known types
+                std::set<std::string> saved_generic_types;
+                if (it.second->isGeneric()) {
+                    saved_generic_types = _generic_type_params;
+                    for (const auto &tp : it.second->typeParams()) {
+                        _generic_type_params.insert(tp);
+                    }
+                }
                 // Register parameters as defined variables with their types.
                 for (const auto &pname : it.second->params.orderedNames()) {
                     const auto *var = it.second->params.getVariable(pname);
@@ -351,6 +363,10 @@ class ProgramChecker {
                         _current_return_type = rv->getType()->name();
                 }
                 checkStatement(it.second->code.get());
+                // Restore generic type params
+                if (it.second->isGeneric()) {
+                    _generic_type_params = saved_generic_types;
+                }
             }
         }
     }
@@ -912,6 +928,11 @@ class ProgramChecker {
             checkCallArgs(args_code);
             return;
         }
+        // For generic functions, skip type checking (types are parameterized)
+        if (func_it->second.is_generic) {
+            checkCallArgs(args_code);
+            return;
+        }
         // Check arg types for user-defined functions
         checkCallArgTypes(args_code, func_it->second.param_types,
                           name, loc, name_width);
@@ -1171,6 +1192,7 @@ class ProgramChecker {
     std::map<std::string, std::string>          _defined_vars;   // name → type
     std::set<std::string>                       _struct_names;
     std::set<std::string>                       _enum_names;
+    std::set<std::string>                       _generic_type_params; // active type params
     StructFieldMap                              _struct_fields;
 };
 
