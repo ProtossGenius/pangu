@@ -1482,6 +1482,11 @@ class ModuleBuilder {
         if (code == nullptr) {
             return false;
         }
+        // Don't descend into lambda bodies
+        if (code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            code->getOper() == "func_expr") {
+            return false;
+        }
         // Pattern 1: return(args) as suffix call
         std::string          callee;
         const pgcodes::GCode *args_code = nullptr;
@@ -1565,6 +1570,9 @@ class ModuleBuilder {
         // Empty GCode node (no value, no operator) — treat as 0
         if (oper.empty()) {
             return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+        }
+        if (oper == "func_expr") {
+            return emitLambda(code);
         }
         if (oper == ":=" || oper == "=") {
             return emitAssignment(code, oper == ":=");
@@ -2187,6 +2195,97 @@ class ModuleBuilder {
                                : _builder.CreateSub(current, one, "dec");
         _builder.CreateStore(result, it->second);
         return result;
+    }
+
+    // ── Lambda / anonymous function ───────────────────────────────────
+    // func(params) [return_type] { body }
+    // Returns a function pointer to the generated anonymous function.
+    void collectLambdaParamNames(const pgcodes::GCode *code,
+                                 std::vector<std::string> &names) {
+        if (code == nullptr) return;
+        if (code->getValueType() != pgcodes::ValueType::NOT_VALUE) {
+            names.push_back(code->getValue());
+            return;
+        }
+        if (code->getOper() == ",") {
+            collectLambdaParamNames(code->getLeft(), names);
+            collectLambdaParamNames(code->getRight(), names);
+            return;
+        }
+    }
+
+    llvm::Value *emitLambda(const pgcodes::GCode *code) {
+        static int lambda_counter = 0;
+        std::string lambda_name = "__lambda_" + std::to_string(lambda_counter++);
+
+        // Extract parameter names from left child: ( ) params
+        std::vector<std::string> param_names;
+        auto *params_block = code->getLeft();
+        if (params_block != nullptr && params_block->getRight() != nullptr) {
+            collectLambdaParamNames(params_block->getRight(), param_names);
+        }
+
+        // Determine return type (stored in name, defaults to i32)
+        llvm::Type *ret_type = _builder.getInt32Ty();
+        std::string ret_type_name = code->name();
+        if (ret_type_name == "string" || ret_type_name == "str") {
+            ret_type = _builder.getPtrTy();
+        }
+
+        // Build function type: all params i32 by default
+        std::vector<llvm::Type *> param_types(param_names.size(),
+                                               _builder.getInt32Ty());
+        auto *func_type = llvm::FunctionType::get(ret_type, param_types, false);
+
+        // Create the lambda function
+        auto *lambda_func = llvm::Function::Create(
+            func_type, llvm::Function::InternalLinkage, lambda_name, _module.get());
+
+        // Save current context
+        auto *saved_function  = _current_function;
+        auto saved_variables  = _variables;
+        auto saved_func_ptrs  = _func_ptr_types;
+        auto *saved_bb        = _builder.GetInsertBlock();
+        auto saved_terminated = _terminated;
+
+        // Set up lambda context
+        _current_function = lambda_func;
+        _variables.clear();
+        _func_ptr_types.clear();
+        _terminated = false;
+
+        auto *entry = llvm::BasicBlock::Create(*_context, "entry", lambda_func);
+        _builder.SetInsertPoint(entry);
+
+        // Bind parameters
+        size_t idx = 0;
+        for (auto &arg : lambda_func->args()) {
+            const std::string &pname = param_names[idx++];
+            arg.setName(pname);
+            auto *slot = createVariableSlot(pname, arg.getType());
+            _builder.CreateStore(&arg, slot);
+            _variables[pname] = slot;
+        }
+
+        // Emit body
+        auto *body_block = code->getRight();
+        if (body_block != nullptr) {
+            emitStatement(body_block->getRight());
+        }
+
+        // Add implicit return if not terminated
+        if (!_terminated) {
+            _builder.CreateRet(llvm::ConstantInt::get(ret_type, 0));
+        }
+
+        // Restore context
+        _current_function = saved_function;
+        _variables        = saved_variables;
+        _func_ptr_types   = saved_func_ptrs;
+        _terminated       = saved_terminated;
+        _builder.SetInsertPoint(saved_bb);
+
+        return lambda_func;
     }
 
     // ── >> [...] dispatch: c >> [pred -> handler, ...] ──────────────
@@ -2859,10 +2958,19 @@ class ModuleBuilder {
         if (callee_function == nullptr) {
             // Try indirect call through function pointer variable
             auto var_it = _variables.find(callee);
-            if (var_it != _variables.end() &&
-                var_it->second->getAllocatedType()->isPointerTy()) {
-                auto *fn_ptr = _builder.CreateLoad(
-                    _builder.getPtrTy(), var_it->second, callee + ".fp");
+            if (var_it != _variables.end()) {
+                auto *alloca_type = var_it->second->getAllocatedType();
+                llvm::Value *fn_ptr;
+                if (alloca_type->isPointerTy()) {
+                    fn_ptr = _builder.CreateLoad(
+                        _builder.getPtrTy(), var_it->second, callee + ".fp");
+                } else {
+                    // Variable holds an integer; convert to function pointer
+                    auto *int_val = _builder.CreateLoad(
+                        alloca_type, var_it->second, callee + ".ival");
+                    fn_ptr = _builder.CreateIntToPtr(
+                        int_val, _builder.getPtrTy(), callee + ".fp");
+                }
                 auto args = emitCallArgs(args_code);
                 // Try to use tracked function type, otherwise infer from args
                 llvm::FunctionType *ftype = nullptr;

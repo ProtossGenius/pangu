@@ -86,11 +86,11 @@ class GCode : public IGrammer {
     ValueType getValueType() { return _value_type; }
     ValueType getValueType() const { return _value_type; }
     bool      isValue() {
-        const static std::set<std::string> VALUE_SET{"(", "[", "++", "--"};
+        const static std::set<std::string> VALUE_SET{"(", "[", "++", "--", "func_expr"};
         return _value_type != ValueType::NOT_VALUE || VALUE_SET.count(_value);
     }
     bool isValue() const {
-        const static std::set<std::string> VALUE_SET{"(", "[", "++", "--"};
+        const static std::set<std::string> VALUE_SET{"(", "[", "++", "--", "func_expr"};
         return _value_type != ValueType::NOT_VALUE || VALUE_SET.count(_value);
     }
     bool isPlaceholder() const {

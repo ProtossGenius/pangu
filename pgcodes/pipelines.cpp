@@ -71,6 +71,14 @@ void PipeMatch::createProduct(IPipelineFactory *factory) {
     }
 }
 
+void PipeLambda::createProduct(IPipelineFactory *factory) {
+    if (factory->productStackSize() == 0) {
+        factory->pushProduct(PProduct(new GCode()));
+    } else {
+        factory->pushProduct(PProduct(new GCode()), pack_as_right);
+    }
+}
+
 void PipeNormal::createProduct(IPipelineFactory *factory) {
     if (factory->productStackSize() == 0) {
         factory->pushProduct(PProduct(new GCode()));

@@ -55,5 +55,19 @@ void pack_as_return(IPipelineFactory *factory, PProduct &&data) {
         (new GCode())->setValue("return", ValueType::IDENTIFIER));
     topProduct->setRight(code);
 }
+
+void pack_lambda_params(IPipelineFactory *factory, PProduct &&data) {
+    GCode *code       = static_cast<GCode *>(data.release());
+    GCode *topProduct = static_cast<GCode *>(factory->getTopProduct());
+    pgassert(topProduct != nullptr);
+    topProduct->setLeft(code);
+}
+void pack_lambda_body(IPipelineFactory *factory, PProduct &&data) {
+    GCode *code       = static_cast<GCode *>(data.release());
+    GCode *topProduct = static_cast<GCode *>(factory->getTopProduct());
+    pgassert(topProduct != nullptr);
+    topProduct->setRight(code);
+}
+
 } // namespace pgcodes
 } // namespace pangu

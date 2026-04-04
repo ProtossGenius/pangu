@@ -36,6 +36,9 @@ bool typesCompatible(const std::string &a, const std::string &b) {
     if (ca == TypeCat::VOID || cb == TypeCat::VOID)       return true;
     // int/bool/enum are all i32
     if (ca == TypeCat::INT && cb == TypeCat::INT)          return true;
+    // func/ptr are compatible with int (function pointers passed as int params)
+    if ((ca == TypeCat::INT && cb == TypeCat::PTR) ||
+        (ca == TypeCat::PTR && cb == TypeCat::INT))        return true;
     // string is a kind of ptr
     if ((ca == TypeCat::STRING || ca == TypeCat::PTR) &&
         (cb == TypeCat::STRING || cb == TypeCat::PTR))     return true;
@@ -533,6 +536,20 @@ class ProgramChecker {
             checkMatchBody(code->getRight());
             return;
         }
+        if (oper == "func_expr") {
+            // Lambda: left=params block, right=body block
+            std::vector<std::string> param_names;
+            collectLambdaParamNames(code->getLeft(), param_names);
+            auto saved_vars = _defined_vars;
+            for (const auto &p : param_names) {
+                _defined_vars[p] = "int";
+            }
+            if (code->getRight() != nullptr) {
+                checkStatement(code->getRight()->getRight());
+            }
+            _defined_vars = saved_vars;
+            return;
+        }
         // Generic binary/unary operator: recurse both sides + type check.
         checkExpression(code->getLeft());
         checkExpression(code->getRight());
@@ -669,6 +686,11 @@ class ProgramChecker {
         // Match expression
         if (oper == "match") {
             return inferMatchType(code->getRight());
+        }
+
+        // Lambda expression
+        if (oper == "func_expr") {
+            return "func";
         }
 
         // Arithmetic/comparison/logical operators
@@ -874,8 +896,7 @@ class ProgramChecker {
         if (func_it == mod_it->second.end()) {
             // Allow calling variables that hold function references
             auto var_it = _defined_vars.find(name);
-            if (var_it != _defined_vars.end() &&
-                (var_it->second == "func" || var_it->second == "ptr")) {
+            if (var_it != _defined_vars.end()) {
                 checkCallArgs(args_code);
                 return;
             }
@@ -1020,6 +1041,28 @@ class ProgramChecker {
                       " argument(s), got " + std::to_string(actual_args), hw);
         }
         checkCallArgs(args_code);
+    }
+
+    void collectLambdaParamNames(const pgcodes::GCode *code,
+                                 std::vector<std::string> &names) {
+        if (code == nullptr) return;
+        // params block: oper="(", left=")", right=comma-separated identifiers
+        if (code->getOper() == "(" && code->getRight() != nullptr) {
+            collectLambdaParamNamesInner(code->getRight(), names);
+        }
+    }
+
+    void collectLambdaParamNamesInner(const pgcodes::GCode *code,
+                                      std::vector<std::string> &names) {
+        if (code == nullptr) return;
+        if (code->getValueType() != pgcodes::ValueType::NOT_VALUE) {
+            names.push_back(code->getValue());
+            return;
+        }
+        if (code->getOper() == ",") {
+            collectLambdaParamNamesInner(code->getLeft(), names);
+            collectLambdaParamNamesInner(code->getRight(), names);
+        }
     }
 
     void checkIdentifierRef(const pgcodes::GCode *node,

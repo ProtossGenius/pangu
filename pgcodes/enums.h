@@ -15,6 +15,7 @@ enum ECodeType {
     Block, // {...}
     Case,
     Match,
+    Lambda, // func(...) { ... }
 };
 }
 } // namespace pangu

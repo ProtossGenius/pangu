@@ -1,0 +1,12 @@
+package main;
+
+func apply(f func, x, y int) int {
+    return f(x, y);
+}
+
+func main() {
+    add := func(a, b) { return a + b; };
+    mul := func(a, b) { return a * b; };
+    println(apply(add, 3, 4));
+    println(apply(mul, 3, 4));
+}

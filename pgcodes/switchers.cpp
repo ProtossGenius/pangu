@@ -58,6 +58,10 @@ void CodesSwitcher::onChoice() {
         return _factory->choicePipeline(ECodeType::Match);
     }
 
+    if (lexer::makeIdentifier("func") == *lex) {
+        return _factory->choicePipeline(ECodeType::Lambda);
+    }
+
     _factory->choicePipeline(ECodeType::Normal);
 }
 
