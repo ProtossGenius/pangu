@@ -139,8 +139,16 @@ class ModuleBuilder {
         llvm::BasicBlock *continue_block;
     };
     // Enum variant registry: EnumName → { VariantName → ordinal }
+    struct EnumVariantInfo {
+        int ordinal;
+        std::vector<std::pair<std::string, std::string>> fields; // name, type
+    };
     struct EnumInfo {
         std::map<std::string, int> variants; // variant → ordinal value
+        std::map<std::string, EnumVariantInfo> variant_info;
+        bool has_data = false;
+        size_t max_fields = 0;
+        llvm::StructType *llvm_type = nullptr; // {i32, i64, i64, ...}
     };
     // Pipeline auto-dispatch metadata
     struct PipelineWorkerEntry {
@@ -495,8 +503,31 @@ class ModuleBuilder {
                 if (genum == nullptr) continue;
                 EnumInfo info;
                 int ordinal = 0;
-                for (const auto &variant : genum->items()) {
-                    info.variants[variant] = ordinal++;
+                size_t max_fields = 0;
+                for (const auto &variant : genum->variants()) {
+                    info.variants[variant.name] = ordinal;
+                    EnumVariantInfo vi;
+                    vi.ordinal = ordinal;
+                    for (const auto &f : variant.fields) {
+                        vi.fields.push_back({f.name, f.type});
+                    }
+                    if (variant.fields.size() > max_fields) {
+                        max_fields = variant.fields.size();
+                    }
+                    info.variant_info[variant.name] = std::move(vi);
+                    ++ordinal;
+                }
+                info.has_data = genum->hasAssociatedData();
+                info.max_fields = max_fields;
+                if (info.has_data) {
+                    // Create struct type: {i32 tag, i64 field0, i64 field1, ...}
+                    std::vector<llvm::Type *> members;
+                    members.push_back(_builder.getInt32Ty()); // tag
+                    for (size_t i = 0; i < max_fields; ++i) {
+                        members.push_back(_builder.getInt64Ty()); // data slot
+                    }
+                    info.llvm_type = llvm::StructType::create(
+                        *_context, members, "enum." + genum->name());
                 }
                 _enum_types[genum->name()] = std::move(info);
             }
@@ -904,7 +935,11 @@ class ModuleBuilder {
         if (it != _struct_types.end()) {
             return it->second.llvm_type;
         }
-        if (_enum_types.count(name)) {
+        auto eit = _enum_types.find(name);
+        if (eit != _enum_types.end()) {
+            if (eit->second.has_data && eit->second.llvm_type) {
+                return eit->second.llvm_type;
+            }
             return _builder.getInt32Ty();
         }
         // Interface types are fat pointers: { ptr data, ptr vtable }
@@ -1649,6 +1684,7 @@ class ModuleBuilder {
 
     // match(expr) { val => body; val => body; _ => body; }
     // Lowered as an if/else chain with PHI node for result.
+    // Supports data enum destructuring: match(r) { Ok(v) => ...; Err(e) => ...; }
     llvm::Value *emitMatchExpression(const pgcodes::GCode *code) {
         auto *function = _current_function;
         auto *cond_value = emitExpression(code->getLeft());
@@ -1658,6 +1694,30 @@ class ModuleBuilder {
 
         if (arms.empty()) {
             return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+        }
+
+        // Check if matching a data enum — extract tag for comparison
+        const EnumInfo *match_enum = nullptr;
+        llvm::Value *tag_value = nullptr;
+        if (cond_value->getType()->isStructTy()) {
+            auto *sty = llvm::cast<llvm::StructType>(cond_value->getType());
+            std::string sname = sty->getName().str();
+            // enum types are named "enum.TypeName"
+            if (sname.substr(0, 5) == "enum.") {
+                std::string ename = sname.substr(5);
+                auto eit = _enum_types.find(ename);
+                if (eit != _enum_types.end() && eit->second.has_data) {
+                    match_enum = &eit->second;
+                    // Store cond_value on stack to extract tag and fields
+                    auto *alloca = _builder.CreateAlloca(sty, nullptr, "match.enum");
+                    _builder.CreateStore(cond_value, alloca);
+                    auto *tag_ptr = _builder.CreateStructGEP(sty, alloca, 0, "tag.ptr");
+                    tag_value = _builder.CreateLoad(_builder.getInt32Ty(), tag_ptr, "tag");
+                    // Save alloca for field extraction in arms
+                    _match_enum_alloca = alloca;
+                    _match_enum_stype = sty;
+                }
+            }
         }
 
         auto *end_block = llvm::BasicBlock::Create(*_context, "match.end");
@@ -1679,10 +1739,74 @@ class ModuleBuilder {
                     results.push_back({val, _builder.GetInsertBlock()});
                     _builder.CreateBr(end_block);
                 }
+            } else if (match_enum != nullptr && isEnumDestructurePattern(pattern, *match_enum)) {
+                // Data enum destructuring: Ok(v) => body
+                std::string pat_variant;
+                std::vector<std::string> bindings;
+                extractDestructurePattern(pattern, pat_variant, bindings);
+
+                auto vit = match_enum->variants.find(pat_variant);
+                int ordinal = (vit != match_enum->variants.end()) ? vit->second : -1;
+
+                auto *cmp = _builder.CreateICmpEQ(
+                    tag_value,
+                    llvm::ConstantInt::get(_builder.getInt32Ty(), ordinal),
+                    "match.tag.cmp");
+
+                auto *then_block = llvm::BasicBlock::Create(
+                    *_context, "match.arm." + std::to_string(i));
+                auto *next_block = llvm::BasicBlock::Create(
+                    *_context, "match.next." + std::to_string(i));
+
+                _builder.CreateCondBr(cmp, then_block, next_block);
+
+                function->insert(function->end(), then_block);
+                _builder.SetInsertPoint(then_block);
+                _terminated = false;
+
+                // Bind variant fields to local variables
+                const auto &vi = match_enum->variant_info.at(pat_variant);
+                for (size_t fi = 0; fi < bindings.size() && fi < vi.fields.size(); ++fi) {
+                    auto *slot = _builder.CreateStructGEP(
+                        _match_enum_stype, _match_enum_alloca,
+                        fi + 1, "field." + std::to_string(fi));
+                    auto *raw = _builder.CreateLoad(
+                        _builder.getInt64Ty(), slot, "raw." + bindings[fi]);
+                    // Narrow from i64 to the field's actual type
+                    llvm::Value *narrowed = raw;
+                    std::string ftype = vi.fields[fi].second;
+                    if (ftype == "int" || ftype == "char" || ftype == "bool") {
+                        narrowed = _builder.CreateTrunc(raw,
+                            _builder.getInt32Ty(), bindings[fi]);
+                    } else if (ftype == "string" || ftype == "ptr") {
+                        narrowed = _builder.CreateIntToPtr(raw,
+                            _builder.getPtrTy(), bindings[fi]);
+                    }
+                    auto *var_slot = createVariableSlot(bindings[fi],
+                                                         narrowed->getType());
+                    _variables[bindings[fi]] = var_slot;
+                    _builder.CreateStore(narrowed, var_slot);
+                }
+
+                auto *val = emitExpression(body);
+                if (!_terminated) {
+                    results.push_back({val, _builder.GetInsertBlock()});
+                    _builder.CreateBr(end_block);
+                }
+
+                // Clean up bound variables
+                for (const auto &b : bindings) {
+                    _variables.erase(b);
+                }
+
+                function->insert(function->end(), next_block);
+                _builder.SetInsertPoint(next_block);
+                _terminated = false;
             } else {
+                llvm::Value *cmp_lhs = (tag_value != nullptr) ? tag_value : cond_value;
                 auto *pattern_val = emitExpression(pattern);
                 llvm::Value *cmp;
-                if (cond_value->getType()->isPointerTy() &&
+                if (cmp_lhs->getType()->isPointerTy() &&
                     pattern_val->getType()->isPointerTy()) {
                     auto strcmp_type = llvm::FunctionType::get(
                         _builder.getInt32Ty(),
@@ -1690,12 +1814,12 @@ class ModuleBuilder {
                     auto strcmp_fn = _module->getOrInsertFunction(
                         "strcmp", strcmp_type);
                     auto *cmp_result = _builder.CreateCall(
-                        strcmp_fn, {cond_value, pattern_val}, "strcmp");
+                        strcmp_fn, {cmp_lhs, pattern_val}, "strcmp");
                     cmp = _builder.CreateICmpEQ(cmp_result,
                         llvm::ConstantInt::get(_builder.getInt32Ty(), 0),
                         "match.cmp");
                 } else {
-                    cmp = _builder.CreateICmpEQ(cond_value, pattern_val,
+                    cmp = _builder.CreateICmpEQ(cmp_lhs, pattern_val,
                         "match.cmp");
                 }
 
@@ -1723,8 +1847,19 @@ class ModuleBuilder {
 
         // If no wildcard, provide default
         if (!_builder.GetInsertBlock()->getTerminator()) {
-            auto *default_val = llvm::ConstantInt::get(
-                _builder.getInt32Ty(), 0);
+            llvm::Value *default_val;
+            if (!results.empty()) {
+                auto *result_type = results[0].first->getType();
+                if (result_type->isPointerTy()) {
+                    default_val = llvm::ConstantPointerNull::get(
+                        llvm::cast<llvm::PointerType>(result_type));
+                } else {
+                    default_val = llvm::ConstantInt::get(result_type, 0);
+                }
+            } else {
+                default_val = llvm::ConstantInt::get(
+                    _builder.getInt32Ty(), 0);
+            }
             results.push_back({default_val, _builder.GetInsertBlock()});
             _builder.CreateBr(end_block);
         }
@@ -1732,6 +1867,10 @@ class ModuleBuilder {
         function->insert(function->end(), end_block);
         _builder.SetInsertPoint(end_block);
         _terminated = false;
+
+        // Reset match state
+        _match_enum_alloca = nullptr;
+        _match_enum_stype = nullptr;
 
         if (results.empty()) {
             return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
@@ -1743,6 +1882,72 @@ class ModuleBuilder {
             phi->addIncoming(val, block);
         }
         return phi;
+    }
+
+    // Check if pattern is a data-enum variant pattern like Ok(v) or None
+    bool isEnumDestructurePattern(const pgcodes::GCode *pattern,
+                                  const EnumInfo &info) {
+        if (pattern == nullptr) return false;
+        // Pattern: identifier with optional suffix call — Ok or Ok(v)
+        if (pattern->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+            return info.variants.count(pattern->getValue()) > 0;
+        }
+        // Pattern may be wrapped: (Err)(e) → "(" node with left=Err identifier
+        // and right = "(" suffix call with args
+        if (pattern->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            pattern->getOper() == "(") {
+            const auto *inner = pattern->getLeft();
+            if (inner != nullptr &&
+                inner->getValueType() == pgcodes::ValueType::IDENTIFIER &&
+                info.variants.count(inner->getValue()) > 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Extract variant name and binding names from pattern
+    void extractDestructurePattern(const pgcodes::GCode *pattern,
+                                   std::string &variant_name,
+                                   std::vector<std::string> &bindings) {
+        if (pattern->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+            variant_name = pattern->getValue();
+            // Check for suffix call (Ok(v) or Ok(v, w))
+            if (pattern->getRight() != nullptr &&
+                pattern->getRight()->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                pattern->getRight()->getOper() == "(") {
+                auto *args = pattern->getRight()->getRight();
+                collectBindingNames(args, bindings);
+            }
+        } else if (pattern->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                   pattern->getOper() == "(") {
+            // Wrapped form: (Err)(e) → left=Err, right="(" with args
+            variant_name = pattern->getLeft()->getValue();
+            if (pattern->getRight() != nullptr) {
+                // Right is the suffix call node or args directly
+                const auto *rhs = pattern->getRight();
+                if (rhs->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                    rhs->getOper() == "(") {
+                    collectBindingNames(rhs->getRight(), bindings);
+                } else {
+                    collectBindingNames(rhs, bindings);
+                }
+            }
+        }
+    }
+
+    void collectBindingNames(const pgcodes::GCode *code,
+                             std::vector<std::string> &names) {
+        if (code == nullptr) return;
+        if (code->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+            names.push_back(code->getValue());
+            return;
+        }
+        if (code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            code->getOper() == ",") {
+            collectBindingNames(code->getLeft(), names);
+            collectBindingNames(code->getRight(), names);
+        }
     }
 
     bool isSuffixCallNode(const pgcodes::GCode *code) {
@@ -1902,11 +2107,11 @@ class ModuleBuilder {
             collectMultiReturnValues(code->getLeft(), vals);
             collectMultiReturnValues(code->getRight(), vals);
         } else if (containsReturnPrefix(code)) {
-            // Strip the return prefix: return(expr) → emit expr
-            auto *inner = stripReturnPrefix(code);
-            if (inner) {
-                vals.push_back(emitExpression(inner));
-            }
+            // Strip the return prefix and emit as plain expression.
+            // Suppress return emission during multi-return value collection.
+            _suppress_return = true;
+            vals.push_back(emitExpression(code));
+            _suppress_return = false;
         } else {
             vals.push_back(emitExpression(code));
         }
@@ -1940,7 +2145,7 @@ class ModuleBuilder {
         // Set debug location for expressions with valid source info
         emitDebugLocation(code);
 
-        if (containsReturnPrefix(code)) {
+        if (!_suppress_return && containsReturnPrefix(code)) {
             // Multi-return: ,(return(a), b) → pack into struct and return
             auto mr_it = _multi_return_types.find(_current_func_simple_name);
             if (mr_it != _multi_return_types.end() &&
@@ -1964,6 +2169,11 @@ class ModuleBuilder {
             std::string          callee;
             const pgcodes::GCode *args_code = nullptr;
             if (extractSuffixCall(code, callee, args_code)) {
+                // When suppressing return (inside multi-return collection),
+                // treat return(expr) as just expr
+                if (_suppress_return && callee == "return") {
+                    return emitExpression(args_code);
+                }
                 return emitCall(resolveCurrentFunction(callee), callee, args_code);
             }
             // Struct literal (suffix form): StructName{field: val, ...}
@@ -2378,10 +2588,23 @@ class ModuleBuilder {
             left->getValueType() != pgcodes::ValueType::NOT_VALUE
                 ? left->getValue()
                 : "";
-        const std::string variant_name =
-            right->getValueType() != pgcodes::ValueType::NOT_VALUE
-                ? right->getValue()
-                : "";
+
+        // Right side can be:
+        // 1. Simple variant: identifier "Ok"
+        // 2. Data variant:   "(" node with left="Ok", right=args
+        std::string variant_name;
+        const pgcodes::GCode *constructor_args = nullptr;
+        if (right->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            right->getOper() == "(" &&
+            right->getLeft() != nullptr &&
+            right->getLeft()->getValueType() != pgcodes::ValueType::NOT_VALUE) {
+            // Pattern: Enum::Variant(args) → "(" node, left=Variant ident
+            variant_name = right->getLeft()->getValue();
+            constructor_args = right->getRight();
+        } else if (right->getValueType() != pgcodes::ValueType::NOT_VALUE) {
+            variant_name = right->getValue();
+        }
+
         auto eit = _enum_types.find(enum_name);
         if (eit == _enum_types.end()) {
             throw std::runtime_error("unknown enum type: " + enum_name);
@@ -2391,7 +2614,49 @@ class ModuleBuilder {
             throw std::runtime_error("enum '" + enum_name +
                                      "' has no variant '" + variant_name + "'");
         }
-        return llvm::ConstantInt::get(_builder.getInt32Ty(), vit->second);
+        int ordinal = vit->second;
+
+        // Data enum: construct struct {tag, field0, field1, ...}
+        if (eit->second.has_data) {
+            auto *stype = eit->second.llvm_type;
+            auto *alloca = _builder.CreateAlloca(stype, nullptr,
+                                                  enum_name + "." + variant_name);
+            // Set tag
+            auto *tag_ptr = _builder.CreateStructGEP(stype, alloca, 0, "tag.ptr");
+            _builder.CreateStore(
+                llvm::ConstantInt::get(_builder.getInt32Ty(), ordinal), tag_ptr);
+
+            // Set data fields from constructor args
+            const auto &vi = eit->second.variant_info.at(variant_name);
+            if (!vi.fields.empty() && constructor_args != nullptr) {
+                std::vector<llvm::Value *> arg_vals = emitCallArgs(constructor_args);
+                for (size_t i = 0; i < vi.fields.size() && i < arg_vals.size(); ++i) {
+                    auto *slot = _builder.CreateStructGEP(
+                        stype, alloca, i + 1, "data." + std::to_string(i));
+                    // Widen value to i64
+                    llvm::Value *widened = arg_vals[i];
+                    if (widened->getType()->isIntegerTy(32)) {
+                        widened = _builder.CreateZExt(widened,
+                            _builder.getInt64Ty(), "zext");
+                    } else if (widened->getType()->isPointerTy()) {
+                        widened = _builder.CreatePtrToInt(widened,
+                            _builder.getInt64Ty(), "ptoi");
+                    }
+                    _builder.CreateStore(widened, slot);
+                }
+            }
+            // Zero remaining fields
+            for (size_t i = vi.fields.size(); i < eit->second.max_fields; ++i) {
+                auto *slot = _builder.CreateStructGEP(
+                    stype, alloca, i + 1, "pad." + std::to_string(i));
+                _builder.CreateStore(
+                    llvm::ConstantInt::get(_builder.getInt64Ty(), 0), slot);
+            }
+            return _builder.CreateLoad(stype, alloca, enum_name + ".val");
+        }
+
+        // Simple enum: just return ordinal
+        return llvm::ConstantInt::get(_builder.getInt32Ty(), ordinal);
     }
 
     llvm::Value *emitStructLiteral(const std::string &struct_name,
@@ -4254,6 +4519,10 @@ class ModuleBuilder {
             return emitExpression(code->getRight());
         }
         if (left->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+            // When suppressing return, treat return(expr) as just expr
+            if (_suppress_return && left->getValue() == "return") {
+                return emitExpression(code->getRight());
+            }
             return emitCall(resolveCurrentFunction(left->getValue()),
                             left->getValue(), code->getRight());
         }
@@ -4886,6 +5155,9 @@ class ModuleBuilder {
     // Track functions that return multiple values (name → count)
     std::map<std::string, size_t>              _multi_return_types;
     std::string                                _current_func_simple_name;
+    llvm::AllocaInst                          *_match_enum_alloca = nullptr;
+    llvm::StructType                          *_match_enum_stype = nullptr;
+    bool                                       _suppress_return = false;
     std::vector<LoopContext>                    _loop_stack;
     std::string                                _current_module_id;
     const std::map<std::string, std::string>  *_current_imports = nullptr;

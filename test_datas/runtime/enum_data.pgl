@@ -1,0 +1,59 @@
+package main;
+
+type Result enum {
+    Ok(value int),
+    Err(msg string),
+}
+
+type Option enum {
+    Some(val int),
+    None,
+}
+
+func test_result() {
+    r1 := Result::Ok(42);
+    v1 := match(r1) {
+        Ok(v) => v;
+        Err(e) => 0;
+    };
+    println(v1);
+
+    r2 := Result::Err("something failed");
+    v2 := match(r2) {
+        Ok(v) => "success";
+        Err(e) => e;
+    };
+    println(v2);
+}
+
+func test_option() {
+    o1 := Option::Some(99);
+    s1 := match(o1) {
+        Some(v) => "has value";
+        None => "empty";
+    };
+    println(s1);
+
+    o2 := Option::None;
+    s2 := match(o2) {
+        Some(v) => "has value";
+        None => "empty";
+    };
+    println(s2);
+}
+
+func test_match_no_bindings() {
+    r := Result::Err("oops");
+    s := match(r) {
+        Ok => "ok";
+        Err => "err";
+        _ => "??";
+    };
+    println(s);
+}
+
+func main() {
+    test_result();
+    test_option();
+    test_match_no_bindings();
+}

@@ -415,6 +415,16 @@ class ProgramChecker {
                     dynamic_cast<const grammer::GEnum *>(it.second.get());
                 if (genum != nullptr) {
                     _enum_names.insert(genum->name());
+                    if (genum->hasAssociatedData()) {
+                        auto &vmap = _enum_variant_fields[genum->name()];
+                        for (const auto &v : genum->variants()) {
+                            std::vector<std::pair<std::string, std::string>> flds;
+                            for (const auto &f : v.fields) {
+                                flds.push_back({f.name, f.type});
+                            }
+                            vmap[v.name] = flds;
+                        }
+                    }
                 }
                 const auto *giface =
                     dynamic_cast<const grammer::GInterface *>(it.second.get());
@@ -620,7 +630,8 @@ class ProgramChecker {
         }
         if (oper == "match") {
             checkExpression(code->getLeft());
-            checkMatchBody(code->getRight());
+            std::string cond_type = inferType(code->getLeft());
+            checkMatchBody(code->getRight(), cond_type);
             return;
         }
         checkExpression(code);
@@ -747,7 +758,8 @@ class ProgramChecker {
         }
         if (oper == "match") {
             checkExpression(code->getLeft());
-            checkMatchBody(code->getRight());
+            std::string cond_type = inferType(code->getLeft());
+            checkMatchBody(code->getRight(), cond_type);
             return;
         }
         if (oper == "func_expr") {
@@ -1351,26 +1363,99 @@ class ProgramChecker {
 
     // Check match expression body: `{ val => expr; val => expr; _ => expr; }`
     // The body is a tree of `;`-separated `=>` nodes.
-    void checkMatchBody(const pgcodes::GCode *body) {
+    // cond_type is the type of the match condition, used for data enum destructuring.
+    void checkMatchBody(const pgcodes::GCode *body,
+                        const std::string &cond_type = "") {
         if (body == nullptr) return;
         if (body->getValueType() == pgcodes::ValueType::NOT_VALUE) {
             const std::string &op = body->getOper();
             if (op == "{") {
-                checkMatchBody(body->getRight());
+                checkMatchBody(body->getRight(), cond_type);
                 return;
             }
             if (op == ";") {
-                checkMatchBody(body->getLeft());
-                checkMatchBody(body->getRight());
+                checkMatchBody(body->getLeft(), cond_type);
+                checkMatchBody(body->getRight(), cond_type);
                 return;
             }
             if (op == "=>") {
-                // Left is pattern (skip variable check), right is result expression
+                // Left is pattern, right is result expression
+                // For data enum patterns like Ok(v), add bindings before checking body
+                auto *pattern = body->getLeft();
+                std::vector<std::string> bound_names;
+                if (!cond_type.empty()) {
+                    collectMatchBindings(pattern, cond_type, bound_names);
+                }
+                auto saved_vars = _defined_vars;
+                for (const auto &bname : bound_names) {
+                    _defined_vars[bname] = "int"; // approximate type
+                }
                 checkExpression(body->getRight());
+                _defined_vars = saved_vars;
                 return;
             }
         }
         checkExpression(body);
+    }
+
+    // Collect binding names from a match arm pattern for data enum destructuring
+    void collectMatchBindings(const pgcodes::GCode *pattern,
+                              const std::string &cond_type,
+                              std::vector<std::string> &bindings) {
+        if (pattern == nullptr) return;
+        auto eit = _enum_variant_fields.find(cond_type);
+        if (eit == _enum_variant_fields.end()) return;
+
+        std::string variant_name;
+        const pgcodes::GCode *args_node = nullptr;
+
+        // Pattern: VariantName(binding1, binding2, ...)
+        if (pattern->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+            variant_name = pattern->getValue();
+            if (pattern->getRight() != nullptr &&
+                pattern->getRight()->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                pattern->getRight()->getOper() == "(") {
+                args_node = pattern->getRight()->getRight();
+            }
+        }
+        // Wrapped form: (VariantName)(binding)
+        else if (pattern->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                 pattern->getOper() == "(") {
+            auto *inner = pattern->getLeft();
+            if (inner != nullptr &&
+                inner->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+                variant_name = inner->getValue();
+            }
+            if (pattern->getRight() != nullptr) {
+                auto *rhs = pattern->getRight();
+                if (rhs->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                    rhs->getOper() == "(") {
+                    args_node = rhs->getRight();
+                } else {
+                    args_node = rhs;
+                }
+            }
+        }
+
+        if (variant_name.empty()) return;
+        if (eit->second.count(variant_name) == 0) return;
+
+        // Collect identifier names from args (comma-separated)
+        collectIdentNames(args_node, bindings);
+    }
+
+    void collectIdentNames(const pgcodes::GCode *node,
+                           std::vector<std::string> &names) {
+        if (node == nullptr) return;
+        if (node->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+            names.push_back(node->getValue());
+            return;
+        }
+        if (node->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            node->getOper() == ",") {
+            collectIdentNames(node->getLeft(), names);
+            collectIdentNames(node->getRight(), names);
+        }
     }
 
     void emitError(const lexer::SourceLocation &loc, const std::string &detail,
@@ -1403,6 +1488,8 @@ class ProgramChecker {
     std::map<std::string, std::string>          _defined_vars;   // name → type
     std::set<std::string>                       _struct_names;
     std::set<std::string>                       _enum_names;
+    // enum name → variant name → fields (name, type)
+    std::map<std::string, std::map<std::string, std::vector<std::pair<std::string, std::string>>>> _enum_variant_fields;
     std::set<std::string>                       _interface_names;
     std::set<std::string>                       _generic_type_params; // active type params
     StructFieldMap                              _struct_fields;

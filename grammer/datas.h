@@ -268,12 +268,37 @@ class GTypeDef : public IGrammer {
 };
 class GEnum : public GTypeDef {
   public:
-    void addItem(const std::string &item) { _items.push_back(item); }
+    struct VariantField {
+        std::string name;
+        std::string type;
+    };
+    struct Variant {
+        std::string name;
+        std::vector<VariantField> fields; // empty = no associated data
+    };
+
+    void addItem(const std::string &item) {
+        _items.push_back(item);
+        _variants.push_back({item, {}});
+    }
+    void addVariantWithFields(const std::string &name,
+                              const std::vector<VariantField> &fields) {
+        _items.push_back(name);
+        _variants.push_back({name, fields});
+    }
     const std::vector<std::string> &items() const { return _items; }
+    const std::vector<Variant> &variants() const { return _variants; }
+    bool hasAssociatedData() const {
+        for (const auto &v : _variants) {
+            if (!v.fields.empty()) return true;
+        }
+        return false;
+    }
     std::string to_string() override;
 
   private:
     std::vector<std::string> _items;
+    std::vector<Variant> _variants;
 };
 class GStruct : public GVarDefContainer {
   public:

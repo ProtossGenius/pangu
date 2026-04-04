@@ -1,0 +1,15 @@
+package main;
+
+type Result enum {
+    Ok(value int),
+    Err(msg string),
+}
+
+func main() {
+    r := Result::Ok(42);
+    v := match(r) {
+        Ok(val) => val;
+        Err(msg) => 0;
+    };
+    println(v);
+}

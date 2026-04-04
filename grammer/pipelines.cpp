@@ -104,7 +104,13 @@ void PipeTypeDef::accept(IPipelineFactory *factory, PData &&data) {
 enum class EnumStep {
     WAIT_BODY = 0,
     READ_ITEM,
+    CHECK_VARIANT_PAREN,  // After variant name: check for '(' or separator
+    READ_VARIANT_FIELD_NAME,
+    READ_VARIANT_FIELD_TYPE,
 };
+static std::string s_pending_variant_name;
+static std::vector<GEnum::VariantField> s_pending_variant_fields;
+static std::string s_pending_field_name;
 void PipeEnum::createProduct(IPipelineFactory *factory) {}
 void PipeEnum::accept(IPipelineFactory *factory, PData &&data) {
     GET_LEX(data);
@@ -132,7 +138,64 @@ void PipeEnum::accept(IPipelineFactory *factory, PData &&data) {
             factory->onFail("enum item need identifier, but get " +
                             lex->to_string());
         }
-        topProduct->addItem(str);
+        s_pending_variant_name = str;
+        topProduct->setStep(int(EnumStep::CHECK_VARIANT_PAREN));
+        return;
+    }
+    case int(EnumStep::CHECK_VARIANT_PAREN): {
+        // After variant name: '(' starts associated data, anything else = simple variant
+        if (makeSymbol("(") == *lex) {
+            s_pending_variant_fields.clear();
+            topProduct->setStep(int(EnumStep::READ_VARIANT_FIELD_NAME));
+            return;
+        }
+        // Simple variant with no associated data
+        topProduct->addItem(s_pending_variant_name);
+        topProduct->setStep(int(EnumStep::READ_ITEM));
+        if (makeSymbol(",") == *lex || makeSymbol("}") == *lex) {
+            if (makeSymbol("}") == *lex) {
+                factory->packProduct();
+            }
+            return;
+        }
+        // Next identifier = start of next variant (no comma separator)
+        if (lexer::ELexPipeline::Identifier == type) {
+            s_pending_variant_name = str;
+            topProduct->setStep(int(EnumStep::CHECK_VARIANT_PAREN));
+            return;
+        }
+        factory->onFail("unexpected token after enum variant: " + lex->to_string());
+        break;
+    }
+    case int(EnumStep::READ_VARIANT_FIELD_NAME): {
+        // Inside variant parens: read field name or ')' to end
+        if (makeSymbol(",") == *lex) {
+            return;
+        }
+        if (makeSymbol(")") == *lex) {
+            topProduct->addVariantWithFields(s_pending_variant_name,
+                                             s_pending_variant_fields);
+            s_pending_variant_fields.clear();
+            topProduct->setStep(int(EnumStep::READ_ITEM));
+            return;
+        }
+        if (lexer::ELexPipeline::Identifier == type) {
+            s_pending_field_name = str;
+            topProduct->setStep(int(EnumStep::READ_VARIANT_FIELD_TYPE));
+            return;
+        }
+        factory->onFail("unexpected token in enum variant fields: " + lex->to_string());
+        break;
+    }
+    case int(EnumStep::READ_VARIANT_FIELD_TYPE): {
+        if (lexer::ELexPipeline::Identifier != type) {
+            factory->onFail("expected type name for enum variant field, got " +
+                            lex->to_string());
+            break;
+        }
+        s_pending_variant_fields.push_back({s_pending_field_name, str});
+        // After field type: ',' for more fields, ')' to end
+        topProduct->setStep(int(EnumStep::READ_VARIANT_FIELD_NAME));
         return;
     }
     default:
