@@ -49,4 +49,12 @@ func main() {
     im.set("x", 42);
     println(im.has("x"));
     println(im.get("x"));
+
+    // String method calls
+    s := "hello world";
+    println(s.len());
+    println(s.index_of("world"));
+    println(s.substr(0, 5));
+    println(s.starts_with("hello"));
+    println(s.ends_with("world"));
 }

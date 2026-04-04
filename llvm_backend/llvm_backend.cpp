@@ -4464,6 +4464,18 @@ class ModuleBuilder {
             if (method_name == "build")  return "sb_build";
             if (method_name == "len")    return "sb_len";
         }
+        // String methods
+        if (type_name == "string") {
+            if (method_name == "len")         return "str_len";
+            if (method_name == "char_at")     return "str_char_at";
+            if (method_name == "index_of")    return "str_index_of";
+            if (method_name == "substr")      return "str_substr";
+            if (method_name == "starts_with") return "str_starts_with";
+            if (method_name == "ends_with")   return "str_ends_with";
+            if (method_name == "replace")     return "str_replace";
+            if (method_name == "eq")          return "str_eq";
+            if (method_name == "concat")      return "str_concat";
+        }
         return "";
     }
 
@@ -4471,14 +4483,52 @@ class ModuleBuilder {
     llvm::Value *emitMethodCall(llvm::AllocaInst *receiver_var,
                                  const std::string &func_name,
                                  const pgcodes::GCode *args_code) {
+        // Load receiver value
+        auto *recv_type = receiver_var->getAllocatedType();
+        auto *recv_val = _builder.CreateLoad(recv_type, receiver_var, "self");
+
+        // Build args: receiver as first arg, then user args
+        std::vector<llvm::Value *> all_args;
+        all_args.push_back(recv_val);
+        auto user_args = emitCallArgs(args_code);
+        all_args.insert(all_args.end(), user_args.begin(), user_args.end());
+
+        // Try to find the function in the module
         auto *func = _module->getFunction(func_name);
         if (!func) {
             func = resolveCurrentFunction(func_name);
         }
+
+        // Use builtin dispatch for known builtins
         if (!func) {
-            throw std::runtime_error("method function not found: " + func_name);
+            return emitBuiltinMethodCall(func_name, all_args);
         }
-        return emitMethodCall(receiver_var, func_name, func, args_code);
+
+        auto *ret = _builder.CreateCall(func, all_args);
+        if (ret->getType()->isVoidTy()) {
+            return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+        }
+        return ret;
+    }
+
+    // Dispatch known builtin functions with pre-built args
+    llvm::Value *emitBuiltinMethodCall(const std::string &func_name,
+                                        const std::vector<llvm::Value *> &args) {
+        if (func_name == "str_len")         return emitStrLen(args);
+        if (func_name == "str_eq")          return emitStrEq(args);
+        if (func_name == "str_concat")      return emitStrConcat(args);
+        if (func_name == "str_substr")      return emitStrSubstr(args);
+        if (func_name == "str_index_of")    return emitStrIndexOf(args[0], args[1]);
+        if (func_name == "str_starts_with") return emitStrStartsWith(args[0], args[1]);
+        if (func_name == "str_replace")     return emitStrReplace(args[0], args[1], args[2]);
+        if (func_name == "str_char_at")     return emitStrCharAt(args[0], args[1]);
+        if (func_name == "int_to_str")      return emitIntToStr(args);
+        if (func_name == "char_to_str")     return emitCharToStr(args[0]);
+        if (func_name == "str_ends_with") {
+            auto *fn = _module->getFunction("pg_str_ends_with");
+            return _builder.CreateCall(fn, args, "ends_with");
+        }
+        throw std::runtime_error("method function not found: " + func_name);
     }
 
     // Emit method call with known function, prepending receiver as first arg
@@ -4532,6 +4582,11 @@ class ModuleBuilder {
                     return emitMethodCall(var_it->second, struct_mangled,
                                           callee_function, args_code);
                 }
+            }
+            // Try string method as fallback for ptr-typed variables
+            std::string str_func = resolveMethodName("string", callee);
+            if (!str_func.empty()) {
+                return emitMethodCall(var_it->second, str_func, args_code);
             }
             // Fall through to interface dispatch
             return emitInterfaceMethodCall(var_it->second, module_alias,
