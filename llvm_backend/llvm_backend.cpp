@@ -2117,18 +2117,24 @@ class ModuleBuilder {
             }
             // Interpolation: ${expr}
             if (raw[i] == '$' && i + 1 < raw.size() && raw[i + 1] == '{') {
-                flushLiteral();
-                i += 2; // skip ${
-                // Find matching }
+                // Look ahead for matching }
+                size_t start = i + 2;
                 int depth = 1;
-                std::string expr_str;
-                while (i < raw.size() && depth > 0) {
-                    if (raw[i] == '{') depth++;
-                    else if (raw[i] == '}') { depth--; if (depth == 0) break; }
-                    expr_str += raw[i];
-                    i++;
+                size_t j = start;
+                while (j < raw.size() && depth > 0) {
+                    if (raw[j] == '{') depth++;
+                    else if (raw[j] == '}') { depth--; if (depth == 0) break; }
+                    j++;
                 }
-                if (i < raw.size()) i++; // skip }
+                // No matching } or empty expr → treat as literal
+                if (depth != 0 || j == start) {
+                    literal += raw[i];
+                    i++;
+                    continue;
+                }
+                std::string expr_str = raw.substr(start, j - start);
+                flushLiteral();
+                i = j + 1; // skip past }
 
                 // Simple case: just a variable name
                 auto var_it = _variables.find(expr_str);
@@ -2143,8 +2149,6 @@ class ModuleBuilder {
                         _builder.CreateCall(sb_app, {sb, val});
                     }
                 } else {
-                    // Try as function reference or expression - treat as identifier
-                    // For now, emit the expression text as a variable lookup
                     throw std::runtime_error(
                         "string interpolation: unknown variable '" + expr_str + "'");
                 }

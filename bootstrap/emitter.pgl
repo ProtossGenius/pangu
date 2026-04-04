@@ -292,6 +292,75 @@ func is_builtin(name string) int {
 }
 
 // ============================================================
+// String interpolation emitter — generates GCC statement expression
+// ============================================================
+func emit_interp_string(ctx string, raw string) string {
+    sb := make_str_builder();
+    sb_append(sb, "({char* _isb=pg_make_str_builder();");
+    i := 0;
+    len := str_len(raw);
+    dq := char_to_str(34);
+    bs := char_to_str(92);
+    lit := make_str_builder();
+    while (i < len) {
+        ch := str_char_at(raw, i);
+        // Escaped dollar: \$
+        if (ch == 92 && i + 1 < len && str_char_at(raw, i + 1) == 36) {
+            sb_append_char(lit, 36);
+            i = i + 2;
+        }
+        // Interpolation: ${
+        else if (ch == 36 && i + 1 < len && str_char_at(raw, i + 1) == 123) {
+            // Flush literal
+            lit_s := sb_build(lit);
+            if (str_len(lit_s) > 0) {
+                sb_append(sb, "pg_sb_append(_isb,");
+                sb_append(sb, dq);
+                sb_append(sb, c_escape(lit_s));
+                sb_append(sb, dq);
+                sb_append(sb, ");");
+            }
+            sb_reset(lit);
+            i = i + 2;
+            // Extract variable name until }
+            varname := make_str_builder();
+            while (i < len && str_char_at(raw, i) != 125) {
+                sb_append_char(varname, str_char_at(raw, i));
+                i = i + 1;
+            }
+            if (i < len) { i = i + 1; }
+            vn := sb_build(varname);
+            // Check variable type
+            vt := scope_find(ctx, vn);
+            if (vt == 1) {
+                sb_append(sb, "pg_sb_append(_isb,");
+                sb_append(sb, vn);
+                sb_append(sb, ");");
+            } else {
+                sb_append(sb, "pg_sb_append_int(_isb,");
+                sb_append(sb, vn);
+                sb_append(sb, ");");
+            }
+        }
+        else {
+            sb_append_char(lit, ch);
+            i = i + 1;
+        }
+    }
+    // Flush remaining literal
+    lit_s := sb_build(lit);
+    if (str_len(lit_s) > 0) {
+        sb_append(sb, "pg_sb_append(_isb,");
+        sb_append(sb, dq);
+        sb_append(sb, c_escape(lit_s));
+        sb_append(sb, dq);
+        sb_append(sb, ");");
+    }
+    sb_append(sb, "pg_sb_build(_isb);})");
+    return sb_build(sb);
+}
+
+// ============================================================
 // Expression emitter
 // ============================================================
 func emit_expr(ctx string, id int) string {
@@ -304,6 +373,14 @@ func emit_expr(ctx string, id int) string {
 
     // STRING
     if (k == 21) {
+        // Check for string interpolation: need ${var} with non-empty var and closing }
+        idx := str_index_of(sv, "${");
+        if (idx >= 0) {
+            close := str_index_of(str_substr(sv, idx + 2, str_len(sv)), "}");
+            if (close > 0) {
+                return emit_interp_string(ctx, sv);
+            }
+        }
         dq := char_to_str(34);
         sb := make_str_builder();
         sb_append(sb, dq);
