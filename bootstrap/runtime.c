@@ -432,3 +432,37 @@ static void pg_dyn_str_array_set(char* ap, int i, char* val) {
 }
 static int pg_dyn_str_array_size(char* ap) { return ((DynStrArray*)ap)->size; }
 
+// ===== String Builder =====
+typedef struct { char* buf; int len; int cap; } StringBuilder;
+static char* pg_make_str_builder() {
+    StringBuilder* sb = (StringBuilder*)malloc(sizeof(StringBuilder));
+    sb->cap = 256; sb->len = 0;
+    sb->buf = (char*)malloc(sb->cap); sb->buf[0] = '\0';
+    return (char*)sb;
+}
+static void pg_sb_append(char* sbp, char* s) {
+    StringBuilder* sb = (StringBuilder*)sbp;
+    int slen = strlen(s);
+    while (sb->len + slen + 1 > sb->cap) {
+        sb->cap *= 2; sb->buf = (char*)realloc(sb->buf, sb->cap);
+    }
+    memcpy(sb->buf + sb->len, s, slen);
+    sb->len += slen; sb->buf[sb->len] = '\0';
+}
+static void pg_sb_append_int(char* sbp, int n) {
+    char tmp[32]; snprintf(tmp, sizeof(tmp), "%d", n);
+    pg_sb_append(sbp, tmp);
+}
+static void pg_sb_append_char(char* sbp, int ch) {
+    StringBuilder* sb = (StringBuilder*)sbp;
+    if (sb->len + 2 > sb->cap) {
+        sb->cap *= 2; sb->buf = (char*)realloc(sb->buf, sb->cap);
+    }
+    sb->buf[sb->len++] = (char)ch; sb->buf[sb->len] = '\0';
+}
+static char* pg_sb_build(char* sbp) { return strdup(((StringBuilder*)sbp)->buf); }
+static void pg_sb_reset(char* sbp) {
+    StringBuilder* sb = (StringBuilder*)sbp; sb->len = 0; sb->buf[0] = '\0';
+}
+static int pg_sb_len(char* sbp) { return ((StringBuilder*)sbp)->len; }
+

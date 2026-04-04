@@ -94,6 +94,9 @@ const std::set<std::string> BUILTIN_FUNCTIONS = {
     // Dynamic string array
     "make_dyn_str_array", "dyn_str_array_push", "dyn_str_array_get",
     "dyn_str_array_set", "dyn_str_array_size",
+    // String builder
+    "make_str_builder", "sb_append", "sb_append_int", "sb_append_char",
+    "sb_build", "sb_reset", "sb_len",
 };
 
 bool isBuiltin(const std::string &name) {
@@ -165,6 +168,14 @@ size_t builtinParamCount(const std::string &name) {
     if (name == "dyn_str_array_get") return 2;
     if (name == "dyn_str_array_set") return 3;
     if (name == "dyn_str_array_size") return 1;
+    // String builder
+    if (name == "make_str_builder") return 0;
+    if (name == "sb_append") return 2;
+    if (name == "sb_append_int") return 2;
+    if (name == "sb_append_char") return 2;
+    if (name == "sb_build") return 1;
+    if (name == "sb_reset") return 1;
+    if (name == "sb_len") return 1;
     return 0;
 }
 
@@ -200,6 +211,9 @@ std::string builtinReturnType(const std::string &name) {
     if (name == "int_map_get" || name == "int_map_has" || name == "int_map_size") return "int";
     // Dynamic array
     if (name == "make_dyn_array" || name == "make_dyn_str_array") return "ptr";
+    if (name == "make_str_builder") return "ptr";
+    if (name == "sb_build") return "string";
+    if (name == "sb_len") return "int";
     if (name == "dyn_array_get" || name == "dyn_array_size" || name == "dyn_array_pop") return "int";
     if (name == "dyn_str_array_get") return "string";
     if (name == "dyn_str_array_size") return "int";
@@ -272,6 +286,11 @@ std::vector<std::string> builtinParamTypes(const std::string &name) {
     if (name == "dyn_str_array_get") return {"ptr", "int"};
     if (name == "dyn_str_array_set") return {"ptr", "int", "string"};
     if (name == "dyn_str_array_size") return {"ptr"};
+    // String builder
+    if (name == "sb_append") return {"ptr", "string"};
+    if (name == "sb_append_int") return {"ptr", "int"};
+    if (name == "sb_append_char") return {"ptr", "int"};
+    if (name == "sb_build" || name == "sb_reset" || name == "sb_len") return {"ptr"};
     return {};
 }
 

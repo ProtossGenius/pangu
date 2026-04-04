@@ -656,3 +656,64 @@ void dyn_str_array_set(void *ap, int index, const char *val) {
 int dyn_str_array_size(void *ap) {
     return ((DynStrArray *)ap)->size;
 }
+
+// ── String Builder ──
+
+typedef struct {
+    char *buf;
+    int   len;
+    int   cap;
+} StringBuilder;
+
+void *make_str_builder() {
+    StringBuilder *sb = (StringBuilder *)malloc(sizeof(StringBuilder));
+    sb->cap = 256;
+    sb->len = 0;
+    sb->buf = (char *)malloc(sb->cap);
+    sb->buf[0] = '\0';
+    return sb;
+}
+
+void sb_append(void *sbp, const char *s) {
+    StringBuilder *sb = (StringBuilder *)sbp;
+    int slen = strlen(s);
+    while (sb->len + slen + 1 > sb->cap) {
+        sb->cap *= 2;
+        sb->buf = (char *)realloc(sb->buf, sb->cap);
+    }
+    memcpy(sb->buf + sb->len, s, slen);
+    sb->len += slen;
+    sb->buf[sb->len] = '\0';
+}
+
+void sb_append_int(void *sbp, int n) {
+    char tmp[32];
+    snprintf(tmp, sizeof(tmp), "%d", n);
+    sb_append(sbp, tmp);
+}
+
+void sb_append_char(void *sbp, int ch) {
+    StringBuilder *sb = (StringBuilder *)sbp;
+    if (sb->len + 2 > sb->cap) {
+        sb->cap *= 2;
+        sb->buf = (char *)realloc(sb->buf, sb->cap);
+    }
+    sb->buf[sb->len++] = (char)ch;
+    sb->buf[sb->len] = '\0';
+}
+
+const char *sb_build(void *sbp) {
+    StringBuilder *sb = (StringBuilder *)sbp;
+    char *result = strdup(sb->buf);
+    return result;
+}
+
+void sb_reset(void *sbp) {
+    StringBuilder *sb = (StringBuilder *)sbp;
+    sb->len = 0;
+    sb->buf[0] = '\0';
+}
+
+int sb_len(void *sbp) {
+    return ((StringBuilder *)sbp)->len;
+}

@@ -200,6 +200,8 @@ func infer_type(ctx string, id int) int {
         if (str_eq(sv, "make_dyn_array") == 1) { return 1; }
         if (str_eq(sv, "make_dyn_str_array") == 1) { return 1; }
         if (str_eq(sv, "dyn_str_array_get") == 1) { return 1; }
+        if (str_eq(sv, "make_str_builder") == 1) { return 1; }
+        if (str_eq(sv, "sb_build") == 1) { return 1; }
         return fn_find(ctx, sv);
     }
     return 0;
@@ -274,6 +276,13 @@ func builtin_c_name(name string, arg_type int) string {
     if (str_eq(name, "dyn_str_array_get") == 1) { return "pg_dyn_str_array_get"; }
     if (str_eq(name, "dyn_str_array_set") == 1) { return "pg_dyn_str_array_set"; }
     if (str_eq(name, "dyn_str_array_size") == 1) { return "pg_dyn_str_array_size"; }
+    if (str_eq(name, "make_str_builder") == 1) { return "pg_make_str_builder"; }
+    if (str_eq(name, "sb_append") == 1) { return "pg_sb_append"; }
+    if (str_eq(name, "sb_append_int") == 1) { return "pg_sb_append_int"; }
+    if (str_eq(name, "sb_append_char") == 1) { return "pg_sb_append_char"; }
+    if (str_eq(name, "sb_build") == 1) { return "pg_sb_build"; }
+    if (str_eq(name, "sb_reset") == 1) { return "pg_sb_reset"; }
+    if (str_eq(name, "sb_len") == 1) { return "pg_sb_len"; }
     return name;
 }
 

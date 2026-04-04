@@ -432,6 +432,22 @@ class ModuleBuilder {
             llvm::FunctionType::get(void_ty, {ptr_ty, i32_ty, ptr_ty}, false));
         _module->getOrInsertFunction("dyn_str_array_size",
             llvm::FunctionType::get(i32_ty, {ptr_ty}, false));
+
+        // ── String Builder ──
+        _module->getOrInsertFunction("make_str_builder",
+            llvm::FunctionType::get(ptr_ty, {}, false));
+        _module->getOrInsertFunction("sb_append",
+            llvm::FunctionType::get(void_ty, {ptr_ty, ptr_ty}, false));
+        _module->getOrInsertFunction("sb_append_int",
+            llvm::FunctionType::get(void_ty, {ptr_ty, i32_ty}, false));
+        _module->getOrInsertFunction("sb_append_char",
+            llvm::FunctionType::get(void_ty, {ptr_ty, i32_ty}, false));
+        _module->getOrInsertFunction("sb_build",
+            llvm::FunctionType::get(ptr_ty, {ptr_ty}, false));
+        _module->getOrInsertFunction("sb_reset",
+            llvm::FunctionType::get(void_ty, {ptr_ty}, false));
+        _module->getOrInsertFunction("sb_len",
+            llvm::FunctionType::get(i32_ty, {ptr_ty}, false));
     }
 
     void declareStructTypes() {
@@ -3642,6 +3658,45 @@ class ModuleBuilder {
             auto args = emitCallArgs(args_code);
             auto *fn = _module->getFunction("dyn_str_array_size");
             return _builder.CreateCall(fn, {args[0]}, "dsarr_sz");
+        }
+        // ── String Builder builtins ──
+        if (callee == "make_str_builder") {
+            auto *fn = _module->getFunction("make_str_builder");
+            return _builder.CreateCall(fn, {}, "sb_ptr");
+        }
+        if (callee == "sb_append") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("sb_append");
+            _builder.CreateCall(fn, {args[0], args[1]});
+            return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+        }
+        if (callee == "sb_append_int") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("sb_append_int");
+            _builder.CreateCall(fn, {args[0], args[1]});
+            return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+        }
+        if (callee == "sb_append_char") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("sb_append_char");
+            _builder.CreateCall(fn, {args[0], args[1]});
+            return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+        }
+        if (callee == "sb_build") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("sb_build");
+            return _builder.CreateCall(fn, {args[0]}, "sb_str");
+        }
+        if (callee == "sb_reset") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("sb_reset");
+            _builder.CreateCall(fn, {args[0]});
+            return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+        }
+        if (callee == "sb_len") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("sb_len");
+            return _builder.CreateCall(fn, {args[0]}, "sb_length");
         }
         if (callee_function == nullptr) {
             // Try generic function instantiation

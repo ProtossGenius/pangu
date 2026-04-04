@@ -1,0 +1,35 @@
+package main;
+
+func main() {
+    sb := make_str_builder();
+    sb_append(sb, "Hello");
+    sb_append(sb, ", ");
+    sb_append(sb, "World");
+    sb_append(sb, "!");
+    println(sb_build(sb));
+
+    sb_reset(sb);
+    sb_append(sb, "x = ");
+    sb_append_int(sb, 42);
+    sb_append(sb, ", y = ");
+    sb_append_int(sb, 100);
+    println(sb_build(sb));
+
+    sb_reset(sb);
+    sb_append(sb, "ABC");
+    println(sb_len(sb));
+
+    sb_reset(sb);
+    i := 0;
+    while (i < 5) {
+        if (i > 0) { sb_append(sb, ", "); }
+        sb_append_int(sb, i * i);
+        i = i + 1;
+    }
+    println(sb_build(sb));
+
+    sb_reset(sb);
+    sb_append_char(sb, 72);
+    sb_append_char(sb, 105);
+    println(sb_build(sb));
+}
