@@ -130,11 +130,42 @@ type Point struct {
 ### Enum
 
 ```pgl
+// Simple enum (ordinal integers)
 type Color enum { RED, GREEN, BLUE }
 
 // Enum variant access (ordinal integers: 0, 1, 2)
 c := Color::RED;
 if (c == Color::BLUE) { println("blue"); }
+```
+
+### Enum with Associated Data (Algebraic Data Types)
+
+```pgl
+type Result enum {
+    Ok(value int),
+    Err(msg string),
+}
+
+type Option enum {
+    Some(val int),
+    None,
+}
+
+// Construction
+r := Result::Ok(42);
+o := Option::None;
+
+// Match destructuring — binds variant fields to local variables
+v := match(r) {
+    Ok(v)  => v;       // v is bound to the int field
+    Err(e) => 0;       // e is bound to the string field (unused here)
+};
+
+msg := match(r) {
+    Ok(v)  => "success";
+    Err(e) => e;       // use the bound error message
+    _      => "unknown";
+};
 ```
 
 ### Pipeline Type
@@ -252,7 +283,7 @@ name := match (c) {
 };
 ```
 
-Match supports enum variants, integer literals, and wildcard `_`.
+Match supports enum variants, integer literals, wildcard `_`, string comparison, and data enum destructuring with field binding.
 
 ## Modules and Imports
 
