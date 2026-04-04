@@ -237,3 +237,198 @@ static int pg_pipeline_get_worker(char* state) {
     return ((PipelineState*)state)->worker_id;
 }
 
+// ===== HashMap: string → string (open-addressing, linear probing) =====
+typedef struct { char* key; char* value; int occupied; } HMEntry;
+typedef struct { HMEntry* buckets; int capacity; int size; } HashMap;
+
+static unsigned int hm_hash(const char* key, int cap) {
+    unsigned int h = 5381;
+    while (*key) { h = h * 33 + (unsigned char)*key++; }
+    return h % (unsigned int)cap;
+}
+static void hm_grow(HashMap* m) {
+    int old_cap = m->capacity; HMEntry* old = m->buckets;
+    m->capacity = old_cap * 2;
+    m->buckets = (HMEntry*)calloc(m->capacity, sizeof(HMEntry));
+    m->size = 0;
+    for (int i = 0; i < old_cap; i++) {
+        if (old[i].occupied) {
+            unsigned int idx = hm_hash(old[i].key, m->capacity);
+            while (m->buckets[idx].occupied) idx = (idx + 1) % m->capacity;
+            m->buckets[idx].key = old[i].key;
+            m->buckets[idx].value = old[i].value;
+            m->buckets[idx].occupied = 1; m->size++;
+        }
+    }
+    free(old);
+}
+static char* pg_make_map() {
+    HashMap* m = (HashMap*)malloc(sizeof(HashMap));
+    m->capacity = 16; m->size = 0;
+    m->buckets = (HMEntry*)calloc(m->capacity, sizeof(HMEntry));
+    return (char*)m;
+}
+static void pg_map_set(char* mp, char* key, char* value) {
+    HashMap* m = (HashMap*)mp;
+    if (m->size * 2 >= m->capacity) hm_grow(m);
+    unsigned int idx = hm_hash(key, m->capacity);
+    while (m->buckets[idx].occupied) {
+        if (strcmp(m->buckets[idx].key, key) == 0) {
+            free(m->buckets[idx].value);
+            m->buckets[idx].value = strdup(value); return;
+        }
+        idx = (idx + 1) % m->capacity;
+    }
+    m->buckets[idx].key = strdup(key);
+    m->buckets[idx].value = strdup(value);
+    m->buckets[idx].occupied = 1; m->size++;
+}
+static char* pg_map_get(char* mp, char* key) {
+    HashMap* m = (HashMap*)mp;
+    unsigned int idx = hm_hash(key, m->capacity);
+    while (m->buckets[idx].occupied) {
+        if (strcmp(m->buckets[idx].key, key) == 0) return m->buckets[idx].value;
+        idx = (idx + 1) % m->capacity;
+    }
+    return "";
+}
+static int pg_map_has(char* mp, char* key) {
+    HashMap* m = (HashMap*)mp;
+    unsigned int idx = hm_hash(key, m->capacity);
+    while (m->buckets[idx].occupied) {
+        if (strcmp(m->buckets[idx].key, key) == 0) return 1;
+        idx = (idx + 1) % m->capacity;
+    }
+    return 0;
+}
+static int pg_map_size(char* mp) { return ((HashMap*)mp)->size; }
+static void pg_map_delete(char* mp, char* key) {
+    HashMap* m = (HashMap*)mp;
+    unsigned int idx = hm_hash(key, m->capacity);
+    while (m->buckets[idx].occupied) {
+        if (strcmp(m->buckets[idx].key, key) == 0) {
+            free(m->buckets[idx].key); free(m->buckets[idx].value);
+            m->buckets[idx].key = NULL; m->buckets[idx].value = NULL;
+            m->buckets[idx].occupied = 0; m->size--;
+            unsigned int next = (idx + 1) % m->capacity;
+            while (m->buckets[next].occupied) {
+                char* rk = m->buckets[next].key; char* rv = m->buckets[next].value;
+                m->buckets[next].occupied = 0; m->size--;
+                pg_map_set(mp, rk, rv); free(rk); free(rv);
+                next = (next + 1) % m->capacity;
+            }
+            return;
+        }
+        idx = (idx + 1) % m->capacity;
+    }
+}
+
+// ===== IntMap: string → int =====
+typedef struct { char* key; int value; int occupied; } IMEntry;
+typedef struct { IMEntry* buckets; int capacity; int size; } IntMap;
+static void im_grow(IntMap* m) {
+    int old_cap = m->capacity; IMEntry* old = m->buckets;
+    m->capacity = old_cap * 2;
+    m->buckets = (IMEntry*)calloc(m->capacity, sizeof(IMEntry));
+    m->size = 0;
+    for (int i = 0; i < old_cap; i++) {
+        if (old[i].occupied) {
+            unsigned int idx = hm_hash(old[i].key, m->capacity);
+            while (m->buckets[idx].occupied) idx = (idx + 1) % m->capacity;
+            m->buckets[idx].key = old[i].key;
+            m->buckets[idx].value = old[i].value;
+            m->buckets[idx].occupied = 1; m->size++;
+        }
+    }
+    free(old);
+}
+static char* pg_make_int_map() {
+    IntMap* m = (IntMap*)malloc(sizeof(IntMap));
+    m->capacity = 16; m->size = 0;
+    m->buckets = (IMEntry*)calloc(m->capacity, sizeof(IMEntry));
+    return (char*)m;
+}
+static void pg_int_map_set(char* mp, char* key, int value) {
+    IntMap* m = (IntMap*)mp;
+    if (m->size * 2 >= m->capacity) im_grow(m);
+    unsigned int idx = hm_hash(key, m->capacity);
+    while (m->buckets[idx].occupied) {
+        if (strcmp(m->buckets[idx].key, key) == 0) {
+            m->buckets[idx].value = value; return;
+        }
+        idx = (idx + 1) % m->capacity;
+    }
+    m->buckets[idx].key = strdup(key);
+    m->buckets[idx].value = value;
+    m->buckets[idx].occupied = 1; m->size++;
+}
+static int pg_int_map_get(char* mp, char* key) {
+    IntMap* m = (IntMap*)mp;
+    unsigned int idx = hm_hash(key, m->capacity);
+    while (m->buckets[idx].occupied) {
+        if (strcmp(m->buckets[idx].key, key) == 0) return m->buckets[idx].value;
+        idx = (idx + 1) % m->capacity;
+    }
+    return 0;
+}
+static int pg_int_map_has(char* mp, char* key) {
+    IntMap* m = (IntMap*)mp;
+    unsigned int idx = hm_hash(key, m->capacity);
+    while (m->buckets[idx].occupied) {
+        if (strcmp(m->buckets[idx].key, key) == 0) return 1;
+        idx = (idx + 1) % m->capacity;
+    }
+    return 0;
+}
+static int pg_int_map_size(char* mp) { return ((IntMap*)mp)->size; }
+
+// ===== Dynamic Array (resizable int) =====
+typedef struct { int* data; int size; int capacity; } DynArray;
+static char* pg_make_dyn_array() {
+    DynArray* a = (DynArray*)malloc(sizeof(DynArray));
+    a->capacity = 16; a->size = 0;
+    a->data = (int*)malloc(a->capacity * sizeof(int));
+    return (char*)a;
+}
+static void pg_dyn_array_push(char* ap, int val) {
+    DynArray* a = (DynArray*)ap;
+    if (a->size >= a->capacity) {
+        a->capacity *= 2; a->data = (int*)realloc(a->data, a->capacity * sizeof(int));
+    }
+    a->data[a->size++] = val;
+}
+static int pg_dyn_array_get(char* ap, int i) {
+    DynArray* a = (DynArray*)ap; return (i >= 0 && i < a->size) ? a->data[i] : 0;
+}
+static void pg_dyn_array_set(char* ap, int i, int val) {
+    DynArray* a = (DynArray*)ap; if (i >= 0 && i < a->size) a->data[i] = val;
+}
+static int pg_dyn_array_size(char* ap) { return ((DynArray*)ap)->size; }
+static int pg_dyn_array_pop(char* ap) {
+    DynArray* a = (DynArray*)ap; return (a->size > 0) ? a->data[--a->size] : 0;
+}
+
+// ===== Dynamic String Array =====
+typedef struct { char** data; int size; int capacity; } DynStrArray;
+static char* pg_make_dyn_str_array() {
+    DynStrArray* a = (DynStrArray*)malloc(sizeof(DynStrArray));
+    a->capacity = 16; a->size = 0;
+    a->data = (char**)malloc(a->capacity * sizeof(char*));
+    return (char*)a;
+}
+static void pg_dyn_str_array_push(char* ap, char* val) {
+    DynStrArray* a = (DynStrArray*)ap;
+    if (a->size >= a->capacity) {
+        a->capacity *= 2; a->data = (char**)realloc(a->data, a->capacity * sizeof(char*));
+    }
+    a->data[a->size++] = strdup(val);
+}
+static char* pg_dyn_str_array_get(char* ap, int i) {
+    DynStrArray* a = (DynStrArray*)ap; return (i >= 0 && i < a->size) ? a->data[i] : "";
+}
+static void pg_dyn_str_array_set(char* ap, int i, char* val) {
+    DynStrArray* a = (DynStrArray*)ap;
+    if (i >= 0 && i < a->size) { free(a->data[i]); a->data[i] = strdup(val); }
+}
+static int pg_dyn_str_array_size(char* ap) { return ((DynStrArray*)ap)->size; }
+

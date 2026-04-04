@@ -194,6 +194,12 @@ func infer_type(ctx string, id int) int {
         if (str_eq(sv, "pipeline_create") == 1) { return 1; }
         if (str_eq(sv, "pipeline_cache_str") == 1) { return 1; }
         if (str_eq(sv, "pipeline_output_get") == 1) { return 1; }
+        if (str_eq(sv, "make_map") == 1) { return 1; }
+        if (str_eq(sv, "map_get") == 1) { return 1; }
+        if (str_eq(sv, "make_int_map") == 1) { return 1; }
+        if (str_eq(sv, "make_dyn_array") == 1) { return 1; }
+        if (str_eq(sv, "make_dyn_str_array") == 1) { return 1; }
+        if (str_eq(sv, "dyn_str_array_get") == 1) { return 1; }
         return fn_find(ctx, sv);
     }
     return 0;
@@ -246,6 +252,28 @@ func builtin_c_name(name string, arg_type int) string {
     if (str_eq(name, "pipeline_output_get") == 1) { return "pg_pipeline_output_get"; }
     if (str_eq(name, "pipeline_set_worker") == 1) { return "pg_pipeline_set_worker"; }
     if (str_eq(name, "pipeline_get_worker") == 1) { return "pg_pipeline_get_worker"; }
+    if (str_eq(name, "make_map") == 1) { return "pg_make_map"; }
+    if (str_eq(name, "map_set") == 1) { return "pg_map_set"; }
+    if (str_eq(name, "map_get") == 1) { return "pg_map_get"; }
+    if (str_eq(name, "map_has") == 1) { return "pg_map_has"; }
+    if (str_eq(name, "map_size") == 1) { return "pg_map_size"; }
+    if (str_eq(name, "map_delete") == 1) { return "pg_map_delete"; }
+    if (str_eq(name, "make_int_map") == 1) { return "pg_make_int_map"; }
+    if (str_eq(name, "int_map_set") == 1) { return "pg_int_map_set"; }
+    if (str_eq(name, "int_map_get") == 1) { return "pg_int_map_get"; }
+    if (str_eq(name, "int_map_has") == 1) { return "pg_int_map_has"; }
+    if (str_eq(name, "int_map_size") == 1) { return "pg_int_map_size"; }
+    if (str_eq(name, "make_dyn_array") == 1) { return "pg_make_dyn_array"; }
+    if (str_eq(name, "dyn_array_push") == 1) { return "pg_dyn_array_push"; }
+    if (str_eq(name, "dyn_array_get") == 1) { return "pg_dyn_array_get"; }
+    if (str_eq(name, "dyn_array_set") == 1) { return "pg_dyn_array_set"; }
+    if (str_eq(name, "dyn_array_size") == 1) { return "pg_dyn_array_size"; }
+    if (str_eq(name, "dyn_array_pop") == 1) { return "pg_dyn_array_pop"; }
+    if (str_eq(name, "make_dyn_str_array") == 1) { return "pg_make_dyn_str_array"; }
+    if (str_eq(name, "dyn_str_array_push") == 1) { return "pg_dyn_str_array_push"; }
+    if (str_eq(name, "dyn_str_array_get") == 1) { return "pg_dyn_str_array_get"; }
+    if (str_eq(name, "dyn_str_array_set") == 1) { return "pg_dyn_str_array_set"; }
+    if (str_eq(name, "dyn_str_array_size") == 1) { return "pg_dyn_str_array_size"; }
     return name;
 }
 
