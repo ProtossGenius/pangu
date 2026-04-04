@@ -1,0 +1,52 @@
+package main;
+
+type Point struct {
+    x int;
+    y int;
+}
+
+impl Point Methods {
+    func sum(self Point) int {
+        return self.x + self.y;
+    }
+}
+
+func main() {
+    // DynArray method calls
+    arr := make_dyn_array();
+    arr.push(10);
+    arr.push(20);
+    arr.push(30);
+    println(arr.size());
+    println(arr.get(0));
+    println(arr.get(1));
+
+    // DynStrArray method calls
+    names := make_dyn_str_array();
+    names.push("hello");
+    names.push("world");
+    println(names.size());
+    println(names.get(0));
+
+    // HashMap method calls
+    m := make_map();
+    m.set("key", "val");
+    println(m.has("key"));
+    println(m.get("key"));
+
+    // StringBuilder method calls
+    sb := make_str_builder();
+    sb.append("hi ");
+    sb.append("there");
+    println(sb.build());
+
+    // Struct impl method calls
+    p := Point{x: 3, y: 4};
+    println(p.sum());
+
+    // IntMap method calls
+    im := make_int_map();
+    im.set("x", 42);
+    println(im.has("x"));
+    println(im.get("x"));
+}

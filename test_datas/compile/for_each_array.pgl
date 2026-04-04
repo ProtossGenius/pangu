@@ -1,0 +1,42 @@
+package main;
+
+func test_dyn_array() {
+    arr := make_dyn_array();
+    dyn_array_push(arr, 10);
+    dyn_array_push(arr, 20);
+    dyn_array_push(arr, 30);
+
+    for x in arr {
+        println(x);
+    }
+}
+
+func test_dyn_str_array() {
+    arr := make_dyn_str_array();
+    dyn_str_array_push(arr, "hello");
+    dyn_str_array_push(arr, "world");
+    dyn_str_array_push(arr, "!");
+
+    for s in arr {
+        println(s);
+    }
+}
+
+func test_range() {
+    for i in 3 {
+        println(i);
+    }
+}
+
+func test_string() {
+    for ch in "abc" {
+        println(ch);
+    }
+}
+
+func main() {
+    test_dyn_array();
+    test_dyn_str_array();
+    test_range();
+    test_string();
+}

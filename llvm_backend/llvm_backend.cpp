@@ -3075,11 +3075,24 @@ class ModuleBuilder {
                      rhs->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER) {
                 rhs_callee = rhs->getLeft()->getValue();
             }
+            // Pattern 3: struct literal {StructName, fields...}
+            else if (rhs->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                     rhs->getOper() == "{" && rhs->getLeft() != nullptr &&
+                     rhs->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER &&
+                     _struct_types.count(rhs->getLeft()->getValue()) != 0) {
+                _variable_sem_types[name] = rhs->getLeft()->getValue();
+            }
             if (!rhs_callee.empty()) {
                 if (rhs_callee == "make_dyn_array") {
                     _variable_sem_types[name] = "DynArray";
                 } else if (rhs_callee == "make_dyn_str_array" || rhs_callee == "make_str_array") {
                     _variable_sem_types[name] = "DynStrArray";
+                } else if (rhs_callee == "make_map") {
+                    _variable_sem_types[name] = "HashMap";
+                } else if (rhs_callee == "make_int_map") {
+                    _variable_sem_types[name] = "IntMap";
+                } else if (rhs_callee == "make_str_builder") {
+                    _variable_sem_types[name] = "StringBuilder";
                 }
             }
         }
@@ -4412,6 +4425,84 @@ class ModuleBuilder {
         return _builder.CreateCall(ftype, fn_ptr, all_args, callee + ".ccall");
     }
 
+    // Resolve method name for built-in collection types
+    // Returns the actual C function name, or empty if not found
+    std::string resolveMethodName(const std::string &type_name,
+                                   const std::string &method_name) {
+        // DynArray methods
+        if (type_name == "DynArray") {
+            if (method_name == "push")   return "dyn_array_push";
+            if (method_name == "get")    return "dyn_array_get";
+            if (method_name == "set")    return "dyn_array_set";
+            if (method_name == "size")   return "dyn_array_size";
+            if (method_name == "pop")    return "dyn_array_pop";
+        }
+        // DynStrArray methods
+        if (type_name == "DynStrArray") {
+            if (method_name == "push")   return "dyn_str_array_push";
+            if (method_name == "get")    return "dyn_str_array_get";
+            if (method_name == "set")    return "dyn_str_array_set";
+            if (method_name == "size")   return "dyn_str_array_size";
+        }
+        // HashMap methods
+        if (type_name == "HashMap") {
+            if (method_name == "get")    return "map_get";
+            if (method_name == "set")    return "map_set";
+            if (method_name == "has")    return "map_has";
+            if (method_name == "size")   return "map_size";
+        }
+        // IntMap methods
+        if (type_name == "IntMap") {
+            if (method_name == "get")    return "int_map_get";
+            if (method_name == "set")    return "int_map_set";
+            if (method_name == "has")    return "int_map_has";
+            if (method_name == "size")   return "int_map_size";
+        }
+        // StringBuilder methods
+        if (type_name == "StringBuilder") {
+            if (method_name == "append") return "sb_append";
+            if (method_name == "build")  return "sb_build";
+            if (method_name == "len")    return "sb_len";
+        }
+        return "";
+    }
+
+    // Emit a method call: resolve function, prepend receiver as first arg
+    llvm::Value *emitMethodCall(llvm::AllocaInst *receiver_var,
+                                 const std::string &func_name,
+                                 const pgcodes::GCode *args_code) {
+        auto *func = _module->getFunction(func_name);
+        if (!func) {
+            func = resolveCurrentFunction(func_name);
+        }
+        if (!func) {
+            throw std::runtime_error("method function not found: " + func_name);
+        }
+        return emitMethodCall(receiver_var, func_name, func, args_code);
+    }
+
+    // Emit method call with known function, prepending receiver as first arg
+    llvm::Value *emitMethodCall(llvm::AllocaInst *receiver_var,
+                                 const std::string &func_name,
+                                 llvm::Function *func,
+                                 const pgcodes::GCode *args_code) {
+        // Load receiver value
+        auto *recv_type = receiver_var->getAllocatedType();
+        auto *recv_val = _builder.CreateLoad(recv_type, receiver_var, "self");
+
+        // Build args: receiver as first arg, then user args
+        std::vector<llvm::Value *> call_args;
+        call_args.push_back(recv_val);
+        auto user_args = emitCallArgs(args_code);
+        call_args.insert(call_args.end(), user_args.begin(), user_args.end());
+
+        auto *ret = _builder.CreateCall(func, call_args);
+        if (ret->getType()->isVoidTy()) {
+            return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+        }
+        return ret;
+    }
+
     llvm::Value *emitQualifiedCall(const std::string &module_alias,
                                    const std::string &callee,
                                    const pgcodes::GCode *args_code) {
@@ -4425,9 +4516,24 @@ class ModuleBuilder {
         if (callee_function != nullptr) {
             return emitCall(callee_function, mangled, args_code);
         }
-        // Try as an interface method dispatch: var.method(args)
+        // Try as instance method call: var.method(args) → type_method(var, args)
         auto var_it = _variables.find(module_alias);
         if (var_it != _variables.end()) {
+            auto sem_it = _variable_sem_types.find(module_alias);
+            if (sem_it != _variable_sem_types.end()) {
+                std::string real_func = resolveMethodName(sem_it->second, callee);
+                if (!real_func.empty()) {
+                    return emitMethodCall(var_it->second, real_func, args_code);
+                }
+                // Try struct impl method: StructName.method(self, args)
+                std::string struct_mangled = sem_it->second + "." + callee;
+                callee_function = resolveCurrentFunction(struct_mangled);
+                if (callee_function != nullptr) {
+                    return emitMethodCall(var_it->second, struct_mangled,
+                                          callee_function, args_code);
+                }
+            }
+            // Fall through to interface dispatch
             return emitInterfaceMethodCall(var_it->second, module_alias,
                                            callee, args_code);
         }
