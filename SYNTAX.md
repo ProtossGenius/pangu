@@ -377,7 +377,7 @@ Low-level state management for manual pipeline implementations:
 | `int_to_str(n)` | Integer to string |
 | `str_to_int(s)` | String to integer |
 
-### Arrays
+### Arrays (Fixed-size)
 
 | Function | Description |
 |----------|-------------|
@@ -387,6 +387,48 @@ Low-level state management for manual pipeline implementations:
 | `make_str_array(size)` | Create string array |
 | `str_array_get(arr, i)` | Get string element |
 | `str_array_set(arr, i, val)` | Set string element |
+
+### HashMap (string → string)
+
+| Function | Description |
+|----------|-------------|
+| `make_map()` | Create empty map |
+| `map_set(m, key, val)` | Set key-value pair |
+| `map_get(m, key)` | Get value (empty string if missing) |
+| `map_has(m, key)` | Check key exists (1/0) |
+| `map_size(m)` | Number of entries |
+| `map_delete(m, key)` | Remove entry |
+
+### IntMap (string → int)
+
+| Function | Description |
+|----------|-------------|
+| `make_int_map()` | Create empty int map |
+| `int_map_set(m, key, val)` | Set key-value pair |
+| `int_map_get(m, key)` | Get value (0 if missing) |
+| `int_map_has(m, key)` | Check key exists (1/0) |
+| `int_map_size(m)` | Number of entries |
+
+### Dynamic Array (resizable int)
+
+| Function | Description |
+|----------|-------------|
+| `make_dyn_array()` | Create empty dynamic array |
+| `dyn_array_push(a, val)` | Append value |
+| `dyn_array_get(a, i)` | Get element |
+| `dyn_array_set(a, i, val)` | Set element |
+| `dyn_array_size(a)` | Current size |
+| `dyn_array_pop(a)` | Remove and return last |
+
+### Dynamic String Array (resizable string)
+
+| Function | Description |
+|----------|-------------|
+| `make_dyn_str_array()` | Create empty dynamic string array |
+| `dyn_str_array_push(a, val)` | Append string |
+| `dyn_str_array_get(a, i)` | Get string element |
+| `dyn_str_array_set(a, i, val)` | Set string element |
+| `dyn_str_array_size(a)` | Current size |
 
 ### File System
 
