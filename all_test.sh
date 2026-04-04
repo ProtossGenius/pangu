@@ -52,6 +52,25 @@ test_multifile () {
     done
 }
 
+test_bootstrap () {
+    echo "\033[32m ########## TEST BOOTSTRAP #########\033[0m";
+    echo "\033[32m compiling bootstrap (gen1) ......\033[0m";
+    ./build/pangu compile bootstrap/ -o /tmp/pangu_bs_gen1 > /dev/null 2>&1;
+    if [ $? -ne 0 ]; then echo "\033[31m bootstrap gen1 compile fail \033[0m"; exit; fi
+    echo "\033[32m bootstrap gen1 self-compiling (gen2) ......\033[0m";
+    /tmp/pangu_bs_gen1 compile bootstrap/ -o /tmp/pangu_bs_gen2 > /dev/null 2>&1;
+    if [ $? -ne 0 ]; then echo "\033[31m bootstrap gen2 compile fail \033[0m"; exit; fi
+    echo "\033[32m verifying fixed point (gen2 == gen3) ......\033[0m";
+    /tmp/pangu_bs_gen2 compile bootstrap/ -o /tmp/pangu_bs_gen3 > /dev/null 2>&1;
+    if [ $? -ne 0 ]; then echo "\033[31m bootstrap gen3 compile fail \033[0m"; exit; fi
+    strip /tmp/pangu_bs_gen2 -o /tmp/pangu_bs_gen2_s
+    strip /tmp/pangu_bs_gen3 -o /tmp/pangu_bs_gen3_s
+    diff /tmp/pangu_bs_gen2_s /tmp/pangu_bs_gen3_s > /dev/null 2>&1;
+    if [ $? -ne 0 ]; then echo "\033[31m bootstrap fixed point FAILED (gen2 != gen3) \033[0m"; exit; fi
+    echo "\033[32m bootstrap fixed point verified ✓\033[0m";
+    rm -f /tmp/pangu_bs_gen1 /tmp/pangu_bs_gen2 /tmp/pangu_bs_gen3 /tmp/pangu_bs_gen2_s /tmp/pangu_bs_gen3_s
+}
+
 test_vendor () {
     echo "\033[32m ########## TEST VENDOR #########\033[0m";
     for dir in test_datas/vendor_test/; do
@@ -73,3 +92,4 @@ test_compile
 test_compile_fail
 test_multifile
 test_vendor
+test_bootstrap
