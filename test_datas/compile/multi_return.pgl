@@ -1,0 +1,27 @@
+package main;
+
+func divide(a int, b int) (int, int) {
+    return a / b, a % b;
+}
+
+func swap(a int, b int) (int, int) {
+    return b, a;
+}
+
+func get_info() (string, int) {
+    return "hello", 42;
+}
+
+func main() {
+    q, r := divide(17, 5);
+    println(q);
+    println(r);
+
+    x, y := swap(10, 20);
+    println(x);
+    println(y);
+
+    name, age := get_info();
+    println(name);
+    println(age);
+}

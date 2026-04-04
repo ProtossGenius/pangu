@@ -1037,10 +1037,6 @@ class ModuleBuilder {
     }
 
     llvm::FunctionType *makeFunctionType(const grammer::GFunction &function) {
-        if (function.result.size() > 1) {
-            throw std::runtime_error("multiple return values are not supported");
-        }
-
         std::vector<llvm::Type *> params;
         if (function.name() == "main") {
             // main(argc i32, argv i8**)
@@ -1059,6 +1055,15 @@ class ModuleBuilder {
         } else if (function.result.size() == 1) {
             return_type = getLLVMType(*function.result.getVariable(
                 function.result.orderedNames().front()));
+        } else if (function.result.size() > 1) {
+            // Multiple return values → struct return type
+            std::vector<llvm::Type *> ret_types;
+            for (const auto &rname : function.result.orderedNames()) {
+                ret_types.push_back(getLLVMType(
+                    *function.result.getVariable(rname)));
+            }
+            return_type = llvm::StructType::get(*_context, ret_types);
+            _multi_return_types[function.name()] = ret_types.size();
         }
 
         return llvm::FunctionType::get(return_type, params, false);
@@ -1074,6 +1079,7 @@ class ModuleBuilder {
 
         _current_module_id   = unit.module_id;
         _current_imports     = &unit.import_alias_to_module;
+        _current_func_simple_name = function.name();
         _current_function =
             _declared_functions.at(functionKey(unit.module_id, function.name()));
         _variables.clear();
@@ -1158,6 +1164,34 @@ class ModuleBuilder {
         if (oper == ";") {
             emitStatement(code->getLeft());
             return emitStatement(code->getRight());
+        }
+        // Multi-assignment: q, r := foo()
+        // AST: ,(q, :=(r, foo())) — detect comma chain ending in :=
+        if (oper == ",") {
+            const pgcodes::GCode *assign_node = nullptr;
+            std::vector<std::string> names;
+            if (isMultiAssign(code, names, assign_node) && assign_node != nullptr) {
+                bool define_new = (assign_node->getOper() == ":=");
+                auto *value = emitExpression(assign_node->getRight());
+                for (size_t i = 0; i < names.size(); ++i) {
+                    auto *extracted = _builder.CreateExtractValue(
+                        value, i, names[i] + ".mr");
+                    llvm::AllocaInst *slot = nullptr;
+                    auto it = _variables.find(names[i]);
+                    if (it == _variables.end()) {
+                        if (!define_new) {
+                            throw std::runtime_error(
+                                "assign to undefined identifier: " + names[i]);
+                        }
+                        slot = createVariableSlot(names[i], extracted->getType());
+                        _variables[names[i]] = slot;
+                    } else {
+                        slot = it->second;
+                    }
+                    _builder.CreateStore(extracted, slot);
+                }
+                return value;
+            }
         }
         if (oper == "if") {
             return emitIfStatement(code);
@@ -1792,10 +1826,19 @@ class ModuleBuilder {
         if (code == nullptr) {
             return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
         }
+
+        // Check if current function has multi-return
+        auto mr_it = _multi_return_types.find(_current_func_simple_name);
+        bool is_multi = (mr_it != _multi_return_types.end());
+
         // Pattern 1: return(args) as suffix call
         std::string          callee;
         const pgcodes::GCode *args_code = nullptr;
         if (extractSuffixCall(code, callee, args_code) && callee == "return") {
+            if (is_multi) {
+                auto args = emitCallArgs(args_code);
+                return packMultiReturn(args);
+            }
             auto args = emitCallArgs(args_code);
             return args.empty() ? llvm::ConstantInt::get(_builder.getInt32Ty(), 0)
                                 : args.front();
@@ -1813,9 +1856,80 @@ class ModuleBuilder {
                  rhs->getOper().empty() && rhs->getLeft() == nullptr)) {
                 return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
             }
+            if (is_multi) {
+                // Collect comma-separated values
+                std::vector<llvm::Value *> vals;
+                collectCommaValues(rhs, vals);
+                return packMultiReturn(vals);
+            }
             return emitExpression(rhs);
         }
         return emitExpression(code);
+    }
+
+    // Collect all values from a comma-separated expression tree
+    void collectCommaValues(const pgcodes::GCode *code,
+                           std::vector<llvm::Value *> &vals) {
+        if (code == nullptr) return;
+        if (code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            code->getOper() == ",") {
+            collectCommaValues(code->getLeft(), vals);
+            collectCommaValues(code->getRight(), vals);
+        } else {
+            vals.push_back(emitExpression(code));
+        }
+    }
+
+    // Pack multiple values into a struct for multi-return
+    llvm::Value *packMultiReturn(const std::vector<llvm::Value *> &vals) {
+        auto *ret_type = _current_function->getReturnType();
+        auto *stype = llvm::cast<llvm::StructType>(ret_type);
+        llvm::Value *result = llvm::UndefValue::get(stype);
+        for (size_t i = 0; i < vals.size(); ++i) {
+            result = _builder.CreateInsertValue(result, vals[i], i,
+                                                "mr." + std::to_string(i));
+        }
+        return result;
+    }
+
+    // Collect values from a multi-return comma tree: ,(return(a), b)
+    // The leftmost branch contains return(expr), rest are plain exprs
+    void collectMultiReturnValues(const pgcodes::GCode *code,
+                                  std::vector<llvm::Value *> &vals) {
+        if (code == nullptr) return;
+        if (code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            code->getOper() == ",") {
+            collectMultiReturnValues(code->getLeft(), vals);
+            collectMultiReturnValues(code->getRight(), vals);
+        } else if (containsReturnPrefix(code)) {
+            // Strip the return prefix: return(expr) → emit expr
+            auto *inner = stripReturnPrefix(code);
+            if (inner) {
+                vals.push_back(emitExpression(inner));
+            }
+        } else {
+            vals.push_back(emitExpression(code));
+        }
+    }
+
+    // Strip return prefix from AST node, returning the inner expression
+    const pgcodes::GCode *stripReturnPrefix(const pgcodes::GCode *code) {
+        if (code == nullptr) return nullptr;
+        // Pattern 1: suffix call return(args)
+        std::string callee;
+        const pgcodes::GCode *args_code = nullptr;
+        if (extractSuffixCall(code, callee, args_code) && callee == "return") {
+            return args_code;
+        }
+        // Pattern 2: `(` with left=return
+        if (code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            code->getOper() == "(" &&
+            code->getLeft() != nullptr &&
+            code->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER &&
+            code->getLeft()->getValue() == "return") {
+            return code->getRight();
+        }
+        return code;
     }
 
     llvm::Value *emitExpression(const pgcodes::GCode *code) {
@@ -1827,6 +1941,20 @@ class ModuleBuilder {
         emitDebugLocation(code);
 
         if (containsReturnPrefix(code)) {
+            // Multi-return: ,(return(a), b) → pack into struct and return
+            auto mr_it = _multi_return_types.find(_current_func_simple_name);
+            if (mr_it != _multi_return_types.end() &&
+                code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                code->getOper() == ",") {
+                // Collect all values from the comma tree
+                // Left branch contains return(first_val), rest are plain exprs
+                std::vector<llvm::Value *> vals;
+                collectMultiReturnValues(code, vals);
+                auto *packed = packMultiReturn(vals);
+                _builder.CreateRet(packed);
+                _terminated = true;
+                return packed;
+            }
             auto *value = emitReturnExpressionTree(code);
             _builder.CreateRet(value);
             _terminated = true;
@@ -2506,8 +2634,86 @@ class ModuleBuilder {
         return _builder.CreateZExt(phi, _builder.getInt32Ty(), "ortmp");
     }
 
+    // Detect multi-assignment pattern: ,(a, ,(b, :=(c, expr)))
+    // Collects all identifier names and finds the := node
+    bool isMultiAssign(const pgcodes::GCode *code,
+                       std::vector<std::string> &names,
+                       const pgcodes::GCode *&assign_node) {
+        if (code == nullptr) return false;
+        if (code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            code->getOper() == ",") {
+            // Left should be an identifier
+            if (code->getLeft() != nullptr &&
+                code->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+                names.push_back(code->getLeft()->getValue());
+            } else {
+                return false;
+            }
+            // Right could be another comma or a := assignment
+            return isMultiAssign(code->getRight(), names, assign_node);
+        }
+        if (code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            (code->getOper() == ":=" || code->getOper() == "=")) {
+            // This is the assignment node; left is the last variable name
+            if (code->getLeft() != nullptr &&
+                code->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+                names.push_back(code->getLeft()->getValue());
+                assign_node = code;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Collect identifier names from a comma-separated expression tree
+    void collectCommaNames(const pgcodes::GCode *code,
+                          std::vector<std::string> &names) {
+        if (code == nullptr) return;
+        if (code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            code->getOper() == ",") {
+            collectCommaNames(code->getLeft(), names);
+            collectCommaNames(code->getRight(), names);
+        } else if (code->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+            names.push_back(code->getValue());
+        } else {
+            throw std::runtime_error(
+                "multi-return destructuring: expected identifier, got " +
+                code->getValue());
+        }
+    }
+
     llvm::Value *emitAssignment(const pgcodes::GCode *code, bool define_new) {
         const auto *left = code->getLeft();
+
+        // Handle multi-return destructuring: a, b := foo()
+        if (left != nullptr &&
+            left->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            left->getOper() == ",") {
+            // Collect variable names from comma tree
+            std::vector<std::string> names;
+            collectCommaNames(left, names);
+            // Emit the RHS (function call returning struct)
+            auto *value = emitExpression(code->getRight());
+            // Extract each value from the struct
+            for (size_t i = 0; i < names.size(); ++i) {
+                auto *extracted = _builder.CreateExtractValue(
+                    value, i, names[i] + ".mr");
+                llvm::AllocaInst *slot = nullptr;
+                auto it = _variables.find(names[i]);
+                if (it == _variables.end()) {
+                    if (!define_new) {
+                        throw std::runtime_error(
+                            "assign to undefined identifier: " + names[i]);
+                    }
+                    slot = createVariableSlot(names[i], extracted->getType());
+                    _variables[names[i]] = slot;
+                } else {
+                    slot = it->second;
+                }
+                _builder.CreateStore(extracted, slot);
+            }
+            return value;
+        }
 
         // Handle struct field assignment: expr.field = value
         if (left != nullptr &&
@@ -4677,6 +4883,9 @@ class ModuleBuilder {
     std::map<std::string, InterfaceInfo>       _interface_types;
     // key: "TypeName:InterfaceName" → vtable global
     std::map<std::string, VTableInfo>          _vtables;
+    // Track functions that return multiple values (name → count)
+    std::map<std::string, size_t>              _multi_return_types;
+    std::string                                _current_func_simple_name;
     std::vector<LoopContext>                    _loop_stack;
     std::string                                _current_module_id;
     const std::map<std::string, std::string>  *_current_imports = nullptr;

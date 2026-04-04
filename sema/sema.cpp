@@ -50,6 +50,7 @@ struct FunctionSig {
     size_t                   param_count = 0;
     std::vector<std::string> param_types;    // type name per param
     std::string              return_type;    // "int", "string", struct name, etc.
+    std::vector<std::string> return_types;   // for multi-return functions
     bool                     is_generic = false;
     std::vector<std::string> type_params;    // type parameter names (e.g. ["T", "U"])
 };
@@ -381,6 +382,14 @@ class ProgramChecker {
                         func->result.orderedNames().front());
                     sig.return_type =
                         rv && rv->getType() ? rv->getType()->name() : "";
+                    sig.return_types.push_back(sig.return_type);
+                } else if (func->result.size() > 1) {
+                    for (const auto &rn : func->result.orderedNames()) {
+                        const auto *rv = func->result.getVariable(rn);
+                        std::string rt = rv && rv->getType() ? rv->getType()->name() : "";
+                        sig.return_types.push_back(rt);
+                    }
+                    sig.return_type = sig.return_types.front();
                 }
                 table[name] = std::move(sig);
             }
@@ -440,16 +449,87 @@ class ProgramChecker {
                 }
                 // Track current function return type for return-value checking.
                 _current_return_type = "";
+                _current_return_types.clear();
                 if (it.second->result.size() == 1) {
                     const auto *rv = it.second->result.getVariable(
                         it.second->result.orderedNames().front());
                     if (rv && rv->getType())
                         _current_return_type = rv->getType()->name();
+                    _current_return_types.push_back(_current_return_type);
+                } else if (it.second->result.size() > 1) {
+                    for (const auto &rn : it.second->result.orderedNames()) {
+                        const auto *rv = it.second->result.getVariable(rn);
+                        std::string rt = rv && rv->getType() ? rv->getType()->name() : "";
+                        _current_return_types.push_back(rt);
+                    }
+                    _current_return_type = _current_return_types.front();
                 }
                 checkStatement(it.second->code.get());
                 // Restore generic type params
                 if (it.second->isGeneric()) {
                     _generic_type_params = saved_generic_types;
+                }
+            }
+        }
+    }
+
+    // Detect multi-assignment pattern: ,(a, ,(b, :=(c, expr)))
+    bool isMultiAssignSema(const pgcodes::GCode *code,
+                           std::vector<std::string> &names,
+                           const pgcodes::GCode *&assign_node) {
+        if (code == nullptr) return false;
+        if (code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            code->getOper() == ",") {
+            if (code->getLeft() != nullptr &&
+                code->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+                names.push_back(code->getLeft()->getValue());
+            } else {
+                return false;
+            }
+            return isMultiAssignSema(code->getRight(), names, assign_node);
+        }
+        if (code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            (code->getOper() == ":=" || code->getOper() == "=")) {
+            if (code->getLeft() != nullptr &&
+                code->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+                names.push_back(code->getLeft()->getValue());
+                assign_node = code;
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // ── Multi-return helpers ─────────────────────────────────────────
+
+    void collectSemaCommaNames(const pgcodes::GCode *code,
+                               std::vector<std::string> &names) {
+        if (code == nullptr) return;
+        if (code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            code->getOper() == ",") {
+            collectSemaCommaNames(code->getLeft(), names);
+            collectSemaCommaNames(code->getRight(), names);
+        } else if (code->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+            names.push_back(code->getValue());
+        }
+    }
+
+    void inferMultiReturnTypes(const pgcodes::GCode *code,
+                               std::vector<std::string> &ret_types) {
+        if (code == nullptr) return;
+        // Expect a function call: oper=="(" with left=identifier
+        if (code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            code->getOper() == "(" &&
+            code->getLeft() != nullptr &&
+            code->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+            const std::string &callee = code->getLeft()->getValue();
+            // Look up function sig in current module
+            auto mod_it = _module_functions.find(_current_module_id);
+            if (mod_it != _module_functions.end()) {
+                auto fn_it = mod_it->second.find(callee);
+                if (fn_it != mod_it->second.end()) {
+                    ret_types = fn_it->second.return_types;
+                    return;
                 }
             }
         }
@@ -474,6 +554,27 @@ class ProgramChecker {
             checkStatement(code->getLeft());
             checkStatement(code->getRight());
             return;
+        }
+        // Multi-assignment: q, r := foo()
+        // AST: ,(q, :=(r, foo()))
+        if (oper == ",") {
+            std::vector<std::string> names;
+            const pgcodes::GCode *assign_node = nullptr;
+            if (isMultiAssignSema(code, names, assign_node) &&
+                assign_node != nullptr) {
+                bool define_new = (assign_node->getOper() == ":=");
+                if (define_new) {
+                    // Infer types from the called function's return types
+                    std::vector<std::string> ret_types;
+                    inferMultiReturnTypes(assign_node->getRight(), ret_types);
+                    for (size_t i = 0; i < names.size(); ++i) {
+                        _defined_vars[names[i]] =
+                            (i < ret_types.size()) ? ret_types[i] : "";
+                    }
+                }
+                checkExpression(assign_node->getRight());
+                return;
+            }
         }
         if (oper == "if") {
             checkExpression(code->getLeft());
@@ -563,11 +664,24 @@ class ProgramChecker {
         const std::string oper = code->getOper();
 
         if (oper == ":=") {
-            // Define-assignment: left must be identifier.
+            // Define-assignment: left must be identifier or comma-separated ids.
             if (code->getLeft() != nullptr &&
                 code->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER) {
                 std::string inferred = inferType(code->getRight());
                 _defined_vars[code->getLeft()->getValue()] = inferred;
+            } else if (code->getLeft() != nullptr &&
+                       code->getLeft()->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                       code->getLeft()->getOper() == ",") {
+                // Multi-return destructuring: a, b := foo()
+                std::vector<std::string> names;
+                collectSemaCommaNames(code->getLeft(), names);
+                // Infer types from the called function's return types
+                std::vector<std::string> ret_types;
+                inferMultiReturnTypes(code->getRight(), ret_types);
+                for (size_t i = 0; i < names.size(); ++i) {
+                    _defined_vars[names[i]] =
+                        (i < ret_types.size()) ? ret_types[i] : "";
+                }
             }
             checkExpression(code->getRight());
             return;
@@ -1284,6 +1398,7 @@ class ProgramChecker {
     std::string                                 _current_module_id;
     std::string                                 _current_func_name;
     std::string                                 _current_return_type;
+    std::vector<std::string>                     _current_return_types;
     const std::map<std::string, std::string>   *_current_imports = nullptr;
     std::map<std::string, std::string>          _defined_vars;   // name → type
     std::set<std::string>                       _struct_names;

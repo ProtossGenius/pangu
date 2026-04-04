@@ -850,9 +850,12 @@ enum class FuncStep {
     READ_TYPE_PARAMS,
     READ_PARAM,
     READ_RETURN,
+    READ_MULTI_RETURN,
+    READ_MULTI_RETURN_GOT_IDENT,
     READ_CODE,
     FINISH
 };
+static std::string s_pending_multi_return_ident;
 void PipeFunc::createProduct(IPipelineFactory *factory) {
     factory->pushProduct(PProduct(new GFunction()), packFuncToPackage);
 }
@@ -947,14 +950,59 @@ void PipeFunc::accept(IPipelineFactory *factory, PData &&data) {
             topProduct->setStep(int(FuncStep::READ_CODE));
             return;
         }
-        factory->undealData(std::move(data));
-        factory->choicePipeline(EGrammer::VarArray);
-        auto ptr = new GVarDefContainer();
-        factory->pushProduct(PProduct(ptr), [ = ](auto f, auto pro) {
-            topProduct->result.swap(*ptr);
-        });
-        topProduct->setStep(int(FuncStep::READ_CODE));
-        return;
+        // Multi-return: (type1, type2, ...)
+        if (makeSymbol("(") == *lex) {
+            topProduct->setStep(int(FuncStep::READ_MULTI_RETURN));
+            return;
+        }
+        factory->onFail("expected return type or '{', got " + lex->to_string());
+        break;
+    }
+    case int(FuncStep::READ_MULTI_RETURN): {
+        if (makeSymbol(",") == *lex || makeSymbol(")") == *lex) {
+            if (makeSymbol(")") == *lex) {
+                topProduct->setStep(int(FuncStep::READ_CODE));
+            }
+            return;
+        }
+        if (lexer::ELexPipeline::Identifier == type) {
+            // Save first identifier — could be a bare type or a param name
+            s_pending_multi_return_ident = str;
+            topProduct->setStep(int(FuncStep::READ_MULTI_RETURN_GOT_IDENT));
+            return;
+        }
+        factory->onFail("expected type name in multi-return, got " +
+                        lex->to_string());
+        break;
+    }
+    case int(FuncStep::READ_MULTI_RETURN_GOT_IDENT): {
+        if (makeSymbol(",") == *lex || makeSymbol(")") == *lex) {
+            // Previous ident was a bare type (e.g., int in "(int, int)")
+            auto idx = topProduct->result.orderedNames().size();
+            auto *rv = new GVarDef();
+            rv->setName("return_" + std::to_string(idx));
+            rv->getType()->read(s_pending_multi_return_ident);
+            topProduct->result.addVariable(PVarDef(rv));
+            if (makeSymbol(")") == *lex) {
+                topProduct->setStep(int(FuncStep::READ_CODE));
+            } else {
+                topProduct->setStep(int(FuncStep::READ_MULTI_RETURN));
+            }
+            return;
+        }
+        if (lexer::ELexPipeline::Identifier == type) {
+            // Two consecutive identifiers: first was name, this is type
+            // (e.g., "out Reader" → name=out, type=Reader)
+            auto *rv = new GVarDef();
+            rv->setName(s_pending_multi_return_ident);
+            rv->getType()->read(str);
+            topProduct->result.addVariable(PVarDef(rv));
+            topProduct->setStep(int(FuncStep::READ_MULTI_RETURN));
+            return;
+        }
+        factory->onFail("expected type or ',' in return list, got " +
+                        lex->to_string());
+        break;
     }
     case int(FuncStep::READ_CODE): {
         // Interface method declaration: func name(params) ret_type;
