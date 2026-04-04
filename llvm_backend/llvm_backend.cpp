@@ -2072,6 +2072,91 @@ class ModuleBuilder {
         return emitExpression(code);
     }
 
+    // String interpolation: "hello ${name}, age ${age}"
+    // Generates StringBuilder calls: make_str_builder, sb_append*, sb_build
+    llvm::Value *emitInterpolatedString(const std::string &raw) {
+        auto *sb_make = _module->getFunction("make_str_builder");
+        auto *sb_app  = _module->getFunction("sb_append");
+        auto *sb_app_int = _module->getFunction("sb_append_int");
+        auto *sb_app_char = _module->getFunction("sb_append_char");
+        auto *sb_bld  = _module->getFunction("sb_build");
+
+        auto *sb = _builder.CreateCall(sb_make, {}, "interp.sb");
+
+        size_t i = 0;
+        std::string literal;
+        auto flushLiteral = [&]() {
+            if (literal.empty()) return;
+            // Process escape sequences in the literal part
+            std::string processed;
+            for (size_t j = 0; j < literal.size(); ++j) {
+                if (literal[j] == '\\' && j + 1 < literal.size()) {
+                    switch (literal[j + 1]) {
+                    case 'n': processed += '\n'; ++j; break;
+                    case 't': processed += '\t'; ++j; break;
+                    case '\\': processed += '\\'; ++j; break;
+                    case '"': processed += '"'; ++j; break;
+                    case '$': processed += '$'; ++j; break;
+                    default: processed += literal[j]; break;
+                    }
+                } else {
+                    processed += literal[j];
+                }
+            }
+            auto *str = _builder.CreateGlobalStringPtr(processed, "interp.lit");
+            _builder.CreateCall(sb_app, {sb, str});
+            literal.clear();
+        };
+
+        while (i < raw.size()) {
+            // Escaped dollar: \$
+            if (raw[i] == '\\' && i + 1 < raw.size() && raw[i + 1] == '$') {
+                literal += "\\$";
+                i += 2;
+                continue;
+            }
+            // Interpolation: ${expr}
+            if (raw[i] == '$' && i + 1 < raw.size() && raw[i + 1] == '{') {
+                flushLiteral();
+                i += 2; // skip ${
+                // Find matching }
+                int depth = 1;
+                std::string expr_str;
+                while (i < raw.size() && depth > 0) {
+                    if (raw[i] == '{') depth++;
+                    else if (raw[i] == '}') { depth--; if (depth == 0) break; }
+                    expr_str += raw[i];
+                    i++;
+                }
+                if (i < raw.size()) i++; // skip }
+
+                // Simple case: just a variable name
+                auto var_it = _variables.find(expr_str);
+                if (var_it != _variables.end()) {
+                    auto *alloca_type = var_it->second->getAllocatedType();
+                    auto *val = _builder.CreateLoad(alloca_type, var_it->second, expr_str);
+                    if (alloca_type == _builder.getInt32Ty()) {
+                        _builder.CreateCall(sb_app_int, {sb, val});
+                    } else if (alloca_type == _builder.getInt8Ty()) {
+                        _builder.CreateCall(sb_app_char, {sb, val});
+                    } else {
+                        _builder.CreateCall(sb_app, {sb, val});
+                    }
+                } else {
+                    // Try as function reference or expression - treat as identifier
+                    // For now, emit the expression text as a variable lookup
+                    throw std::runtime_error(
+                        "string interpolation: unknown variable '" + expr_str + "'");
+                }
+                continue;
+            }
+            literal += raw[i];
+            i++;
+        }
+        flushLiteral();
+        return _builder.CreateCall(sb_bld, {sb}, "interp.result");
+    }
+
     llvm::Value *emitValue(const pgcodes::GCode *code) {
         switch (code->getValueType()) {
         case pgcodes::ValueType::NUMBER:
@@ -2121,6 +2206,10 @@ class ModuleBuilder {
             // Strip surrounding quotes if present
             if (raw.size() >= 2 && raw.front() == '"' && raw.back() == '"') {
                 raw = raw.substr(1, raw.size() - 2);
+            }
+            // Check for string interpolation ${...}
+            if (raw.find("${") != std::string::npos) {
+                return emitInterpolatedString(raw);
             }
             // Process escape sequences
             std::string processed;

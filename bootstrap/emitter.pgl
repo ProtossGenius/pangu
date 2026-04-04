@@ -821,7 +821,7 @@ func emit_c(root int, kinds string, svals string, ivals string,
                         sb_append(fwd, "_");
                         sb_append(fwd, nsval(ctx, ei));
                         sb_append(fwd, " ");
-                        sb_append(fwd, int_to_str(idx));
+                        sb_append_int(fwd, idx);
                         sb_append(fwd, "\n");
                         idx = idx + 1;
                     }

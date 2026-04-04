@@ -1,0 +1,13 @@
+package main;
+
+func main() {
+    name := "World";
+    age := 42;
+    println("Hello ${name}!");
+    println("Age: ${age}");
+    println("${name} is ${age} years old");
+    x := 100;
+    println("x = ${x}");
+    println("no interpolation here");
+    println("escaped \${name}");
+}

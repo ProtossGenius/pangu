@@ -1,0 +1,6 @@
+Hello World!
+Age: 42
+World is 42 years old
+x = 100
+no interpolation here
+escaped ${name}

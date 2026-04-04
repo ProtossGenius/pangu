@@ -165,6 +165,7 @@ const static std::map<char, std::string> CAST_ESCAPE({
     {'\'', "\'"},
     {'"', "\""},
     {'\\', "\\"},
+    {'$', "\\$"},
 });
 
 int getFlashPos(const std::string &str) {

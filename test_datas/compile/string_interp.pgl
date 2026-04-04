@@ -1,0 +1,7 @@
+package main;
+
+func main() {
+    name := "PGL";
+    ver := 1;
+    println("Lang: ${name} v${ver}");
+}
