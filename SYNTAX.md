@@ -63,8 +63,8 @@ true false  // bool → integer (1 / 0)
 
 ### Keywords
 
-`package` `import` `as` `type` `struct` `enum` `func` `pipeline` `impl`
-`if` `else` `for` `while` `do` `return` `switch` `case` `default` `match`
+`package` `import` `as` `type` `struct` `enum` `interface` `func` `pipeline` `impl`
+`if` `else` `for` `in` `while` `do` `return` `switch` `case` `default` `match`
 `break` `continue` `goto` `try` `catch`
 `public` `static` `const` `final` `var` `class` `worker` `switcher`
 
@@ -77,6 +77,7 @@ true false  // bool → integer (1 / 0)
 ++ --                   // prefix increment/decrement
 =  :=                   // assignment / define-assignment
 .  ::                   // field access / enum variant
+>> <>                   // stream push / in-place transform
 ( ) [ ] { } , ; : ->   // delimiters
 ```
 
@@ -87,6 +88,7 @@ true false  // bool → integer (1 / 0)
 | Type     | LLVM     | Description                     |
 |----------|----------|---------------------------------|
 | `int`    | `i32`    | 32-bit signed integer           |
+| `char`   | `i32`    | Character (alias for int)       |
 | `bool`   | `i32`    | Boolean (true=1, false=0)       |
 | `string` | `ptr`    | C string pointer                |
 | `ptr`    | `ptr`    | Raw pointer (for pipeline state)|
@@ -220,6 +222,11 @@ for i in 5 {
 n := 10;
 for i in n {
     println(i);
+}
+
+// For-in string iteration
+for ch in "hello" {
+    println(ch);  // prints ASCII codes: 104, 101, 108, 108, 111
 }
 ```
 
@@ -472,6 +479,88 @@ Returns the handler result, or 0 if no predicate matched.
 
 Chains pipeline stages together for end-to-end data processing.
 
+## Closures
+
+Closures capture variables from their enclosing scope:
+
+```pgl
+func make_adder(n int) func {
+    return func(x int) int {
+        return x + n;
+    };
+}
+
+func main() {
+    add5 := make_adder(5);
+    println(add5(10));  // 15
+}
+```
+
+All lambdas use the env-pointer convention: `{ ptr func, ptr env }`. Non-capturing
+lambdas and function references have `env = null`.
+
+## Generics
+
+Generic functions use type parameters with monomorphization:
+
+```pgl
+func identity[T](x T) T {
+    return x;
+}
+
+func first[T](a T, b T) T {
+    return a;
+}
+
+func main() {
+    println(identity(42));         // int specialization
+    println(identity("hello"));   // string specialization
+    println(first(10, 20));       // inferred T=int
+}
+```
+
+Types are inferred from arguments. Each unique type combination generates
+a specialized function.
+
+## Interfaces
+
+Interfaces define method contracts with vtable-based dispatch:
+
+```pgl
+type Shape interface {
+    func area(self Shape) int;
+    func name(self Shape) string;
+}
+
+type Rect struct {
+    w int;
+    h int;
+}
+
+impl Rect Shape {
+    func area(self Rect) int {
+        return self.w * self.h;
+    }
+    func name(self Rect) string {
+        return "rect";
+    }
+}
+
+func print_info(s Shape) {
+    println(s.name());
+    println(s.area());
+}
+
+func main() {
+    r := Rect{w: 3, h: 4};
+    s := Shape(r);       // wrap as interface fat pointer
+    print_info(s);       // dispatches through vtable
+}
+```
+
+Interface values are fat pointers: `{ ptr data, ptr vtable }`.
+`Shape(concrete_value)` wraps a concrete type into the interface.
+
 ## Function References
 
 Functions can be used as first-class values:
@@ -484,9 +573,6 @@ println(apply(fn, 3)); // pass as argument
 
 ## Planned / Not Yet Implemented
 
-- Interface dispatch
-- Generics / type parameters
 - Range patterns in match expressions
 - Auto-generated pipeline `run` state machine
 - Full pipeline body syntax (`type X pipeline { def in T; ... }`)
-- Generics
