@@ -84,6 +84,16 @@ const std::set<std::string> BUILTIN_FUNCTIONS = {
     "reflect_field_count", "reflect_field_name", "reflect_field_type",
     "reflect_annotation_count", "reflect_annotation_key",
     "reflect_annotation_value", "reflect_annotation_field_index",
+    // HashMap (string→string)
+    "make_map", "map_set", "map_get", "map_has", "map_size", "map_delete",
+    // IntMap (string→int)
+    "make_int_map", "int_map_set", "int_map_get", "int_map_has", "int_map_size",
+    // Dynamic array (int)
+    "make_dyn_array", "dyn_array_push", "dyn_array_get",
+    "dyn_array_set", "dyn_array_size", "dyn_array_pop",
+    // Dynamic string array
+    "make_dyn_str_array", "dyn_str_array_push", "dyn_str_array_get",
+    "dyn_str_array_set", "dyn_str_array_size",
 };
 
 bool isBuiltin(const std::string &name) {
@@ -133,6 +143,28 @@ size_t builtinParamCount(const std::string &name) {
     if (name == "reflect_annotation_key") return 2;
     if (name == "reflect_annotation_value") return 2;
     if (name == "reflect_annotation_field_index") return 2;
+    // HashMap
+    if (name == "make_map") return 0;
+    if (name == "map_set") return 3;
+    if (name == "map_get" || name == "map_has" || name == "map_delete") return 2;
+    if (name == "map_size") return 1;
+    // IntMap
+    if (name == "make_int_map") return 0;
+    if (name == "int_map_set") return 3;
+    if (name == "int_map_get" || name == "int_map_has") return 2;
+    if (name == "int_map_size") return 1;
+    // Dynamic array
+    if (name == "make_dyn_array") return 0;
+    if (name == "dyn_array_push") return 2;
+    if (name == "dyn_array_get") return 2;
+    if (name == "dyn_array_set") return 3;
+    if (name == "dyn_array_size" || name == "dyn_array_pop") return 1;
+    // Dynamic string array
+    if (name == "make_dyn_str_array") return 0;
+    if (name == "dyn_str_array_push") return 2;
+    if (name == "dyn_str_array_get") return 2;
+    if (name == "dyn_str_array_set") return 3;
+    if (name == "dyn_str_array_size") return 1;
     return 0;
 }
 
@@ -161,6 +193,16 @@ std::string builtinReturnType(const std::string &name) {
         name == "reflect_annotation_count" || name == "reflect_annotation_field_index") {
         return "int";
     }
+    // HashMap
+    if (name == "make_map" || name == "make_int_map") return "ptr";
+    if (name == "map_get") return "string";
+    if (name == "map_has" || name == "map_size") return "int";
+    if (name == "int_map_get" || name == "int_map_has" || name == "int_map_size") return "int";
+    // Dynamic array
+    if (name == "make_dyn_array" || name == "make_dyn_str_array") return "ptr";
+    if (name == "dyn_array_get" || name == "dyn_array_size" || name == "dyn_array_pop") return "int";
+    if (name == "dyn_str_array_get") return "string";
+    if (name == "dyn_str_array_size") return "int";
     // Void-like (side effects only)
     return "";
 }
@@ -212,6 +254,24 @@ std::vector<std::string> builtinParamTypes(const std::string &name) {
     if (name == "reflect_annotation_key") return {"string", "int"};
     if (name == "reflect_annotation_value") return {"string", "int"};
     if (name == "reflect_annotation_field_index") return {"string", "int"};
+    // HashMap
+    if (name == "map_set") return {"ptr", "string", "string"};
+    if (name == "map_get" || name == "map_has" || name == "map_delete") return {"ptr", "string"};
+    if (name == "map_size") return {"ptr"};
+    // IntMap
+    if (name == "int_map_set") return {"ptr", "string", "int"};
+    if (name == "int_map_get" || name == "int_map_has") return {"ptr", "string"};
+    if (name == "int_map_size") return {"ptr"};
+    // Dynamic array
+    if (name == "dyn_array_push") return {"ptr", "int"};
+    if (name == "dyn_array_get") return {"ptr", "int"};
+    if (name == "dyn_array_set") return {"ptr", "int", "int"};
+    if (name == "dyn_array_size" || name == "dyn_array_pop") return {"ptr"};
+    // Dynamic string array
+    if (name == "dyn_str_array_push") return {"ptr", "string"};
+    if (name == "dyn_str_array_get") return {"ptr", "int"};
+    if (name == "dyn_str_array_set") return {"ptr", "int", "string"};
+    if (name == "dyn_str_array_size") return {"ptr"};
     return {};
 }
 

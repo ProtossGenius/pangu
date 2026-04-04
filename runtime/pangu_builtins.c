@@ -363,3 +363,296 @@ int reflect_annotation_field_index(const char *type_name, int index) {
     if (!m || index < 0 || index >= m->ann_count) return -1;
     return m->ann_field_indices[index];
 }
+
+// ── HashMap: string → string (open-addressing with linear probing) ──
+
+typedef struct {
+    char *key;
+    char *value;
+    int   occupied;
+} HMEntry;
+
+typedef struct {
+    HMEntry *buckets;
+    int      capacity;
+    int      size;
+} HashMap;
+
+static unsigned int hm_hash(const char *key, int cap) {
+    unsigned int h = 5381;
+    while (*key) { h = h * 33 + (unsigned char)*key++; }
+    return h % (unsigned int)cap;
+}
+
+static void hm_grow(HashMap *m) {
+    int old_cap = m->capacity;
+    HMEntry *old = m->buckets;
+    m->capacity = old_cap * 2;
+    m->buckets = (HMEntry *)calloc(m->capacity, sizeof(HMEntry));
+    m->size = 0;
+    for (int i = 0; i < old_cap; i++) {
+        if (old[i].occupied) {
+            unsigned int idx = hm_hash(old[i].key, m->capacity);
+            while (m->buckets[idx].occupied)
+                idx = (idx + 1) % m->capacity;
+            m->buckets[idx].key = old[i].key;
+            m->buckets[idx].value = old[i].value;
+            m->buckets[idx].occupied = 1;
+            m->size++;
+        }
+    }
+    free(old);
+}
+
+void *make_map() {
+    HashMap *m = (HashMap *)malloc(sizeof(HashMap));
+    m->capacity = 16;
+    m->size = 0;
+    m->buckets = (HMEntry *)calloc(m->capacity, sizeof(HMEntry));
+    return m;
+}
+
+void map_set(void *mp, const char *key, const char *value) {
+    HashMap *m = (HashMap *)mp;
+    if (m->size * 2 >= m->capacity) hm_grow(m);
+    unsigned int idx = hm_hash(key, m->capacity);
+    while (m->buckets[idx].occupied) {
+        if (strcmp(m->buckets[idx].key, key) == 0) {
+            free(m->buckets[idx].value);
+            m->buckets[idx].value = strdup(value);
+            return;
+        }
+        idx = (idx + 1) % m->capacity;
+    }
+    m->buckets[idx].key = strdup(key);
+    m->buckets[idx].value = strdup(value);
+    m->buckets[idx].occupied = 1;
+    m->size++;
+}
+
+const char *map_get(void *mp, const char *key) {
+    HashMap *m = (HashMap *)mp;
+    unsigned int idx = hm_hash(key, m->capacity);
+    while (m->buckets[idx].occupied) {
+        if (strcmp(m->buckets[idx].key, key) == 0)
+            return m->buckets[idx].value;
+        idx = (idx + 1) % m->capacity;
+    }
+    return "";
+}
+
+int map_has(void *mp, const char *key) {
+    HashMap *m = (HashMap *)mp;
+    unsigned int idx = hm_hash(key, m->capacity);
+    while (m->buckets[idx].occupied) {
+        if (strcmp(m->buckets[idx].key, key) == 0) return 1;
+        idx = (idx + 1) % m->capacity;
+    }
+    return 0;
+}
+
+int map_size(void *mp) {
+    return ((HashMap *)mp)->size;
+}
+
+void map_delete(void *mp, const char *key) {
+    HashMap *m = (HashMap *)mp;
+    unsigned int idx = hm_hash(key, m->capacity);
+    while (m->buckets[idx].occupied) {
+        if (strcmp(m->buckets[idx].key, key) == 0) {
+            free(m->buckets[idx].key);
+            free(m->buckets[idx].value);
+            m->buckets[idx].key = NULL;
+            m->buckets[idx].value = NULL;
+            m->buckets[idx].occupied = 0;
+            m->size--;
+            // Re-insert subsequent entries to maintain probe chain
+            unsigned int next = (idx + 1) % m->capacity;
+            while (m->buckets[next].occupied) {
+                char *rk = m->buckets[next].key;
+                char *rv = m->buckets[next].value;
+                m->buckets[next].occupied = 0;
+                m->size--;
+                map_set(mp, rk, rv);
+                free(rk);
+                free(rv);
+                next = (next + 1) % m->capacity;
+            }
+            return;
+        }
+        idx = (idx + 1) % m->capacity;
+    }
+}
+
+// ── Integer Map: string → int ──
+
+typedef struct {
+    char *key;
+    int   value;
+    int   occupied;
+} IMEntry;
+
+typedef struct {
+    IMEntry *buckets;
+    int      capacity;
+    int      size;
+} IntMap;
+
+static void im_grow(IntMap *m) {
+    int old_cap = m->capacity;
+    IMEntry *old = m->buckets;
+    m->capacity = old_cap * 2;
+    m->buckets = (IMEntry *)calloc(m->capacity, sizeof(IMEntry));
+    m->size = 0;
+    for (int i = 0; i < old_cap; i++) {
+        if (old[i].occupied) {
+            unsigned int idx = hm_hash(old[i].key, m->capacity);
+            while (m->buckets[idx].occupied)
+                idx = (idx + 1) % m->capacity;
+            m->buckets[idx].key = old[i].key;
+            m->buckets[idx].value = old[i].value;
+            m->buckets[idx].occupied = 1;
+            m->size++;
+        }
+    }
+    free(old);
+}
+
+void *make_int_map() {
+    IntMap *m = (IntMap *)malloc(sizeof(IntMap));
+    m->capacity = 16;
+    m->size = 0;
+    m->buckets = (IMEntry *)calloc(m->capacity, sizeof(IMEntry));
+    return m;
+}
+
+void int_map_set(void *mp, const char *key, int value) {
+    IntMap *m = (IntMap *)mp;
+    if (m->size * 2 >= m->capacity) im_grow(m);
+    unsigned int idx = hm_hash(key, m->capacity);
+    while (m->buckets[idx].occupied) {
+        if (strcmp(m->buckets[idx].key, key) == 0) {
+            m->buckets[idx].value = value;
+            return;
+        }
+        idx = (idx + 1) % m->capacity;
+    }
+    m->buckets[idx].key = strdup(key);
+    m->buckets[idx].value = value;
+    m->buckets[idx].occupied = 1;
+    m->size++;
+}
+
+int int_map_get(void *mp, const char *key) {
+    IntMap *m = (IntMap *)mp;
+    unsigned int idx = hm_hash(key, m->capacity);
+    while (m->buckets[idx].occupied) {
+        if (strcmp(m->buckets[idx].key, key) == 0)
+            return m->buckets[idx].value;
+        idx = (idx + 1) % m->capacity;
+    }
+    return 0;
+}
+
+int int_map_has(void *mp, const char *key) {
+    IntMap *m = (IntMap *)mp;
+    unsigned int idx = hm_hash(key, m->capacity);
+    while (m->buckets[idx].occupied) {
+        if (strcmp(m->buckets[idx].key, key) == 0) return 1;
+        idx = (idx + 1) % m->capacity;
+    }
+    return 0;
+}
+
+int int_map_size(void *mp) {
+    return ((IntMap *)mp)->size;
+}
+
+// ── Dynamic Array (resizable int array) ──
+
+typedef struct {
+    int *data;
+    int  size;
+    int  capacity;
+} DynArray;
+
+void *make_dyn_array() {
+    DynArray *a = (DynArray *)malloc(sizeof(DynArray));
+    a->capacity = 16;
+    a->size = 0;
+    a->data = (int *)malloc(a->capacity * sizeof(int));
+    return a;
+}
+
+void dyn_array_push(void *ap, int val) {
+    DynArray *a = (DynArray *)ap;
+    if (a->size >= a->capacity) {
+        a->capacity *= 2;
+        a->data = (int *)realloc(a->data, a->capacity * sizeof(int));
+    }
+    a->data[a->size++] = val;
+}
+
+int dyn_array_get(void *ap, int index) {
+    DynArray *a = (DynArray *)ap;
+    if (index < 0 || index >= a->size) return 0;
+    return a->data[index];
+}
+
+void dyn_array_set(void *ap, int index, int val) {
+    DynArray *a = (DynArray *)ap;
+    if (index >= 0 && index < a->size) a->data[index] = val;
+}
+
+int dyn_array_size(void *ap) {
+    return ((DynArray *)ap)->size;
+}
+
+int dyn_array_pop(void *ap) {
+    DynArray *a = (DynArray *)ap;
+    if (a->size == 0) return 0;
+    return a->data[--a->size];
+}
+
+// ── Dynamic String Array ──
+
+typedef struct {
+    char **data;
+    int    size;
+    int    capacity;
+} DynStrArray;
+
+void *make_dyn_str_array() {
+    DynStrArray *a = (DynStrArray *)malloc(sizeof(DynStrArray));
+    a->capacity = 16;
+    a->size = 0;
+    a->data = (char **)malloc(a->capacity * sizeof(char *));
+    return a;
+}
+
+void dyn_str_array_push(void *ap, const char *val) {
+    DynStrArray *a = (DynStrArray *)ap;
+    if (a->size >= a->capacity) {
+        a->capacity *= 2;
+        a->data = (char **)realloc(a->data, a->capacity * sizeof(char *));
+    }
+    a->data[a->size++] = strdup(val);
+}
+
+const char *dyn_str_array_get(void *ap, int index) {
+    DynStrArray *a = (DynStrArray *)ap;
+    if (index < 0 || index >= a->size) return "";
+    return a->data[index];
+}
+
+void dyn_str_array_set(void *ap, int index, const char *val) {
+    DynStrArray *a = (DynStrArray *)ap;
+    if (index >= 0 && index < a->size) {
+        free(a->data[index]);
+        a->data[index] = strdup(val);
+    }
+}
+
+int dyn_str_array_size(void *ap) {
+    return ((DynStrArray *)ap)->size;
+}

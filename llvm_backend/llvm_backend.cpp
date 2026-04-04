@@ -380,6 +380,58 @@ class ModuleBuilder {
         //                                const char* file, int line)
         _module->getOrInsertFunction("pg_register_jit_function",
             llvm::FunctionType::get(void_ty, {ptr_ty, ptr_ty, ptr_ty, i32_ty}, false));
+
+        // ── HashMap (string→string) ──
+        _module->getOrInsertFunction("make_map",
+            llvm::FunctionType::get(ptr_ty, {}, false));
+        _module->getOrInsertFunction("map_set",
+            llvm::FunctionType::get(void_ty, {ptr_ty, ptr_ty, ptr_ty}, false));
+        _module->getOrInsertFunction("map_get",
+            llvm::FunctionType::get(ptr_ty, {ptr_ty, ptr_ty}, false));
+        _module->getOrInsertFunction("map_has",
+            llvm::FunctionType::get(i32_ty, {ptr_ty, ptr_ty}, false));
+        _module->getOrInsertFunction("map_size",
+            llvm::FunctionType::get(i32_ty, {ptr_ty}, false));
+        _module->getOrInsertFunction("map_delete",
+            llvm::FunctionType::get(void_ty, {ptr_ty, ptr_ty}, false));
+
+        // ── IntMap (string→int) ──
+        _module->getOrInsertFunction("make_int_map",
+            llvm::FunctionType::get(ptr_ty, {}, false));
+        _module->getOrInsertFunction("int_map_set",
+            llvm::FunctionType::get(void_ty, {ptr_ty, ptr_ty, i32_ty}, false));
+        _module->getOrInsertFunction("int_map_get",
+            llvm::FunctionType::get(i32_ty, {ptr_ty, ptr_ty}, false));
+        _module->getOrInsertFunction("int_map_has",
+            llvm::FunctionType::get(i32_ty, {ptr_ty, ptr_ty}, false));
+        _module->getOrInsertFunction("int_map_size",
+            llvm::FunctionType::get(i32_ty, {ptr_ty}, false));
+
+        // ── Dynamic Array (int) ──
+        _module->getOrInsertFunction("make_dyn_array",
+            llvm::FunctionType::get(ptr_ty, {}, false));
+        _module->getOrInsertFunction("dyn_array_push",
+            llvm::FunctionType::get(void_ty, {ptr_ty, i32_ty}, false));
+        _module->getOrInsertFunction("dyn_array_get",
+            llvm::FunctionType::get(i32_ty, {ptr_ty, i32_ty}, false));
+        _module->getOrInsertFunction("dyn_array_set",
+            llvm::FunctionType::get(void_ty, {ptr_ty, i32_ty, i32_ty}, false));
+        _module->getOrInsertFunction("dyn_array_size",
+            llvm::FunctionType::get(i32_ty, {ptr_ty}, false));
+        _module->getOrInsertFunction("dyn_array_pop",
+            llvm::FunctionType::get(i32_ty, {ptr_ty}, false));
+
+        // ── Dynamic String Array ──
+        _module->getOrInsertFunction("make_dyn_str_array",
+            llvm::FunctionType::get(ptr_ty, {}, false));
+        _module->getOrInsertFunction("dyn_str_array_push",
+            llvm::FunctionType::get(void_ty, {ptr_ty, ptr_ty}, false));
+        _module->getOrInsertFunction("dyn_str_array_get",
+            llvm::FunctionType::get(ptr_ty, {ptr_ty, i32_ty}, false));
+        _module->getOrInsertFunction("dyn_str_array_set",
+            llvm::FunctionType::get(void_ty, {ptr_ty, i32_ty, ptr_ty}, false));
+        _module->getOrInsertFunction("dyn_str_array_size",
+            llvm::FunctionType::get(i32_ty, {ptr_ty}, false));
     }
 
     void declareStructTypes() {
@@ -3473,6 +3525,123 @@ class ModuleBuilder {
             auto args = emitCallArgs(args_code);
             auto *fn = _module->getFunction("reflect_annotation_field_index");
             return _builder.CreateCall(fn, {args[0], args[1]}, "ann_fidx");
+        }
+        // ── HashMap (string→string) builtins ──
+        if (callee == "make_map") {
+            auto *fn = _module->getFunction("make_map");
+            return _builder.CreateCall(fn, {}, "map_ptr");
+        }
+        if (callee == "map_set") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("map_set");
+            _builder.CreateCall(fn, {args[0], args[1], args[2]});
+            return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+        }
+        if (callee == "map_get") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("map_get");
+            return _builder.CreateCall(fn, {args[0], args[1]}, "map_val");
+        }
+        if (callee == "map_has") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("map_has");
+            return _builder.CreateCall(fn, {args[0], args[1]}, "map_has");
+        }
+        if (callee == "map_size") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("map_size");
+            return _builder.CreateCall(fn, {args[0]}, "map_sz");
+        }
+        if (callee == "map_delete") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("map_delete");
+            _builder.CreateCall(fn, {args[0], args[1]});
+            return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+        }
+        // ── IntMap (string→int) builtins ──
+        if (callee == "make_int_map") {
+            auto *fn = _module->getFunction("make_int_map");
+            return _builder.CreateCall(fn, {}, "imap_ptr");
+        }
+        if (callee == "int_map_set") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("int_map_set");
+            _builder.CreateCall(fn, {args[0], args[1], args[2]});
+            return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+        }
+        if (callee == "int_map_get") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("int_map_get");
+            return _builder.CreateCall(fn, {args[0], args[1]}, "imap_val");
+        }
+        if (callee == "int_map_has") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("int_map_has");
+            return _builder.CreateCall(fn, {args[0], args[1]}, "imap_has");
+        }
+        if (callee == "int_map_size") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("int_map_size");
+            return _builder.CreateCall(fn, {args[0]}, "imap_sz");
+        }
+        // ── Dynamic Array (int) builtins ──
+        if (callee == "make_dyn_array") {
+            auto *fn = _module->getFunction("make_dyn_array");
+            return _builder.CreateCall(fn, {}, "darr_ptr");
+        }
+        if (callee == "dyn_array_push") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("dyn_array_push");
+            _builder.CreateCall(fn, {args[0], args[1]});
+            return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+        }
+        if (callee == "dyn_array_get") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("dyn_array_get");
+            return _builder.CreateCall(fn, {args[0], args[1]}, "darr_v");
+        }
+        if (callee == "dyn_array_set") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("dyn_array_set");
+            _builder.CreateCall(fn, {args[0], args[1], args[2]});
+            return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+        }
+        if (callee == "dyn_array_size") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("dyn_array_size");
+            return _builder.CreateCall(fn, {args[0]}, "darr_sz");
+        }
+        if (callee == "dyn_array_pop") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("dyn_array_pop");
+            return _builder.CreateCall(fn, {args[0]}, "darr_pop");
+        }
+        // ── Dynamic String Array builtins ──
+        if (callee == "make_dyn_str_array") {
+            auto *fn = _module->getFunction("make_dyn_str_array");
+            return _builder.CreateCall(fn, {}, "dsarr_ptr");
+        }
+        if (callee == "dyn_str_array_push") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("dyn_str_array_push");
+            _builder.CreateCall(fn, {args[0], args[1]});
+            return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+        }
+        if (callee == "dyn_str_array_get") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("dyn_str_array_get");
+            return _builder.CreateCall(fn, {args[0], args[1]}, "dsarr_v");
+        }
+        if (callee == "dyn_str_array_set") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("dyn_str_array_set");
+            _builder.CreateCall(fn, {args[0], args[1], args[2]});
+            return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+        }
+        if (callee == "dyn_str_array_size") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("dyn_str_array_size");
+            return _builder.CreateCall(fn, {args[0]}, "dsarr_sz");
         }
         if (callee_function == nullptr) {
             // Try generic function instantiation

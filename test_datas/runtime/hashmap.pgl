@@ -1,0 +1,28 @@
+package main;
+
+func main() {
+    m := make_map();
+    map_set(m, "name", "Alice");
+    map_set(m, "city", "Beijing");
+    println(map_get(m, "name"));
+    println(map_get(m, "city"));
+    println(map_has(m, "name"));
+    println(map_has(m, "age"));
+    println(map_size(m));
+
+    map_set(m, "name", "Bob");
+    println(map_get(m, "name"));
+
+    map_delete(m, "city");
+    println(map_size(m));
+    println(map_has(m, "city"));
+
+    im := make_int_map();
+    int_map_set(im, "x", 42);
+    int_map_set(im, "y", 100);
+    println(int_map_get(im, "x"));
+    println(int_map_get(im, "y"));
+    println(int_map_has(im, "x"));
+    println(int_map_has(im, "z"));
+    println(int_map_size(im));
+}

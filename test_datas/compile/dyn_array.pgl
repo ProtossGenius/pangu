@@ -1,0 +1,29 @@
+package main;
+
+func main() {
+    a := make_dyn_array();
+    dyn_array_push(a, 10);
+    dyn_array_push(a, 20);
+    dyn_array_push(a, 30);
+    println(dyn_array_size(a));
+    println(dyn_array_get(a, 0));
+    println(dyn_array_get(a, 1));
+    println(dyn_array_get(a, 2));
+
+    dyn_array_set(a, 1, 99);
+    println(dyn_array_get(a, 1));
+
+    v := dyn_array_pop(a);
+    println(v);
+    println(dyn_array_size(a));
+
+    sa := make_dyn_str_array();
+    dyn_str_array_push(sa, "hello");
+    dyn_str_array_push(sa, "world");
+    println(dyn_str_array_size(sa));
+    println(dyn_str_array_get(sa, 0));
+    println(dyn_str_array_get(sa, 1));
+
+    dyn_str_array_set(sa, 0, "hi");
+    println(dyn_str_array_get(sa, 0));
+}
