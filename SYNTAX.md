@@ -430,6 +430,18 @@ Low-level state management for manual pipeline implementations:
 | `dyn_str_array_set(a, i, val)` | Set string element |
 | `dyn_str_array_size(a)` | Current size |
 
+### String Builder
+
+| Function | Description |
+|----------|-------------|
+| `make_str_builder()` | Create empty string builder |
+| `sb_append(sb, str)` | Append string |
+| `sb_append_int(sb, n)` | Append integer as string |
+| `sb_append_char(sb, ch)` | Append char code |
+| `sb_build(sb)` | Return built string |
+| `sb_reset(sb)` | Clear builder |
+| `sb_len(sb)` | Current length |
+
 ### File System
 
 | Function | Description |
