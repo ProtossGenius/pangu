@@ -143,14 +143,17 @@ void PipeFor::on_WAIT_ITER_EXPR(IPipelineFactory *factory, PData &&data) {
         return;
     }
 
-    // Accept identifier or number literal as iterable
+    // Accept identifier, number, or string literal as iterable
     if (type == lexer::ELexPipeline::Identifier ||
-        type == lexer::ELexPipeline::Number) {
+        type == lexer::ELexPipeline::Number ||
+        type == lexer::ELexPipeline::String) {
         auto *iterNode = new GCode();
-        iterNode->setValue(lex->get(),
-                           type == lexer::ELexPipeline::Identifier
-                               ? pgcodes::ValueType::IDENTIFIER
-                               : pgcodes::ValueType::NUMBER);
+        pgcodes::ValueType vt = pgcodes::ValueType::IDENTIFIER;
+        if (type == lexer::ELexPipeline::Number)
+            vt = pgcodes::ValueType::NUMBER;
+        else if (type == lexer::ELexPipeline::String)
+            vt = pgcodes::ValueType::STRING;
+        iterNode->setValue(lex->get(), vt);
         iterNode->setLocation(lex->location());
         // Build: left = "in"(varNode, iterNode)
         auto *inNode = new GCode();
@@ -161,7 +164,7 @@ void PipeFor::on_WAIT_ITER_EXPR(IPipelineFactory *factory, PData &&data) {
         topProduct->setStep(int(Steps::WAIT_ACTION));
         return;
     }
-    factory->onFail("'for <var> in' expects identifier or number");
+    factory->onFail("'for <var> in' expects identifier, number, or string");
 }
 void PipeFor::on_WAIT_ACTION(IPipelineFactory *factory, PData &&data) {
     GET_TOP(factory, GCode);

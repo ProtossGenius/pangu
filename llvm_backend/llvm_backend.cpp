@@ -1440,8 +1440,9 @@ class ModuleBuilder {
     // ── for x in iterable { body } ──────────────────────────────────
     // AST: for_in(left="in"(var_ident, iterable), right=body)
     // If iterable is a number N: iterate 0..N-1
-    // If iterable is an identifier: iterate 0..str_len(var)-1 for strings
-    //   or use array_len convention
+    // If iterable is a string: iterate characters
+    // If iterable is a DynArray: iterate int elements
+    // If iterable is a DynStrArray: iterate string elements
     llvm::Value *emitForInStatement(const pgcodes::GCode *code) {
         auto *function = _current_function;
         const auto *inNode = code->getLeft();
@@ -1456,6 +1457,19 @@ class ModuleBuilder {
 
         std::string varName = varNode->getValue();
 
+        // Check semantic type of iterable (if it's a known variable)
+        enum class IterKind { RANGE, STRING, DYN_ARRAY, DYN_STR_ARRAY };
+        IterKind iter_kind = IterKind::RANGE;
+        std::string iter_var_name;
+        if (iterNode->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+            iter_var_name = iterNode->getValue();
+            auto st = _variable_sem_types.find(iter_var_name);
+            if (st != _variable_sem_types.end()) {
+                if (st->second == "DynArray") iter_kind = IterKind::DYN_ARRAY;
+                else if (st->second == "DynStrArray") iter_kind = IterKind::DYN_STR_ARRAY;
+            }
+        }
+
         // Evaluate iterable expression
         llvm::Value *iterVal = nullptr;
         if (iterNode->getValueType() == pgcodes::ValueType::NUMBER) {
@@ -1465,15 +1479,34 @@ class ModuleBuilder {
             iterVal = emitExpression(iterNode);
         }
 
-        // Determine if iterating over a string (ptr) or numeric range (int)
-        bool is_string_iter = iterVal->getType()->isPointerTy();
+        // Determine iteration kind for ptr types without semantic info
+        if (iter_kind == IterKind::RANGE && iterVal->getType()->isPointerTy()) {
+            iter_kind = IterKind::STRING;
+        }
 
         // Get iteration count
         llvm::Value *count = nullptr;
-        llvm::Value *strVal = nullptr;
-        if (is_string_iter) {
-            strVal = iterVal;
-            count = emitStrLen({strVal});
+        llvm::Value *collVal = iterVal;
+        if (iter_kind == IterKind::STRING) {
+            count = emitStrLen({iterVal});
+        } else if (iter_kind == IterKind::DYN_ARRAY) {
+            auto *size_func = _module->getFunction("dyn_array_size");
+            if (!size_func) {
+                size_func = llvm::Function::Create(
+                    llvm::FunctionType::get(_builder.getInt32Ty(),
+                                            {_builder.getPtrTy()}, false),
+                    llvm::Function::ExternalLinkage, "dyn_array_size", *_module);
+            }
+            count = _builder.CreateCall(size_func, {collVal}, "dyn.size");
+        } else if (iter_kind == IterKind::DYN_STR_ARRAY) {
+            auto *size_func = _module->getFunction("dyn_str_array_size");
+            if (!size_func) {
+                size_func = llvm::Function::Create(
+                    llvm::FunctionType::get(_builder.getInt32Ty(),
+                                            {_builder.getPtrTy()}, false),
+                    llvm::Function::ExternalLinkage, "dyn_str_array_size", *_module);
+            }
+            count = _builder.CreateCall(size_func, {collVal}, "dyn.size");
         } else {
             count = iterVal;
         }
@@ -1484,8 +1517,12 @@ class ModuleBuilder {
         _builder.CreateStore(
             llvm::ConstantInt::get(_builder.getInt32Ty(), 0), indexAlloca);
 
-        // Allocate loop variable (int for both cases — char is int)
-        auto *varAlloca = createVariableSlot(varName, _builder.getInt32Ty());
+        // Allocate loop variable (type depends on collection)
+        llvm::Type *var_type = _builder.getInt32Ty();
+        if (iter_kind == IterKind::DYN_STR_ARRAY) {
+            var_type = _builder.getPtrTy();
+        }
+        auto *varAlloca = createVariableSlot(varName, var_type);
 
         // Save and register loop variable
         llvm::AllocaInst *prevAlloca = nullptr;
@@ -1512,9 +1549,29 @@ class ModuleBuilder {
         // Body — set loop variable to current element
         function->insert(function->end(), body_block);
         _builder.SetInsertPoint(body_block);
-        if (is_string_iter) {
-            auto *ch = emitStrCharAt(strVal, idx);
+        if (iter_kind == IterKind::STRING) {
+            auto *ch = emitStrCharAt(collVal, idx);
             _builder.CreateStore(ch, varAlloca);
+        } else if (iter_kind == IterKind::DYN_ARRAY) {
+            auto *get_func = _module->getFunction("dyn_array_get");
+            if (!get_func) {
+                llvm::Type *args[] = {_builder.getPtrTy(), _builder.getInt32Ty()};
+                get_func = llvm::Function::Create(
+                    llvm::FunctionType::get(_builder.getInt32Ty(), args, false),
+                    llvm::Function::ExternalLinkage, "dyn_array_get", *_module);
+            }
+            auto *elem = _builder.CreateCall(get_func, {collVal, idx}, "dyn.elem");
+            _builder.CreateStore(elem, varAlloca);
+        } else if (iter_kind == IterKind::DYN_STR_ARRAY) {
+            auto *get_func = _module->getFunction("dyn_str_array_get");
+            if (!get_func) {
+                llvm::Type *args[] = {_builder.getPtrTy(), _builder.getInt32Ty()};
+                get_func = llvm::Function::Create(
+                    llvm::FunctionType::get(_builder.getPtrTy(), args, false),
+                    llvm::Function::ExternalLinkage, "dyn_str_array_get", *_module);
+            }
+            auto *elem = _builder.CreateCall(get_func, {collVal, idx}, "dyn.elem");
+            _builder.CreateStore(elem, varAlloca);
         } else {
             _builder.CreateStore(idx, varAlloca);
         }
@@ -3001,6 +3058,30 @@ class ModuleBuilder {
         // Track function pointer type when assigning a function reference
         if (auto *func = llvm::dyn_cast<llvm::Function>(value)) {
             _func_ptr_types[name] = func->getFunctionType();
+        }
+
+        // Track semantic type for collection variables
+        if (define_new && code->getRight() != nullptr) {
+            std::string rhs_callee;
+            const pgcodes::GCode *rhs_args = nullptr;
+            auto *rhs = code->getRight();
+            // Pattern 1: IDENTIFIER with suffix call: make_dyn_array()
+            if (extractSuffixCall(rhs, rhs_callee, rhs_args)) {
+                // handled below
+            }
+            // Pattern 2: operator ( with left=IDENTIFIER: also a call
+            else if (rhs->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                     rhs->getOper() == "(" && rhs->getLeft() != nullptr &&
+                     rhs->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+                rhs_callee = rhs->getLeft()->getValue();
+            }
+            if (!rhs_callee.empty()) {
+                if (rhs_callee == "make_dyn_array") {
+                    _variable_sem_types[name] = "DynArray";
+                } else if (rhs_callee == "make_dyn_str_array" || rhs_callee == "make_str_array") {
+                    _variable_sem_types[name] = "DynStrArray";
+                }
+            }
         }
 
         llvm::AllocaInst  *slot = nullptr;
@@ -5154,6 +5235,8 @@ class ModuleBuilder {
     std::map<std::string, VTableInfo>          _vtables;
     // Track functions that return multiple values (name → count)
     std::map<std::string, size_t>              _multi_return_types;
+    // Track variable semantic types (name → "DynArray"|"DynStrArray"|"string"|...)
+    std::map<std::string, std::string>         _variable_sem_types;
     std::string                                _current_func_simple_name;
     llvm::AllocaInst                          *_match_enum_alloca = nullptr;
     llvm::StructType                          *_match_enum_stype = nullptr;

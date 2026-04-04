@@ -22,7 +22,9 @@ TypeCat categorize(const std::string &type_name) {
     if (type_name == "int" || type_name == "bool" || type_name == "char")
         return TypeCat::INT;
     if (type_name == "string")                       return TypeCat::STRING;
-    if (type_name == "ptr" || type_name == "func")   return TypeCat::PTR;
+    if (type_name == "ptr" || type_name == "func" ||
+        type_name == "DynArray" || type_name == "DynStrArray")
+                                                     return TypeCat::PTR;
     return TypeCat::STRUCT; // struct or enum name
 }
 
@@ -211,7 +213,8 @@ std::string builtinReturnType(const std::string &name) {
     if (name == "map_has" || name == "map_size") return "int";
     if (name == "int_map_get" || name == "int_map_has" || name == "int_map_size") return "int";
     // Dynamic array
-    if (name == "make_dyn_array" || name == "make_dyn_str_array") return "ptr";
+    if (name == "make_dyn_array") return "DynArray";
+    if (name == "make_dyn_str_array") return "DynStrArray";
     if (name == "make_str_builder") return "ptr";
     if (name == "sb_build") return "string";
     if (name == "sb_len") return "int";
@@ -613,11 +616,17 @@ class ProgramChecker {
             if (inNode != nullptr && inNode->getOper() == "in") {
                 const auto *varNode = inNode->getLeft();
                 const auto *iterNode = inNode->getRight();
-                if (varNode != nullptr) {
-                    _defined_vars[varNode->getValue()] = "int";
-                }
                 if (iterNode != nullptr) {
                     checkExpression(iterNode);
+                }
+                if (varNode != nullptr) {
+                    // Infer loop variable type from iterable
+                    std::string iter_type = inferType(iterNode);
+                    if (iter_type == "DynStrArray") {
+                        _defined_vars[varNode->getValue()] = "string";
+                    } else {
+                        _defined_vars[varNode->getValue()] = "int";
+                    }
                 }
             }
             checkStatement(code->getRight());
