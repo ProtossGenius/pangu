@@ -1,0 +1,35 @@
+package main;
+
+func identity[T](x T) T {
+    return x;
+}
+
+func add[T](a T, b T) T {
+    return a + b;
+}
+
+func first[T](a T, b T) T {
+    return a;
+}
+
+func apply_twice[T](f func, x T) T {
+    return f(f(x));
+}
+
+func double_val(x int) int {
+    return x * 2;
+}
+
+func main() {
+    // Basic identity - int
+    println(identity(42));
+    // Basic identity - string
+    println(identity("hello"));
+    // Generic addition
+    println(add(3, 4));
+    // Generic first
+    println(first(10, 20));
+    // Generic with function reference
+    println(apply_twice(double_val, 3));
+    return 0;
+}
