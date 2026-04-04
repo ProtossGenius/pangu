@@ -1827,7 +1827,7 @@ class ModuleBuilder {
             if (it == _variables.end()) {
                 // Check if it's a function reference (function as value)
                 auto *func = resolveCurrentFunction(name);
-                if (func) return func;
+                if (func) return wrapFuncAsClosure(func);
                 throw std::runtime_error("unknown identifier: " + name);
             }
             auto *alloca_type = it->second->getAllocatedType();
@@ -2197,9 +2197,86 @@ class ModuleBuilder {
         return result;
     }
 
+    // Wrap a function pointer in a closure struct with 0 captures.
+    // Layout: [func_ptr (8 bytes)][num_captures=0 (4 bytes)][padding (4 bytes)]
+    // Ensure malloc is declared
+    llvm::Function *ensureMalloc() {
+        auto *fn = _module->getFunction("malloc");
+        if (!fn) {
+            auto *ptr_ty = _builder.getPtrTy();
+            auto *i64_ty = _builder.getInt64Ty();
+            auto *malloc_ty = llvm::FunctionType::get(ptr_ty, {i64_ty}, false);
+            fn = llvm::Function::Create(
+                malloc_ty, llvm::Function::ExternalLinkage, "malloc",
+                _module.get());
+        }
+        return fn;
+    }
+
+    // Create a closure struct: { ptr func, ptr env }
+    llvm::Value *makeClosureStruct(llvm::Value *func_ptr, llvm::Value *env_ptr) {
+        auto *ptr_ty = _builder.getPtrTy();
+        auto *i32_ty = _builder.getInt32Ty();
+        auto *i64_ty = _builder.getInt64Ty();
+
+        auto *closure = _builder.CreateCall(
+            ensureMalloc(), {llvm::ConstantInt::get(i64_ty, 16)}, "closure");
+        _builder.CreateStore(func_ptr, closure);
+        auto *env_slot = _builder.CreateGEP(
+            _builder.getInt8Ty(), closure,
+            {llvm::ConstantInt::get(i32_ty, 8)}, "env_slot");
+        auto *env_cast = _builder.CreateBitCast(
+            env_slot, llvm::PointerType::get(ptr_ty, 0));
+        _builder.CreateStore(env_ptr, env_cast);
+        return closure;
+    }
+
+    // Wrap a named function as a closure struct with null env.
+    // Creates a trampoline function with (env, params...) signature.
+    llvm::Value *wrapFuncAsClosure(llvm::Function *func) {
+        static int wrap_counter = 0;
+        auto *ptr_ty = _builder.getPtrTy();
+
+        // Create wrapper: (ptr env, original_params...) -> ret_type
+        auto *orig_type = func->getFunctionType();
+        std::vector<llvm::Type *> wrap_params;
+        wrap_params.push_back(ptr_ty); // env (ignored)
+        for (unsigned i = 0; i < orig_type->getNumParams(); ++i) {
+            wrap_params.push_back(orig_type->getParamType(i));
+        }
+        auto *wrap_type = llvm::FunctionType::get(
+            orig_type->getReturnType(), wrap_params, false);
+        std::string wrap_name = "__wrap_" + func->getName().str() +
+                                "_" + std::to_string(wrap_counter++);
+        auto *wrapper = llvm::Function::Create(
+            wrap_type, llvm::Function::InternalLinkage, wrap_name,
+            _module.get());
+
+        // Generate wrapper body: ignore env, forward all other args
+        auto *saved_bb = _builder.GetInsertBlock();
+        auto *entry = llvm::BasicBlock::Create(*_context, "entry", wrapper);
+        _builder.SetInsertPoint(entry);
+
+        std::vector<llvm::Value *> fwd_args;
+        auto it = wrapper->arg_begin();
+        it->setName("env"); // skip env
+        ++it;
+        for (; it != wrapper->arg_end(); ++it) {
+            fwd_args.push_back(&*it);
+        }
+        auto *result = _builder.CreateCall(func, fwd_args, "fwd");
+        _builder.CreateRet(result);
+
+        _builder.SetInsertPoint(saved_bb);
+
+        // Store function pointer type (without env) for tracking
+        auto *null_env = llvm::ConstantPointerNull::get(ptr_ty);
+        return makeClosureStruct(wrapper, null_env);
+    }
+
     // ── Lambda / anonymous function ───────────────────────────────────
     // func(params) [return_type] { body }
-    // Returns a function pointer to the generated anonymous function.
+    // Returns a function pointer (non-capturing) or closure struct pointer (capturing).
     void collectLambdaParamNames(const pgcodes::GCode *code,
                                  std::vector<std::string> &names) {
         if (code == nullptr) return;
@@ -2214,9 +2291,43 @@ class ModuleBuilder {
         }
     }
 
+    // Scan an AST subtree for identifier references that exist in the outer scope
+    // but are not in the lambda's own parameter set.
+    void scanCapturedVars(const pgcodes::GCode *code,
+                          const std::set<std::string> &params,
+                          const std::map<std::string, llvm::AllocaInst *> &outer_vars,
+                          std::set<std::string> &captured) {
+        if (code == nullptr) return;
+        // Don't descend into nested lambdas
+        if (code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            code->getOper() == "func_expr") {
+            return;
+        }
+        if (code->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+            const std::string &name = code->getValue();
+            if (params.count(name) == 0 && outer_vars.count(name) != 0 &&
+                name != "true" && name != "false" && name != "nil" &&
+                name != "null" && name != "break" && name != "continue" &&
+                name != "return" && name != "CONTINUE" && name != "FINISH" &&
+                name != "TRANSFER_FINISH") {
+                // Check it's not a known function name
+                if (_declared_functions.count(
+                        functionKey(_current_module_id, name)) == 0) {
+                    captured.insert(name);
+                }
+            }
+        }
+        scanCapturedVars(code->getLeft(), params, outer_vars, captured);
+        scanCapturedVars(code->getRight(), params, outer_vars, captured);
+    }
+
     llvm::Value *emitLambda(const pgcodes::GCode *code) {
         static int lambda_counter = 0;
         std::string lambda_name = "__lambda_" + std::to_string(lambda_counter++);
+
+        auto *ptr_ty = _builder.getPtrTy();
+        auto *i32_ty = _builder.getInt32Ty();
+        auto *i64_ty = _builder.getInt64Ty();
 
         // Extract parameter names from left child: ( ) params
         std::vector<std::string> param_names;
@@ -2225,21 +2336,35 @@ class ModuleBuilder {
             collectLambdaParamNames(params_block->getRight(), param_names);
         }
 
-        // Determine return type (stored in name, defaults to i32)
-        llvm::Type *ret_type = _builder.getInt32Ty();
+        // Scan for captured variables from outer scope
+        std::set<std::string> param_set(param_names.begin(), param_names.end());
+        std::set<std::string> captured_set;
+        auto *body_block = code->getRight();
+        if (body_block != nullptr) {
+            scanCapturedVars(body_block->getRight(), param_set,
+                             _variables, captured_set);
+        }
+        std::vector<std::string> captured_names(captured_set.begin(),
+                                                 captured_set.end());
+
+        // Determine return type
+        llvm::Type *ret_type = i32_ty;
         std::string ret_type_name = code->name();
         if (ret_type_name == "string" || ret_type_name == "str") {
-            ret_type = _builder.getPtrTy();
+            ret_type = ptr_ty;
         }
 
-        // Build function type: all params i32 by default
-        std::vector<llvm::Type *> param_types(param_names.size(),
-                                               _builder.getInt32Ty());
+        // All lambdas take (ptr env, user_params...) signature
+        std::vector<llvm::Type *> param_types;
+        param_types.push_back(ptr_ty); // env pointer
+        for (size_t i = 0; i < param_names.size(); ++i) {
+            param_types.push_back(i32_ty);
+        }
         auto *func_type = llvm::FunctionType::get(ret_type, param_types, false);
 
-        // Create the lambda function
         auto *lambda_func = llvm::Function::Create(
-            func_type, llvm::Function::InternalLinkage, lambda_name, _module.get());
+            func_type, llvm::Function::InternalLinkage, lambda_name,
+            _module.get());
 
         // Save current context
         auto *saved_function  = _current_function;
@@ -2257,18 +2382,49 @@ class ModuleBuilder {
         auto *entry = llvm::BasicBlock::Create(*_context, "entry", lambda_func);
         _builder.SetInsertPoint(entry);
 
-        // Bind parameters
-        size_t idx = 0;
-        for (auto &arg : lambda_func->args()) {
-            const std::string &pname = param_names[idx++];
+        // First arg is env pointer
+        auto arg_it = lambda_func->arg_begin();
+        auto *env_arg = &*arg_it++;
+        env_arg->setName("__env");
+
+        // Bind user parameters
+        for (size_t i = 0; i < param_names.size(); ++i) {
+            auto &arg = *arg_it++;
+            const std::string &pname = param_names[i];
             arg.setName(pname);
             auto *slot = createVariableSlot(pname, arg.getType());
             _builder.CreateStore(&arg, slot);
             _variables[pname] = slot;
         }
 
+        // Load captured variables from env struct
+        // env layout: { cap0, cap1, ... } each stored as i64
+        for (size_t i = 0; i < captured_names.size(); ++i) {
+            const auto &cname = captured_names[i];
+            auto outer_it = saved_variables.find(cname);
+            auto *orig_type = (outer_it != saved_variables.end())
+                                  ? outer_it->second->getAllocatedType()
+                                  : i32_ty;
+            auto *cap_gep = _builder.CreateGEP(
+                i64_ty, env_arg,
+                {llvm::ConstantInt::get(i32_ty, (int)i)},
+                "__env_" + cname);
+            auto *cap_i64 = _builder.CreateLoad(i64_ty, cap_gep,
+                                                 cname + ".raw");
+            llvm::Value *cap_val;
+            if (orig_type->isPointerTy()) {
+                cap_val = _builder.CreateIntToPtr(cap_i64, orig_type);
+            } else if (orig_type->getIntegerBitWidth() < 64) {
+                cap_val = _builder.CreateTrunc(cap_i64, orig_type);
+            } else {
+                cap_val = cap_i64;
+            }
+            auto *slot = createVariableSlot(cname, orig_type);
+            _builder.CreateStore(cap_val, slot);
+            _variables[cname] = slot;
+        }
+
         // Emit body
-        auto *body_block = code->getRight();
         if (body_block != nullptr) {
             emitStatement(body_block->getRight());
         }
@@ -2285,7 +2441,36 @@ class ModuleBuilder {
         _terminated       = saved_terminated;
         _builder.SetInsertPoint(saved_bb);
 
-        return lambda_func;
+        // Build env struct if there are captures
+        llvm::Value *env_ptr = llvm::ConstantPointerNull::get(ptr_ty);
+        if (!captured_names.empty()) {
+            size_t env_size = captured_names.size() * 8;
+            auto *env_mem = _builder.CreateCall(
+                ensureMalloc(),
+                {llvm::ConstantInt::get(i64_ty, env_size)}, "env");
+            for (size_t i = 0; i < captured_names.size(); ++i) {
+                auto outer_it = saved_variables.find(captured_names[i]);
+                auto *cap_val = _builder.CreateLoad(
+                    outer_it->second->getAllocatedType(), outer_it->second,
+                    captured_names[i] + ".cap");
+                llvm::Value *cap_i64;
+                if (cap_val->getType()->isPointerTy()) {
+                    cap_i64 = _builder.CreatePtrToInt(cap_val, i64_ty);
+                } else if (cap_val->getType()->getIntegerBitWidth() < 64) {
+                    cap_i64 = _builder.CreateSExt(cap_val, i64_ty);
+                } else {
+                    cap_i64 = cap_val;
+                }
+                auto *slot = _builder.CreateGEP(
+                    i64_ty, env_mem,
+                    {llvm::ConstantInt::get(i32_ty, (int)i)},
+                    "env_cap_" + std::to_string(i));
+                _builder.CreateStore(cap_i64, slot);
+            }
+            env_ptr = env_mem;
+        }
+
+        return makeClosureStruct(lambda_func, env_ptr);
     }
 
     // ── >> [...] dispatch: c >> [pred -> handler, ...] ──────────────
@@ -2956,42 +3141,63 @@ class ModuleBuilder {
             return _builder.CreateCall(fn, {args[0], args[1]}, "ann_fidx");
         }
         if (callee_function == nullptr) {
-            // Try indirect call through function pointer variable
+            // All function values are closure structs: { ptr func, ptr env }
             auto var_it = _variables.find(callee);
             if (var_it != _variables.end()) {
-                auto *alloca_type = var_it->second->getAllocatedType();
-                llvm::Value *fn_ptr;
-                if (alloca_type->isPointerTy()) {
-                    fn_ptr = _builder.CreateLoad(
-                        _builder.getPtrTy(), var_it->second, callee + ".fp");
-                } else {
-                    // Variable holds an integer; convert to function pointer
-                    auto *int_val = _builder.CreateLoad(
-                        alloca_type, var_it->second, callee + ".ival");
-                    fn_ptr = _builder.CreateIntToPtr(
-                        int_val, _builder.getPtrTy(), callee + ".fp");
-                }
-                auto args = emitCallArgs(args_code);
-                // Try to use tracked function type, otherwise infer from args
-                llvm::FunctionType *ftype = nullptr;
-                auto fpt_it = _func_ptr_types.find(callee);
-                if (fpt_it != _func_ptr_types.end()) {
-                    ftype = fpt_it->second;
-                } else {
-                    // Infer: all args as their actual types, return i32
-                    std::vector<llvm::Type *> param_types;
-                    for (auto *a : args) param_types.push_back(a->getType());
-                    ftype = llvm::FunctionType::get(
-                        _builder.getInt32Ty(), param_types, false);
-                }
-                return _builder.CreateCall(ftype, fn_ptr, args,
-                                           callee + ".icall");
+                return emitUniformClosureCall(var_it->second, args_code, callee);
             }
             throw std::runtime_error("unsupported function call: " + callee);
         }
         auto args = emitCallArgs(args_code);
         return _builder.CreateCall(callee_function, args,
                                     callee + ".call");
+    }
+
+    // Uniform closure call: all function values are closure structs.
+    // Layout: { ptr func, ptr env }
+    // All lambdas take (ptr env, user_params...) as their signature.
+    llvm::Value *emitUniformClosureCall(llvm::AllocaInst *closure_var,
+                                         const pgcodes::GCode *args_code,
+                                         const std::string &callee) {
+        auto *i32_ty = _builder.getInt32Ty();
+        auto *ptr_ty = _builder.getPtrTy();
+
+        // Load closure struct pointer
+        auto *closure_ptr = _builder.CreateLoad(
+            ptr_ty, closure_var, callee + ".closure");
+
+        // Load function pointer from offset 0
+        auto *fn_ptr = _builder.CreateLoad(
+            ptr_ty, closure_ptr, callee + ".fn");
+
+        // Load env pointer from offset 8
+        auto *env_gep = _builder.CreateGEP(
+            _builder.getInt8Ty(), closure_ptr,
+            {llvm::ConstantInt::get(i32_ty, 8)}, "env_gep");
+        auto *env_cast = _builder.CreateBitCast(
+            env_gep, llvm::PointerType::get(ptr_ty, 0));
+        auto *env_ptr = _builder.CreateLoad(ptr_ty, env_cast, callee + ".env");
+
+        // Build args: env first, then user args
+        std::vector<llvm::Value *> all_args;
+        all_args.push_back(env_ptr);
+        auto user_args = emitCallArgs(args_code);
+        all_args.insert(all_args.end(), user_args.begin(), user_args.end());
+
+        // Build function type: (ptr, user_param_types...) -> i32
+        std::vector<llvm::Type *> param_types;
+        param_types.push_back(ptr_ty); // env
+        for (auto *a : user_args) param_types.push_back(a->getType());
+
+        // Check if we have compile-time return type info
+        llvm::Type *ret_ty = i32_ty;
+        auto fpt_it = _func_ptr_types.find(callee);
+        if (fpt_it != _func_ptr_types.end()) {
+            ret_ty = fpt_it->second->getReturnType();
+        }
+
+        auto *ftype = llvm::FunctionType::get(ret_ty, param_types, false);
+        return _builder.CreateCall(ftype, fn_ptr, all_args, callee + ".ccall");
     }
 
     llvm::Value *emitQualifiedCall(const std::string &module_alias,
@@ -3634,7 +3840,6 @@ class ModuleBuilder {
     llvm::FunctionCallee               _exit;
     std::map<std::string, llvm::Function *>    _declared_functions;
     std::map<std::string, llvm::AllocaInst *>  _variables;
-    // Track function types for variables holding function pointers (indirect calls)
     std::map<std::string, llvm::FunctionType *> _func_ptr_types;
     std::map<std::string, StructInfo>          _struct_types;
     std::map<std::string, EnumInfo>            _enum_types;
