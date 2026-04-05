@@ -992,6 +992,10 @@ class ModuleBuilder {
         if (name == "string") return _builder.getPtrTy();
         if (name == "ptr")    return _builder.getPtrTy();
         if (name == "func")   return _builder.getPtrTy();
+        if (name == "DynArray" || name == "DynStrArray" ||
+            name == "HashMap" || name == "IntMap" ||
+            name == "StringBuilder")
+            return _builder.getPtrTy();
         auto it = _struct_types.find(name);
         if (it != _struct_types.end()) {
             return it->second.llvm_type;
@@ -1234,13 +1238,24 @@ class ModuleBuilder {
     }
 
     void bindParameters(const grammer::GFunction &function) {
+        static const std::set<std::string> collection_types = {
+            "DynArray", "DynStrArray", "HashMap", "IntMap", "StringBuilder"
+        };
         size_t index = 0;
         for (auto &arg : _current_function->args()) {
-            const std::string &name = function.params.orderedNames().at(index++);
+            const std::string &name = function.params.orderedNames().at(index);
+            const auto *var = function.params.getVariable(name);
             arg.setName(name);
             auto *slot = createVariableSlot(name, arg.getType());
             _builder.CreateStore(&arg, slot);
             _variables[name] = slot;
+            if (var) {
+                std::string type_name = var->getType()->name();
+                if (collection_types.count(type_name)) {
+                    _variable_sem_types[name] = type_name;
+                }
+            }
+            ++index;
         }
     }
 

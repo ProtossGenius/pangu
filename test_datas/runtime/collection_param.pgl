@@ -1,0 +1,48 @@
+package main;
+
+func sum_array(arr DynArray) int {
+    total := 0;
+    for i in dyn_array_size(arr) {
+        total = total + dyn_array_get(arr, i);
+    }
+    return total;
+}
+
+func join_strings(arr DynStrArray, sep string) string {
+    sb := make_str_builder();
+    for i in dyn_str_array_size(arr) {
+        if (i > 0) {
+            sb_append(sb, sep);
+        }
+        sb_append(sb, dyn_str_array_get(arr, i));
+    }
+    return sb_build(sb);
+}
+
+func map_has_key(m HashMap, key string) bool {
+    return map_has(m, key);
+}
+
+func main() int {
+    arr := make_dyn_array();
+    dyn_array_push(arr, 10);
+    dyn_array_push(arr, 20);
+    dyn_array_push(arr, 30);
+    println(sum_array(arr));
+
+    strs := make_dyn_str_array();
+    dyn_str_array_push(strs, "hello");
+    dyn_str_array_push(strs, "world");
+    println(join_strings(strs, " "));
+
+    m := make_map();
+    map_set(m, "name", "pangu");
+    if (map_has_key(m, "name")) {
+        println("has name");
+    }
+    if (!map_has_key(m, "age")) {
+        println("no age");
+    }
+
+    return 0;
+}
