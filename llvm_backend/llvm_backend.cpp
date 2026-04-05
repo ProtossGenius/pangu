@@ -1804,6 +1804,61 @@ class ModuleBuilder {
     // match(expr) { val => body; val => body; _ => body; }
     // Lowered as an if/else chain with PHI node for result.
     // Supports data enum destructuring: match(r) { Ok(v) => ...; Err(e) => ...; }
+    // Ternary expression: cond ? then_val : else_val
+    llvm::Value *emitTernary(const pgcodes::GCode *code) {
+        auto *function = _current_function;
+        auto *cond_value = emitExpression(code->getLeft());
+
+        // Right side is ":" node with then/else values
+        auto *colon = code->getRight();
+        if (colon == nullptr || colon->getOper() != ":") {
+            throw std::runtime_error("ternary: expected ':' with then/else values");
+        }
+
+        // Convert condition to i1
+        llvm::Value *cond_bool;
+        if (cond_value->getType() == _builder.getInt32Ty()) {
+            cond_bool = _builder.CreateICmpNE(
+                cond_value, llvm::ConstantInt::get(_builder.getInt32Ty(), 0), "ternary.cond");
+        } else if (cond_value->getType()->isPointerTy()) {
+            cond_bool = _builder.CreateICmpNE(
+                cond_value, llvm::ConstantPointerNull::get(_builder.getPtrTy()), "ternary.cond");
+        } else {
+            cond_bool = cond_value;
+        }
+
+        auto *then_bb  = llvm::BasicBlock::Create(*_context, "ternary.then", function);
+        auto *else_bb  = llvm::BasicBlock::Create(*_context, "ternary.else", function);
+        auto *merge_bb = llvm::BasicBlock::Create(*_context, "ternary.merge", function);
+
+        _builder.CreateCondBr(cond_bool, then_bb, else_bb);
+
+        _builder.SetInsertPoint(then_bb);
+        auto *then_val = emitExpression(colon->getLeft());
+        auto *then_exit = _builder.GetInsertBlock();
+        _builder.CreateBr(merge_bb);
+
+        _builder.SetInsertPoint(else_bb);
+        auto *else_val = emitExpression(colon->getRight());
+        auto *else_exit = _builder.GetInsertBlock();
+        _builder.CreateBr(merge_bb);
+
+        _builder.SetInsertPoint(merge_bb);
+        auto *phi = _builder.CreatePHI(then_val->getType(), 2, "ternary.result");
+        phi->addIncoming(then_val, then_exit);
+        // Cast else_val to match then_val type if needed
+        llvm::Value *else_cast = else_val;
+        if (then_val->getType() != else_val->getType()) {
+            if (then_val->getType()->isPointerTy() && else_val->getType()->isIntegerTy()) {
+                else_cast = _builder.CreateIntToPtr(else_val, then_val->getType());
+            } else if (then_val->getType()->isIntegerTy() && else_val->getType()->isPointerTy()) {
+                else_cast = _builder.CreatePtrToInt(else_val, then_val->getType());
+            }
+        }
+        phi->addIncoming(else_cast, else_exit);
+        return phi;
+    }
+
     llvm::Value *emitMatchExpression(const pgcodes::GCode *code) {
         auto *function = _current_function;
         auto *cond_value = emitExpression(code->getLeft());
@@ -2452,6 +2507,9 @@ class ModuleBuilder {
         }
         if (oper == "==>") {
             return emitPipelineChain(code);
+        }
+        if (oper == "?") {
+            return emitTernary(code);
         }
         {
             auto loc = code->location();

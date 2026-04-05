@@ -1,0 +1,29 @@
+package main;
+func main() {
+    x := 10;
+    r := x > 5 ? "big" : "small";
+    println(r);
+
+    y := 3;
+    s := y > 5 ? "big" : "small";
+    println(s);
+
+    n := y > 0 ? y * 2 : 0;
+    println(n);
+
+    z := 0;
+    m := z > 0 ? z * 2 : -1;
+    println(m);
+
+    // Ternary in function argument
+    println(x == 10 ? "ten" : "other");
+
+    // Nested ternary with parens
+    grade := x > 8 ? "A" : (x > 5 ? "B" : "C");
+    println(grade);
+
+    // Bool condition
+    flag := true;
+    val := flag ? 42 : 0;
+    println(val);
+}
