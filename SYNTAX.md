@@ -56,7 +56,11 @@ JIT and AOT modes.
 ```pgl
 42          // integer
 0xFF        // hex integer
+0b1010      // binary integer (10)
+0777        // octal integer (511)
+1_000_000   // underscore separators (ignored, for readability)
 "hello\n"   // string (supports \n \t \\ \" \0 \xNN \0NNN)
+`raw\nstr`  // backtick string (multiline, raw — no escape processing)
 "${name}"   // string interpolation — embeds variable/expression value
 'A'         // char literal → integer (ASCII value)
 true false  // bool → integer (1 / 0)
@@ -67,7 +71,7 @@ true false  // bool → integer (1 / 0)
 ### Keywords
 
 `package` `import` `as` `type` `struct` `enum` `interface` `func` `pipeline` `impl`
-`if` `else` `for` `in` `while` `do` `return` `switch` `case` `default` `match`
+`if` `else` `for` `in` `while` `do` `return` `defer` `switch` `case` `default` `match`
 `break` `continue` `goto` `try` `catch`
 `public` `static` `const` `final` `var` `class` `worker` `switcher`
 
@@ -225,8 +229,10 @@ Constants are compile-time values accessible anywhere in the package.
 ```pgl
 func process() {
     f := open_file("data.txt");
-    defer(close_file(f));    // runs when function returns
-    // ... work with f ...
+    defer close_file(f);         // keyword syntax (preferred)
+    defer(close_file(f));        // function-call syntax (also works)
+    defer println("cleanup 2");
+    // Deferred statements execute in LIFO order when function returns
 }
 ```
 
@@ -338,6 +344,23 @@ for idx, val in nums {
 
 for i, v in range(2, 5) {
     println(sprintf("%d -> %d", i, v));  // i=0,1,2  v=2,3,4
+}
+
+// Map key-value iteration
+m2 := map_of("a", "1", "b", "2");
+for k, v in m2 {
+    println(sprintf("%s=%s", k, v));  // a=1, b=2
+}
+
+im := int_map_of("x", 10, "y", 20);
+for k, v in im {
+    println(sprintf("%s=%d", k, v));  // x=10, y=20
+}
+
+// Infinite loop (use break to exit)
+for {
+    if (done) { break; }
+    // ...
 }
 ```
 
