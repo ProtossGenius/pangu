@@ -2295,6 +2295,21 @@ class ModuleBuilder {
                                        emitExpression(code->getRight()),
                                        "modtmp");
         }
+        if (oper == "&") {
+            return _builder.CreateAnd(emitExpression(code->getLeft()),
+                                      emitExpression(code->getRight()), "andtmp");
+        }
+        if (oper == "|") {
+            return _builder.CreateOr(emitExpression(code->getLeft()),
+                                     emitExpression(code->getRight()), "ortmp");
+        }
+        if (oper == "^") {
+            return _builder.CreateXor(emitExpression(code->getLeft()),
+                                      emitExpression(code->getRight()), "xortmp");
+        }
+        if (oper == "~") {
+            return _builder.CreateNot(emitExpression(code->getRight()), "bnottmp");
+        }
         if (oper == "&&") {
             return emitLogicalAnd(code);
         }

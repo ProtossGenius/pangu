@@ -948,7 +948,7 @@ class ProgramChecker {
 
         // Arithmetic/comparison/logical operators
         if (oper == "+" || oper == "-" || oper == "*" || oper == "/" ||
-            oper == "%") {
+            oper == "%" || oper == "&" || oper == "|" || oper == "^") {
             std::string lt = inferType(code->getLeft());
             if (oper == "+" && categorize(lt) == TypeCat::STRING) return "string";
             return "int";

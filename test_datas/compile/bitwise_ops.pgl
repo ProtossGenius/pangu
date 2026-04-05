@@ -1,0 +1,9 @@
+package main;
+
+func main() {
+    println(int_to_str(5 & 3));
+    println(int_to_str(5 | 3));
+    println(int_to_str(5 ^ 3));
+    println(int_to_str(255 & 15));
+    println(int_to_str(0 | 7));
+}
