@@ -5062,7 +5062,7 @@ class ModuleBuilder {
             if (method_name == "push" || method_name == "append")   return "dyn_array_push";
             if (method_name == "get")    return "dyn_array_get";
             if (method_name == "set")    return "dyn_array_set";
-            if (method_name == "size")   return "dyn_array_size";
+            if (method_name == "size" || method_name == "len") return "dyn_array_size";
             if (method_name == "pop")    return "dyn_array_pop";
         }
         // DynStrArray methods
@@ -5070,14 +5070,14 @@ class ModuleBuilder {
             if (method_name == "push" || method_name == "append")   return "dyn_str_array_push";
             if (method_name == "get")    return "dyn_str_array_get";
             if (method_name == "set")    return "dyn_str_array_set";
-            if (method_name == "size")   return "dyn_str_array_size";
+            if (method_name == "size" || method_name == "len") return "dyn_str_array_size";
         }
         // HashMap methods
         if (type_name == "HashMap") {
             if (method_name == "get")    return "map_get";
             if (method_name == "set")    return "map_set";
             if (method_name == "has")    return "map_has";
-            if (method_name == "size")   return "map_size";
+            if (method_name == "size" || method_name == "len") return "map_size";
             if (method_name == "delete") return "map_delete";
             if (method_name == "keys")   return "map_keys";
         }
@@ -5086,7 +5086,7 @@ class ModuleBuilder {
             if (method_name == "get")    return "int_map_get";
             if (method_name == "set")    return "int_map_set";
             if (method_name == "has")    return "int_map_has";
-            if (method_name == "size")   return "int_map_size";
+            if (method_name == "size" || method_name == "len") return "int_map_size";
             if (method_name == "keys")   return "int_map_keys";
         }
         // StringBuilder methods
