@@ -73,6 +73,8 @@ const std::set<std::string> BUILTIN_FUNCTIONS = {
     "println", "print", "exit", "panic", "system",
     "str_concat", "str_len", "str_eq", "str_substr",
     "str_index_of", "str_starts_with", "str_ends_with", "str_replace",
+    "str_contains", "str_trim", "str_to_upper", "str_to_lower",
+    "str_split", "str_repeat", "str_count", "str_replace_all",
     "int_to_str", "str_to_int",
     "read_file", "write_file",
     "str_char_at", "char_to_str",
@@ -123,6 +125,12 @@ size_t builtinParamCount(const std::string &name) {
     if (name == "str_concat" || name == "str_eq") return 2;
     if (name == "str_index_of" || name == "str_starts_with") return 2;
     if (name == "str_ends_with") return 2;
+    if (name == "str_contains") return 2;
+    if (name == "str_split") return 2;
+    if (name == "str_count") return 2;
+    if (name == "str_repeat") return 2;
+    if (name == "str_trim" || name == "str_to_upper" || name == "str_to_lower") return 1;
+    if (name == "str_replace_all") return 3;
     if (name == "write_file" || name == "str_char_at") return 2;
     if (name == "array_get" || name == "str_array_get") return 2;
     if (name == "find_pgl_files" || name == "is_directory") {
@@ -192,6 +200,8 @@ size_t builtinParamCount(const std::string &name) {
 std::string builtinReturnType(const std::string &name) {
     // Functions returning string
     if (name == "str_concat" || name == "str_substr" || name == "str_replace" ||
+        name == "str_replace_all" || name == "str_trim" ||
+        name == "str_to_upper" || name == "str_to_lower" || name == "str_repeat" ||
         name == "int_to_str" || name == "char_to_str" || name == "read_file" ||
         name == "args" || name == "str_array_get" || name == "pipeline_cache_str" ||
         name == "pipeline_output_get" || name == "reflect_type_name" ||
@@ -207,6 +217,7 @@ std::string builtinReturnType(const std::string &name) {
     // Functions returning int
     if (name == "str_len" || name == "str_to_int" || name == "str_eq" ||
         name == "str_index_of" || name == "str_starts_with" || name == "str_ends_with" ||
+        name == "str_contains" || name == "str_count" ||
         name == "str_char_at" || name == "array_get" || name == "args_count" ||
         name == "pipeline_output_count" || name == "pipeline_get_worker" ||
         name == "is_directory" || name == "system" ||
@@ -224,6 +235,7 @@ std::string builtinReturnType(const std::string &name) {
     // Dynamic array
     if (name == "make_dyn_array") return "DynArray";
     if (name == "make_dyn_str_array") return "DynStrArray";
+    if (name == "str_split") return "DynStrArray";
     if (name == "make_str_builder") return "StringBuilder";
     if (name == "sb_build") return "string";
     if (name == "sb_len") return "int";
@@ -257,6 +269,14 @@ std::vector<std::string> builtinParamTypes(const std::string &name) {
     if (name == "str_index_of") return {"string", "string"};
     if (name == "str_starts_with") return {"string", "string"};
     if (name == "str_ends_with") return {"string", "string"};
+    if (name == "str_contains") return {"string", "string"};
+    if (name == "str_split") return {"string", "string"};
+    if (name == "str_count") return {"string", "string"};
+    if (name == "str_repeat") return {"string", "int"};
+    if (name == "str_trim") return {"string"};
+    if (name == "str_to_upper") return {"string"};
+    if (name == "str_to_lower") return {"string"};
+    if (name == "str_replace_all") return {"string", "string", "string"};
     if (name == "write_file") return {"string", "string"};
     if (name == "str_char_at") return {"string", "int"};
     if (name == "array_get") return {"ptr", "int"};
@@ -1107,7 +1127,15 @@ class ProgramChecker {
             if (method == "substr") return "string";
             if (method == "starts_with") return "int";
             if (method == "ends_with") return "int";
+            if (method == "contains") return "int";
+            if (method == "count") return "int";
             if (method == "replace") return "string";
+            if (method == "replace_all") return "string";
+            if (method == "trim") return "string";
+            if (method == "to_upper") return "string";
+            if (method == "to_lower") return "string";
+            if (method == "split") return "DynStrArray";
+            if (method == "repeat") return "string";
             if (method == "eq") return "int";
             if (method == "concat") return "string";
         }

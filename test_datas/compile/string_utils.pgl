@@ -1,0 +1,50 @@
+package main;
+
+func main() {
+    s := "  Hello, World!  ";
+
+    // str_trim
+    trimmed := str_trim(s);
+    println(trimmed);
+
+    // str_to_upper / str_to_lower
+    println(str_to_upper("hello"));
+    println(str_to_lower("WORLD"));
+
+    // str_contains
+    println(str_contains("hello world", "world"));
+    println(str_contains("hello world", "xyz"));
+
+    // str_ends_with
+    println(str_ends_with("hello.pgl", ".pgl"));
+    println(str_ends_with("hello.pgl", ".c"));
+
+    // str_split
+    parts := str_split("a,b,c,d", ",");
+    println(len(parts));
+    println(parts[0]);
+    println(parts[1]);
+    println(parts[2]);
+    println(parts[3]);
+
+    // str_repeat
+    println(str_repeat("ab", 3));
+
+    // str_count
+    println(str_count("abcabcabc", "abc"));
+
+    // str_replace_all
+    println(str_replace_all("aaa", "a", "bb"));
+
+    // Method call syntax
+    msg := "Hello World";
+    println(msg.contains("World"));
+    println(msg.to_lower());
+    println(msg.to_upper());
+
+    csv := "one:two:three";
+    items := csv.split(":");
+    println(items[0]);
+    println(items[1]);
+    println(items[2]);
+}

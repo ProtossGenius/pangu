@@ -3259,9 +3259,20 @@ class ModuleBuilder {
                 std::string obj_name, method_name;
                 const pgcodes::GCode *m_args = nullptr;
                 if (extractQualifiedCall(rhs, obj_name, method_name, m_args)) {
+                    std::string owner_type;
                     auto obj_it = _variable_sem_types.find(obj_name);
                     if (obj_it != _variable_sem_types.end()) {
-                        std::string resolved = resolveMethodName(obj_it->second, method_name);
+                        owner_type = obj_it->second;
+                    } else {
+                        // Default: if variable is a pointer, assume string
+                        auto var_it = _variables.find(obj_name);
+                        if (var_it != _variables.end() &&
+                            var_it->second->getAllocatedType()->isPointerTy()) {
+                            owner_type = "string";
+                        }
+                    }
+                    if (!owner_type.empty()) {
+                        std::string resolved = resolveMethodName(owner_type, method_name);
                         if (!resolved.empty()) {
                             std::string ret_type = inferMethodReturnType(resolved);
                             if (!ret_type.empty()) {
@@ -3274,7 +3285,8 @@ class ModuleBuilder {
             if (!rhs_callee.empty()) {
                 if (rhs_callee == "make_dyn_array") {
                     _variable_sem_types[name] = "DynArray";
-                } else if (rhs_callee == "make_dyn_str_array" || rhs_callee == "make_str_array") {
+                } else if (rhs_callee == "make_dyn_str_array" || rhs_callee == "make_str_array" ||
+                           rhs_callee == "str_split") {
                     _variable_sem_types[name] = "DynStrArray";
                 } else if (rhs_callee == "make_map") {
                     _variable_sem_types[name] = "HashMap";
@@ -3282,6 +3294,12 @@ class ModuleBuilder {
                     _variable_sem_types[name] = "IntMap";
                 } else if (rhs_callee == "make_str_builder") {
                     _variable_sem_types[name] = "StringBuilder";
+                } else {
+                    // Check inferMethodReturnType for remaining functions
+                    std::string ret = inferMethodReturnType(rhs_callee);
+                    if (!ret.empty() && ret != "string" && ret != "int") {
+                        _variable_sem_types[name] = ret;
+                    }
                 }
             }
         }
@@ -4266,6 +4284,87 @@ class ModuleBuilder {
                 throw std::runtime_error("str_replace expects 3 arguments");
             return emitStrReplace(args[0], args[1], args[2]);
         }
+        if (callee == "str_contains") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 2)
+                throw std::runtime_error("str_contains expects 2 arguments");
+            return emitRuntimeCall("str_contains",
+                _builder.getInt32Ty(),
+                {_builder.getPtrTy(), _builder.getPtrTy()},
+                args);
+        }
+        if (callee == "str_ends_with") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 2)
+                throw std::runtime_error("str_ends_with expects 2 arguments");
+            return emitRuntimeCall("str_ends_with",
+                _builder.getInt32Ty(),
+                {_builder.getPtrTy(), _builder.getPtrTy()},
+                args);
+        }
+        if (callee == "str_trim") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 1)
+                throw std::runtime_error("str_trim expects 1 argument");
+            return emitRuntimeCall("str_trim",
+                _builder.getPtrTy(),
+                {_builder.getPtrTy()},
+                args);
+        }
+        if (callee == "str_to_upper") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 1)
+                throw std::runtime_error("str_to_upper expects 1 argument");
+            return emitRuntimeCall("str_to_upper",
+                _builder.getPtrTy(),
+                {_builder.getPtrTy()},
+                args);
+        }
+        if (callee == "str_to_lower") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 1)
+                throw std::runtime_error("str_to_lower expects 1 argument");
+            return emitRuntimeCall("str_to_lower",
+                _builder.getPtrTy(),
+                {_builder.getPtrTy()},
+                args);
+        }
+        if (callee == "str_split") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 2)
+                throw std::runtime_error("str_split expects 2 arguments");
+            return emitRuntimeCall("str_split",
+                _builder.getPtrTy(),
+                {_builder.getPtrTy(), _builder.getPtrTy()},
+                args);
+        }
+        if (callee == "str_repeat") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 2)
+                throw std::runtime_error("str_repeat expects 2 arguments");
+            return emitRuntimeCall("str_repeat",
+                _builder.getPtrTy(),
+                {_builder.getPtrTy(), _builder.getInt32Ty()},
+                args);
+        }
+        if (callee == "str_count") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 2)
+                throw std::runtime_error("str_count expects 2 arguments");
+            return emitRuntimeCall("str_count",
+                _builder.getInt32Ty(),
+                {_builder.getPtrTy(), _builder.getPtrTy()},
+                args);
+        }
+        if (callee == "str_replace_all") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 3)
+                throw std::runtime_error("str_replace_all expects 3 arguments");
+            return emitRuntimeCall("str_replace_all",
+                _builder.getPtrTy(),
+                {_builder.getPtrTy(), _builder.getPtrTy(), _builder.getPtrTy()},
+                args);
+        }
         // File I/O builtins
         if (callee == "read_file") {
             auto args = emitCallArgs(args_code);
@@ -4756,6 +4855,14 @@ class ModuleBuilder {
             if (method_name == "starts_with") return "str_starts_with";
             if (method_name == "ends_with")   return "str_ends_with";
             if (method_name == "replace")     return "str_replace";
+            if (method_name == "replace_all") return "str_replace_all";
+            if (method_name == "contains")    return "str_contains";
+            if (method_name == "trim")        return "str_trim";
+            if (method_name == "to_upper")    return "str_to_upper";
+            if (method_name == "to_lower")    return "str_to_lower";
+            if (method_name == "split")       return "str_split";
+            if (method_name == "repeat")      return "str_repeat";
+            if (method_name == "count")       return "str_count";
             if (method_name == "eq")          return "str_eq";
             if (method_name == "concat")      return "str_concat";
         }
@@ -4766,10 +4873,18 @@ class ModuleBuilder {
     std::string inferMethodReturnType(const std::string &func_name) {
         if (func_name == "map_keys" || func_name == "int_map_keys")
             return "DynStrArray";
+        if (func_name == "str_split")
+            return "DynStrArray";
         if (func_name == "map_get" || func_name == "str_concat" ||
             func_name == "str_substr" || func_name == "str_replace" ||
+            func_name == "str_replace_all" || func_name == "str_trim" ||
+            func_name == "str_to_upper" || func_name == "str_to_lower" ||
+            func_name == "str_repeat" ||
             func_name == "sb_build" || func_name == "dyn_str_array_get")
             return "string";
+        if (func_name == "str_contains" || func_name == "str_ends_with" ||
+            func_name == "str_count")
+            return "int";
         return "";
     }
 
@@ -4819,8 +4934,49 @@ class ModuleBuilder {
         if (func_name == "int_to_str")      return emitIntToStr(args);
         if (func_name == "char_to_str")     return emitCharToStr(args[0]);
         if (func_name == "str_ends_with") {
-            auto *fn = _module->getFunction("pg_str_ends_with");
-            return _builder.CreateCall(fn, args, "ends_with");
+            return emitRuntimeCall("str_ends_with",
+                _builder.getInt32Ty(),
+                {_builder.getPtrTy(), _builder.getPtrTy()}, args);
+        }
+        if (func_name == "str_contains") {
+            return emitRuntimeCall("str_contains",
+                _builder.getInt32Ty(),
+                {_builder.getPtrTy(), _builder.getPtrTy()}, args);
+        }
+        if (func_name == "str_trim") {
+            return emitRuntimeCall("str_trim",
+                _builder.getPtrTy(),
+                {_builder.getPtrTy()}, args);
+        }
+        if (func_name == "str_to_upper") {
+            return emitRuntimeCall("str_to_upper",
+                _builder.getPtrTy(),
+                {_builder.getPtrTy()}, args);
+        }
+        if (func_name == "str_to_lower") {
+            return emitRuntimeCall("str_to_lower",
+                _builder.getPtrTy(),
+                {_builder.getPtrTy()}, args);
+        }
+        if (func_name == "str_split") {
+            return emitRuntimeCall("str_split",
+                _builder.getPtrTy(),
+                {_builder.getPtrTy(), _builder.getPtrTy()}, args);
+        }
+        if (func_name == "str_repeat") {
+            return emitRuntimeCall("str_repeat",
+                _builder.getPtrTy(),
+                {_builder.getPtrTy(), _builder.getInt32Ty()}, args);
+        }
+        if (func_name == "str_count") {
+            return emitRuntimeCall("str_count",
+                _builder.getInt32Ty(),
+                {_builder.getPtrTy(), _builder.getPtrTy()}, args);
+        }
+        if (func_name == "str_replace_all") {
+            return emitRuntimeCall("str_replace_all",
+                _builder.getPtrTy(),
+                {_builder.getPtrTy(), _builder.getPtrTy(), _builder.getPtrTy()}, args);
         }
         throw std::runtime_error("method function not found: " + func_name);
     }
@@ -5266,6 +5422,23 @@ class ModuleBuilder {
         auto *func_ty = llvm::FunctionType::get(_builder.getVoidTy(),
                                                 {_builder.getPtrTy()}, false);
         return _module->getOrInsertFunction("pg_panic", func_ty);
+    }
+
+    // Generic runtime call helper — declares if needed, then calls
+    llvm::Value *emitRuntimeCall(
+            const std::string &name,
+            llvm::Type *ret_type,
+            std::initializer_list<llvm::Type *> param_types,
+            const std::vector<llvm::Value *> &args) {
+        auto fn = _module->getOrInsertFunction(
+            name,
+            llvm::FunctionType::get(ret_type,
+                std::vector<llvm::Type *>(param_types), false));
+        if (ret_type->isVoidTy()) {
+            _builder.CreateCall(fn, args);
+            return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+        }
+        return _builder.CreateCall(fn, args, name);
     }
 
     // C runtime helpers for string operations

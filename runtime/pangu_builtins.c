@@ -743,3 +743,131 @@ void sb_reset(void *sbp) {
 int sb_len(void *sbp) {
     return ((StringBuilder *)sbp)->len;
 }
+
+/* ===== String utility functions ===== */
+
+// str_contains(haystack, needle) → 1 if found, 0 otherwise
+int str_contains(const char *haystack, const char *needle) {
+    return strstr(haystack, needle) != NULL ? 1 : 0;
+}
+
+// str_ends_with(s, suffix) → 1 if s ends with suffix
+int str_ends_with(const char *s, const char *suffix) {
+    size_t slen = strlen(s);
+    size_t sufflen = strlen(suffix);
+    if (sufflen > slen) return 0;
+    return strcmp(s + slen - sufflen, suffix) == 0 ? 1 : 0;
+}
+
+// str_trim(s) → new string with leading/trailing whitespace removed
+char *str_trim(const char *s) {
+    while (*s && (*s == ' ' || *s == '\t' || *s == '\n' || *s == '\r')) s++;
+    size_t len = strlen(s);
+    while (len > 0 && (s[len-1] == ' ' || s[len-1] == '\t' ||
+                       s[len-1] == '\n' || s[len-1] == '\r')) len--;
+    char *result = (char *)malloc(len + 1);
+    memcpy(result, s, len);
+    result[len] = '\0';
+    return result;
+}
+
+// str_to_upper(s) → new uppercased string
+char *str_to_upper(const char *s) {
+    size_t len = strlen(s);
+    char *result = (char *)malloc(len + 1);
+    for (size_t i = 0; i < len; i++) {
+        result[i] = (s[i] >= 'a' && s[i] <= 'z') ? s[i] - 32 : s[i];
+    }
+    result[len] = '\0';
+    return result;
+}
+
+// str_to_lower(s) → new lowercased string
+char *str_to_lower(const char *s) {
+    size_t len = strlen(s);
+    char *result = (char *)malloc(len + 1);
+    for (size_t i = 0; i < len; i++) {
+        result[i] = (s[i] >= 'A' && s[i] <= 'Z') ? s[i] + 32 : s[i];
+    }
+    result[len] = '\0';
+    return result;
+}
+
+// str_split(s, delim) → DynStrArray of substrings
+void *str_split(const char *s, const char *delim) {
+    void *arr = make_dyn_str_array();
+    size_t dlen = strlen(delim);
+    if (dlen == 0) {
+        dyn_str_array_push(arr, s);
+        return arr;
+    }
+    const char *start = s;
+    const char *found;
+    while ((found = strstr(start, delim)) != NULL) {
+        size_t part_len = found - start;
+        char *part = (char *)malloc(part_len + 1);
+        memcpy(part, start, part_len);
+        part[part_len] = '\0';
+        dyn_str_array_push(arr, part);
+        start = found + dlen;
+    }
+    dyn_str_array_push(arr, start);
+    return arr;
+}
+
+// str_repeat(s, n) → new string repeating s n times
+char *str_repeat(const char *s, int n) {
+    if (n <= 0) {
+        char *r = (char *)malloc(1);
+        r[0] = '\0';
+        return r;
+    }
+    size_t slen = strlen(s);
+    size_t total = slen * n;
+    char *result = (char *)malloc(total + 1);
+    for (int i = 0; i < n; i++) {
+        memcpy(result + i * slen, s, slen);
+    }
+    result[total] = '\0';
+    return result;
+}
+
+// str_count(haystack, needle) → number of non-overlapping occurrences
+int str_count(const char *haystack, const char *needle) {
+    int count = 0;
+    size_t nlen = strlen(needle);
+    if (nlen == 0) return 0;
+    const char *p = haystack;
+    while ((p = strstr(p, needle)) != NULL) {
+        count++;
+        p += nlen;
+    }
+    return count;
+}
+
+// str_replace_all(s, old, new) → new string with ALL occurrences replaced
+char *str_replace_all(const char *s, const char *old_s, const char *new_s) {
+    size_t olen = strlen(old_s);
+    if (olen == 0) {
+        char *r = (char *)malloc(strlen(s) + 1);
+        strcpy(r, s);
+        return r;
+    }
+    size_t nlen = strlen(new_s);
+    int cnt = str_count(s, old_s);
+    size_t result_len = strlen(s) + cnt * (nlen - olen);
+    char *result = (char *)malloc(result_len + 1);
+    char *wp = result;
+    const char *p = s;
+    const char *found;
+    while ((found = strstr(p, old_s)) != NULL) {
+        size_t before = found - p;
+        memcpy(wp, p, before);
+        wp += before;
+        memcpy(wp, new_s, nlen);
+        wp += nlen;
+        p = found + olen;
+    }
+    strcpy(wp, p);
+    return result;
+}
