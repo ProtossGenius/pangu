@@ -14,6 +14,7 @@
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Support/raw_ostream.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <fstream>
 #include <map>
@@ -1590,8 +1591,10 @@ class ModuleBuilder {
         if (iter_kind == IterKind::RANGE_FROM_TO) {
             iterVal = range_end; // end value is the "count" for this mode
         } else if (iterNode->getValueType() == pgcodes::ValueType::NUMBER) {
+            std::string nv = iterNode->getValue();
+            nv.erase(std::remove(nv.begin(), nv.end(), '_'), nv.end());
             iterVal = llvm::ConstantInt::get(_builder.getInt32Ty(),
-                                             std::stoi(iterNode->getValue()));
+                                             std::stoi(nv, nullptr, 0));
         } else {
             iterVal = emitExpression(iterNode);
         }
@@ -2967,9 +2970,21 @@ class ModuleBuilder {
 
     llvm::Value *emitValue(const pgcodes::GCode *code) {
         switch (code->getValueType()) {
-        case pgcodes::ValueType::NUMBER:
+        case pgcodes::ValueType::NUMBER: {
+            std::string val = code->getValue();
+            // Strip underscore separators (e.g., 1_000_000)
+            val.erase(std::remove(val.begin(), val.end(), '_'), val.end());
+            int base = 10;
+            if (val.size() > 2 && val[0] == '0' && (val[1] == 'x' || val[1] == 'X')) {
+                base = 16;
+            } else if (val.size() > 2 && val[0] == '0' && (val[1] == 'b' || val[1] == 'B')) {
+                base = 2;
+            } else if (val.size() > 1 && val[0] == '0' && val[1] >= '0' && val[1] <= '7') {
+                base = 8;
+            }
             return llvm::ConstantInt::get(_builder.getInt32Ty(),
-                                          std::stoi(code->getValue()));
+                                          std::stoi(val, nullptr, base));
+        }
         case pgcodes::ValueType::IDENTIFIER: {
             const auto &name = code->getValue();
             // bool literals

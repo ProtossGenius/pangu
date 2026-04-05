@@ -36,10 +36,21 @@ bool isNumber(const std::string &str, std::string &errMsg) {
 
             return true;
         }
+        if ('b' == str[ 1 ] || 'B' == str[ 1 ]) { // binary
+            for (size_t i = 2; i < str.size(); ++i) {
+                if (str[ i ] == '_') continue;
+                if (str[ i ] == '0' || str[ i ] == '1') {
+                    continue;
+                }
+                errMsg = "not a binary number, number is " + str;
+                return false;
+            }
+            return true;
+        }
         if (isdigit(str[ 1 ])) { // 8
             for (size_t i = 2; i < str.size(); ++i) {
                 if (str[ i ] == '_') continue;
-                if (str[ i ] >= '0' && str[ i ] <= 7) {
+                if (str[ i ] >= '0' && str[ i ] <= '7') {
                     continue;
                 }
                 errMsg = "not a 8x number, number is " + str;

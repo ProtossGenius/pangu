@@ -1,0 +1,17 @@
+package main;
+func main() {
+    // Hex
+    println(0xFF);
+    println(0x10);
+    // Binary
+    println(0b1010);
+    println(0b11111111);
+    // Octal
+    println(0777);
+    println(010);
+    // Underscore separators
+    println(1_000_000);
+    println(0xFF_FF);
+    // Bitwise with hex
+    println(0xFF & 0x0F);
+}
