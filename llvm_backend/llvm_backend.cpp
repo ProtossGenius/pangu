@@ -4099,6 +4099,48 @@ class ModuleBuilder {
             return emitInterfaceWrap(callee, args_code);
         }
 
+        if (callee == "len") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 1) {
+                throw std::runtime_error("len expects exactly one argument");
+            }
+            auto *arg = args.front();
+            // Get the first argument's AST to check semantic type
+            std::vector<const pgcodes::GCode *> arg_nodes;
+            collectArgNodes(args_code, arg_nodes);
+            if (!arg_nodes.empty() &&
+                arg_nodes[0]->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+                auto sem_it = _variable_sem_types.find(arg_nodes[0]->getValue());
+                if (sem_it != _variable_sem_types.end()) {
+                    const std::string &sem = sem_it->second;
+                    if (sem == "DynArray") {
+                        return _builder.CreateCall(
+                            _module->getFunction("dyn_array_size"), {arg}, "len");
+                    }
+                    if (sem == "DynStrArray") {
+                        return _builder.CreateCall(
+                            _module->getFunction("dyn_str_array_size"), {arg}, "len");
+                    }
+                    if (sem == "HashMap") {
+                        return _builder.CreateCall(
+                            _module->getFunction("map_size"), {arg}, "len");
+                    }
+                    if (sem == "IntMap") {
+                        return _builder.CreateCall(
+                            _module->getFunction("int_map_size"), {arg}, "len");
+                    }
+                    if (sem == "StringBuilder") {
+                        return _builder.CreateCall(
+                            _module->getFunction("sb_len"), {arg}, "len");
+                    }
+                }
+            }
+            // Default: string length
+            if (arg->getType()->isPointerTy()) {
+                return emitStrLen({arg});
+            }
+            throw std::runtime_error("len() not supported for this type");
+        }
         if (callee == "println") {
             auto args = emitCallArgs(args_code);
             if (args.size() != 1) {

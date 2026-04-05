@@ -102,6 +102,8 @@ const std::set<std::string> BUILTIN_FUNCTIONS = {
     // String builder
     "make_str_builder", "sb_append", "sb_append_int", "sb_append_char",
     "sb_build", "sb_reset", "sb_len",
+    // Universal
+    "len",
 };
 
 bool isBuiltin(const std::string &name) {
@@ -181,6 +183,7 @@ size_t builtinParamCount(const std::string &name) {
     if (name == "sb_build") return 1;
     if (name == "sb_reset") return 1;
     if (name == "sb_len") return 1;
+    if (name == "len") return 1;
     return 0;
 }
 
@@ -225,6 +228,7 @@ std::string builtinReturnType(const std::string &name) {
     if (name == "dyn_array_get" || name == "dyn_array_size" || name == "dyn_array_pop") return "int";
     if (name == "dyn_str_array_get") return "string";
     if (name == "dyn_str_array_size") return "int";
+    if (name == "len") return "int";
     // Void-like (side effects only)
     return "";
 }
@@ -232,6 +236,7 @@ std::string builtinReturnType(const std::string &name) {
 std::vector<std::string> builtinParamTypes(const std::string &name) {
     // println/print accept any type — use "unknown" as wildcard
     if (name == "println" || name == "print") return {"unknown"};
+    if (name == "len") return {"unknown"};  // polymorphic
     if (name == "exit" || name == "panic") return {"int"};
     if (name == "system") return {"string"};
     if (name == "str_len") return {"string"};
