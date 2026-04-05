@@ -4634,6 +4634,12 @@ class ModuleBuilder {
                 throw std::runtime_error("char_to_str/chr expects 1 argument");
             return emitCharToStr(args[0]);
         }
+        if (callee == "sprintf") {
+            auto args = emitCallArgs(args_code);
+            if (args.empty())
+                throw std::runtime_error("sprintf expects at least 1 argument (format string)");
+            return emitSprintf(args);
+        }
         // Array builtins
         if (callee == "make_array") {
             auto args = emitCallArgs(args_code);
@@ -6019,6 +6025,28 @@ class ModuleBuilder {
         _builder.CreateStore(llvm::ConstantInt::get(_builder.getInt8Ty(), 0),
                              term);
         return buf;
+    }
+
+    // sprintf(fmt, ...) → string (calls pg_sprintf from runtime)
+    llvm::Value *emitSprintf(const std::vector<llvm::Value *> &args) {
+        auto *fn = _module->getFunction("pg_sprintf");
+        if (!fn) {
+            auto *ft = llvm::FunctionType::get(
+                _builder.getPtrTy(), {_builder.getPtrTy()}, /*isVarArg=*/true);
+            fn = llvm::Function::Create(
+                ft, llvm::Function::ExternalLinkage, "pg_sprintf", *_module);
+        }
+        // Cast int args to appropriate C types for printf format
+        std::vector<llvm::Value *> call_args;
+        for (size_t i = 0; i < args.size(); ++i) {
+            auto *v = args[i];
+            if (i > 0 && v->getType()->isIntegerTy(32)) {
+                // Promote i32 to i64 for variadic call (C ABI)
+                v = _builder.CreateSExt(v, _builder.getInt64Ty(), "promoted");
+            }
+            call_args.push_back(v);
+        }
+        return _builder.CreateCall(fn, call_args, "sprintf.res");
     }
 
     // make_array(size) → ptr to int32 array (calloc'd, zero-initialized)

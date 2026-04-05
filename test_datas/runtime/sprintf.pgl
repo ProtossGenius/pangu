@@ -1,0 +1,11 @@
+package main;
+func main() {
+    s := sprintf("hello %s", "world");
+    println(s);
+    msg := sprintf("%d + %d = %d", 1, 2, 3);
+    println(msg);
+    name := "PGL";
+    ver := 1;
+    info := sprintf("%s v%d", name, ver);
+    println(info);
+}

@@ -2,6 +2,7 @@
 
 #include "grammer/datas.h"
 #include "pgcodes/datas.h"
+#include <cstdint>
 
 #include <map>
 #include <set>
@@ -106,6 +107,8 @@ const std::set<std::string> BUILTIN_FUNCTIONS = {
     "sb_build", "sb_reset", "sb_len",
     // Universal
     "len", "str", "chr",
+    // Formatting
+    "sprintf",
     // Control flow
     "defer",
     // Range
@@ -200,6 +203,7 @@ size_t builtinParamCount(const std::string &name) {
     if (name == "chr") return 1;
     if (name == "defer") return 1;
     if (name == "range") return 2;
+    if (name == "sprintf") return SIZE_MAX; // variadic
     return 0;
 }
 
@@ -212,7 +216,8 @@ std::string builtinReturnType(const std::string &name) {
         name == "args" || name == "str_array_get" || name == "pipeline_cache_str" ||
         name == "pipeline_output_get" || name == "reflect_type_name" ||
         name == "reflect_field_name" || name == "reflect_field_type" ||
-        name == "reflect_annotation_key" || name == "reflect_annotation_value") {
+        name == "reflect_annotation_key" || name == "reflect_annotation_value" ||
+        name == "sprintf") {
         return "string";
     }
     // Functions returning ptr
@@ -1256,6 +1261,11 @@ class ProgramChecker {
 
         if (isBuiltin(name)) {
             size_t expected = builtinParamCount(name);
+            if (expected == SIZE_MAX) {
+                // variadic — skip count check
+                checkCallArgs(args_code);
+                return;
+            }
             if (actual_args != expected) {
                 emitError(loc, "builtin '" + name + "' expects " +
                           std::to_string(expected) + " argument(s), got " +
