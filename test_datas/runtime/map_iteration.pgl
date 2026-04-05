@@ -1,0 +1,27 @@
+package main;
+func main() {
+    // HashMap key iteration
+    m := map_of("a", "1", "b", "2", "c", "3");
+    for k in m {
+        print(k);
+        print(" ");
+    }
+    println("");
+
+    // HashMap key-value iteration
+    for k, v in m {
+        print(k);
+        print("=");
+        print(v);
+        print(" ");
+    }
+    println("");
+
+    // IntMap key-value iteration
+    im := int_map_of("x", 10, "y", 20);
+    for k, v in im {
+        print(k);
+        print("=");
+        println(v);
+    }
+}

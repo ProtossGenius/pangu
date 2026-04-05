@@ -698,10 +698,25 @@ class ProgramChecker {
                     if (varNode->getValueType() == pgcodes::ValueType::NOT_VALUE &&
                         varNode->getOper() == ",") {
                         // Two-variable form: for i, v in ...
-                        if (varNode->getLeft())
-                            _defined_vars[varNode->getLeft()->getValue()] = "int";
-                        if (varNode->getRight())
-                            _defined_vars[varNode->getRight()->getValue()] = elem_type;
+                        if (iter_type == "HashMap") {
+                            // for k, v in map: k=string, v=string
+                            if (varNode->getLeft())
+                                _defined_vars[varNode->getLeft()->getValue()] = "string";
+                            if (varNode->getRight())
+                                _defined_vars[varNode->getRight()->getValue()] = "string";
+                        } else if (iter_type == "IntMap") {
+                            // for k, v in intmap: k=string, v=int
+                            if (varNode->getLeft())
+                                _defined_vars[varNode->getLeft()->getValue()] = "string";
+                            if (varNode->getRight())
+                                _defined_vars[varNode->getRight()->getValue()] = "int";
+                        } else {
+                            // for i, v in array/string/range: i=int, v=elem_type
+                            if (varNode->getLeft())
+                                _defined_vars[varNode->getLeft()->getValue()] = "int";
+                            if (varNode->getRight())
+                                _defined_vars[varNode->getRight()->getValue()] = elem_type;
+                        }
                     } else {
                         _defined_vars[varNode->getValue()] = elem_type;
                     }

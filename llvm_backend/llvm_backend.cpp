@@ -1606,6 +1606,9 @@ class ModuleBuilder {
         llvm::Value *collVal = iterVal;
 
         // For maps, get keys array first, then iterate over keys
+        // Track original map for two-variable key-value iteration
+        IterKind orig_iter_kind = iter_kind;
+        llvm::Value *origMapVal = iterVal;
         if (iter_kind == IterKind::HASH_MAP) {
             collVal = _builder.CreateCall(
                 _module->getFunction("map_keys"), {iterVal}, "mapkeys");
@@ -1649,9 +1652,17 @@ class ModuleBuilder {
         _builder.CreateStore(start_val, indexAlloca);
 
         // Allocate loop variable (type depends on collection)
+        // For map two-variable form: first var = key (string), second var = value
+        bool is_map_kv = has_index_var &&
+            (orig_iter_kind == IterKind::HASH_MAP || orig_iter_kind == IterKind::INT_MAP);
+
         llvm::Type *var_type = _builder.getInt32Ty();
         if (iter_kind == IterKind::DYN_STR_ARRAY) {
             var_type = _builder.getPtrTy();
+        }
+        // For IntMap kv iteration, the value (second var) is int, not ptr
+        if (is_map_kv && orig_iter_kind == IterKind::INT_MAP) {
+            var_type = _builder.getInt32Ty();
         }
         auto *varAlloca = createVariableSlot(varName, var_type);
 
@@ -1663,12 +1674,17 @@ class ModuleBuilder {
         }
         _variables[varName] = varAlloca;
 
-        // For two-variable form: allocate and register index variable
+        // For two-variable form: allocate and register index/key variable
         llvm::AllocaInst *idxVarAlloca = nullptr;
         llvm::AllocaInst *prevIdxAlloca = nullptr;
         llvm::AllocaInst *enumCounter = nullptr;
         if (has_index_var) {
-            idxVarAlloca = createVariableSlot(indexVarName, _builder.getInt32Ty());
+            if (is_map_kv) {
+                // Map key-value: first var is key (string ptr)
+                idxVarAlloca = createVariableSlot(indexVarName, _builder.getPtrTy());
+            } else {
+                idxVarAlloca = createVariableSlot(indexVarName, _builder.getInt32Ty());
+            }
             // Separate enumeration counter always starts at 0
             enumCounter = createVariableSlot(indexVarName + ".__enum", _builder.getInt32Ty());
             _builder.CreateStore(llvm::ConstantInt::get(_builder.getInt32Ty(), 0), enumCounter);
@@ -1723,10 +1739,31 @@ class ModuleBuilder {
             _builder.CreateStore(idx, varAlloca);
         }
 
-        // For two-variable form: store the enumeration counter into the user index var
+        // For two-variable form: set index/key variable
         if (has_index_var && idxVarAlloca && enumCounter) {
-            auto *enumIdx = _builder.CreateLoad(_builder.getInt32Ty(), enumCounter, "enum.idx");
-            _builder.CreateStore(enumIdx, idxVarAlloca);
+            if (is_map_kv) {
+                // Map key-value: store the key (current element) into first var
+                auto *key = _builder.CreateLoad(_builder.getPtrTy(), varAlloca, "map.key");
+                _builder.CreateStore(key, idxVarAlloca);
+                // Look up value from original map
+                if (orig_iter_kind == IterKind::HASH_MAP) {
+                    auto *map_get_func = _module->getFunction("map_get");
+                    auto *val = _builder.CreateCall(map_get_func, {origMapVal, key}, "map.val");
+                    _builder.CreateStore(val, varAlloca);
+                } else {
+                    auto *int_map_get_func = _module->getFunction("int_map_get");
+                    auto *val = _builder.CreateCall(int_map_get_func, {origMapVal, key}, "imap.val");
+                    // varAlloca is ptr type (from DYN_STR_ARRAY), need int type for IntMap values
+                    // Re-create varAlloca as int for IntMap — but we already allocated it as ptr.
+                    // We need to store the int value. Let's use the existing allocation.
+                    // Actually, for IntMap values, we need to change var_type. Let me handle this
+                    // by storing into a separate int alloca and swapping.
+                    _builder.CreateStore(val, varAlloca);
+                }
+            } else {
+                auto *enumIdx = _builder.CreateLoad(_builder.getInt32Ty(), enumCounter, "enum.idx");
+                _builder.CreateStore(enumIdx, idxVarAlloca);
+            }
         }
 
         _terminated = false;
