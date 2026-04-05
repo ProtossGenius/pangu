@@ -1,0 +1,27 @@
+package main;
+
+func main() {
+    // HashMap subscript read
+    m := map_of("name", "alice", "city", "tokyo");
+    println(m["name"]);
+    println(m["city"]);
+
+    // HashMap subscript write
+    m["age"] = "30";
+    println(m["age"]);
+    println(map_size(m));
+
+    // IntMap subscript read
+    scores := int_map_of("math", 95, "eng", 87);
+    println(scores["math"]);
+    println(scores["eng"]);
+
+    // IntMap subscript write
+    scores["sci"] = 92;
+    println(scores["sci"]);
+    println(int_map_size(scores));
+
+    // Overwrite existing key
+    m["name"] = "bob";
+    println(m["name"]);
+}

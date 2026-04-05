@@ -3297,6 +3297,18 @@ class ModuleBuilder {
                     return _builder.CreateCall(
                         _module->getFunction("dyn_str_array_get"), {obj, index}, "saget");
                 }
+                if (sem == "HashMap") {
+                    // m["key"] → map_get(m, key)
+                    auto *key = emitExpression(index_code);
+                    return _builder.CreateCall(
+                        _module->getFunction("map_get"), {obj, key}, "mget");
+                }
+                if (sem == "IntMap") {
+                    // m["key"] → int_map_get(m, key)
+                    auto *key = emitExpression(index_code);
+                    return _builder.CreateCall(
+                        _module->getFunction("int_map_get"), {obj, key}, "imget");
+                }
             }
         }
 
@@ -3564,6 +3576,20 @@ class ModuleBuilder {
                         return _builder.CreateCall(
                             _module->getFunction("dyn_str_array_set"),
                             {obj, index, value});
+                    }
+                    if (sem == "HashMap") {
+                        // m["key"] = "val" → map_set(m, key, val)
+                        auto *key = emitExpression(idx_code);
+                        return _builder.CreateCall(
+                            _module->getFunction("map_set"),
+                            {obj, key, value});
+                    }
+                    if (sem == "IntMap") {
+                        // m["key"] = val → int_map_set(m, key, val)
+                        auto *key = emitExpression(idx_code);
+                        return _builder.CreateCall(
+                            _module->getFunction("int_map_set"),
+                            {obj, key, value});
                     }
                 }
             }
