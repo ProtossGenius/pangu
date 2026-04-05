@@ -120,10 +120,28 @@ void PipeFor::on_WAIT_HEADER(IPipelineFactory *factory, PData &&data) {
         varNode->setValue(lex->get(), pgcodes::ValueType::IDENTIFIER);
         varNode->setLocation(lex->location());
         topProduct->setLeft(varNode);
-        topProduct->setStep(int(Steps::WAIT_IN_KEYWORD));
+        topProduct->setStep(int(Steps::WAIT_COMMA_OR_IN));
         return;
     }
     factory->onFail("'for' expects '(' or identifier");
+}
+void PipeFor::on_WAIT_COMMA_OR_IN(IPipelineFactory *factory, PData &&data) {
+    GET_LEX(data);
+    GET_TOP(factory, GCode);
+    if (lexer::ELexPipeline::Space == type) {
+        return;
+    }
+    // for idx, val in expr — two-variable enumerate
+    if (lexer::makeSymbol(",") == *lex) {
+        topProduct->setStep(int(Steps::WAIT_IN_KEYWORD));
+        return; // next non-space token should be the value variable
+    }
+    // for val in expr — single variable
+    if (lexer::makeIdentifier("in") == *lex) {
+        topProduct->setStep(int(Steps::WAIT_ITER_EXPR));
+        return;
+    }
+    factory->onFail("'for <var>' expects ',' or 'in'");
 }
 void PipeFor::on_WAIT_IN_KEYWORD(IPipelineFactory *factory, PData &&data) {
     GET_LEX(data);
@@ -131,10 +149,26 @@ void PipeFor::on_WAIT_IN_KEYWORD(IPipelineFactory *factory, PData &&data) {
     if (lexer::ELexPipeline::Space == type) {
         return;
     }
-    if (lexer::makeIdentifier("in") != *lex) {
-        factory->onFail("'for <var>' expects 'in'");
+    // If we came from comma, this should be the value variable name
+    if (type == lexer::ELexPipeline::Identifier && lexer::makeIdentifier("in") != *lex) {
+        // Build comma node: left = idx_var (already in topProduct->left), right = val_var
+        auto *valNode = new GCode();
+        valNode->setValue(lex->get(), pgcodes::ValueType::IDENTIFIER);
+        valNode->setLocation(lex->location());
+        auto *commaNode = new GCode();
+        commaNode->setOper(",");
+        commaNode->setLeft(topProduct->releaseLeft());
+        commaNode->setRight(valNode);
+        topProduct->setLeft(commaNode);
+        // Now wait for 'in' keyword
+        topProduct->setStep(int(Steps::WAIT_IN_KEYWORD));
+        return;
     }
-    topProduct->setStep(int(Steps::WAIT_ITER_EXPR));
+    if (lexer::makeIdentifier("in") == *lex) {
+        topProduct->setStep(int(Steps::WAIT_ITER_EXPR));
+        return;
+    }
+    factory->onFail("'for <var>' expects 'in'");
 }
 void PipeFor::on_WAIT_ITER_EXPR(IPipelineFactory *factory, PData &&data) {
     GET_LEX(data);

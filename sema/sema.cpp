@@ -666,6 +666,7 @@ class ProgramChecker {
         }
         if (oper == "for_in") {
             // for x in iterable { body }
+            // for i, x in iterable { body }
             // left = "in"(var_ident, iterable), right = body
             const auto *inNode = code->getLeft();
             if (inNode != nullptr && inNode->getOper() == "in") {
@@ -677,11 +678,21 @@ class ProgramChecker {
                 if (varNode != nullptr) {
                     // Infer loop variable type from iterable
                     std::string iter_type = inferType(iterNode);
+                    std::string elem_type = "int";
                     if (iter_type == "DynStrArray" || iter_type == "HashMap" ||
                         iter_type == "IntMap") {
-                        _defined_vars[varNode->getValue()] = "string";
+                        elem_type = "string";
+                    }
+
+                    if (varNode->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                        varNode->getOper() == ",") {
+                        // Two-variable form: for i, v in ...
+                        if (varNode->getLeft())
+                            _defined_vars[varNode->getLeft()->getValue()] = "int";
+                        if (varNode->getRight())
+                            _defined_vars[varNode->getRight()->getValue()] = elem_type;
                     } else {
-                        _defined_vars[varNode->getValue()] = "int";
+                        _defined_vars[varNode->getValue()] = elem_type;
                     }
                 }
             }

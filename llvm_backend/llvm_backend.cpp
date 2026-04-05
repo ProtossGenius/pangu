@@ -1503,7 +1503,18 @@ class ModuleBuilder {
             throw std::runtime_error("for_in: missing variable or iterable");
         }
 
-        std::string varName = varNode->getValue();
+        // Check for two-variable form: for idx, val in expr
+        bool has_index_var = false;
+        std::string indexVarName;
+        std::string varName;
+        if (varNode->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            varNode->getOper() == ",") {
+            has_index_var = true;
+            indexVarName = varNode->getLeft()->getValue();
+            varName = varNode->getRight()->getValue();
+        } else {
+            varName = varNode->getValue();
+        }
 
         // Check semantic type of iterable (if it's a known variable)
         enum class IterKind { RANGE, STRING, DYN_ARRAY, DYN_STR_ARRAY, HASH_MAP, INT_MAP, RANGE_FROM_TO };
@@ -1622,6 +1633,22 @@ class ModuleBuilder {
         }
         _variables[varName] = varAlloca;
 
+        // For two-variable form: allocate and register index variable
+        llvm::AllocaInst *idxVarAlloca = nullptr;
+        llvm::AllocaInst *prevIdxAlloca = nullptr;
+        llvm::AllocaInst *enumCounter = nullptr;
+        if (has_index_var) {
+            idxVarAlloca = createVariableSlot(indexVarName, _builder.getInt32Ty());
+            // Separate enumeration counter always starts at 0
+            enumCounter = createVariableSlot(indexVarName + ".__enum", _builder.getInt32Ty());
+            _builder.CreateStore(llvm::ConstantInt::get(_builder.getInt32Ty(), 0), enumCounter);
+            auto prevIdxIt = _variables.find(indexVarName);
+            if (prevIdxIt != _variables.end()) {
+                prevIdxAlloca = prevIdxIt->second;
+            }
+            _variables[indexVarName] = idxVarAlloca;
+        }
+
         auto *cond_block =
             llvm::BasicBlock::Create(*_context, "forin.cond", function);
         auto *body_block = llvm::BasicBlock::Create(*_context, "forin.body");
@@ -1666,6 +1693,12 @@ class ModuleBuilder {
             _builder.CreateStore(idx, varAlloca);
         }
 
+        // For two-variable form: store the enumeration counter into the user index var
+        if (has_index_var && idxVarAlloca && enumCounter) {
+            auto *enumIdx = _builder.CreateLoad(_builder.getInt32Ty(), enumCounter, "enum.idx");
+            _builder.CreateStore(enumIdx, idxVarAlloca);
+        }
+
         _terminated = false;
         _loop_stack.push_back({end_block, step_block});
         emitStatement(code->getRight());
@@ -1682,6 +1715,13 @@ class ModuleBuilder {
             _builder.CreateLoad(_builder.getInt32Ty(), indexAlloca, "idx.cur"),
             llvm::ConstantInt::get(_builder.getInt32Ty(), 1), "idx.next");
         _builder.CreateStore(nextIdx, indexAlloca);
+        // Increment enumeration counter for two-variable form
+        if (has_index_var && enumCounter) {
+            auto *nextEnum = _builder.CreateAdd(
+                _builder.CreateLoad(_builder.getInt32Ty(), enumCounter, "enum.cur"),
+                llvm::ConstantInt::get(_builder.getInt32Ty(), 1), "enum.next");
+            _builder.CreateStore(nextEnum, enumCounter);
+        }
         _builder.CreateBr(cond_block);
 
         // End
@@ -1694,6 +1734,13 @@ class ModuleBuilder {
             _variables[varName] = prevAlloca;
         } else {
             _variables.erase(varName);
+        }
+        if (has_index_var) {
+            if (prevIdxAlloca != nullptr) {
+                _variables[indexVarName] = prevIdxAlloca;
+            } else {
+                _variables.erase(indexVarName);
+            }
         }
 
         return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);

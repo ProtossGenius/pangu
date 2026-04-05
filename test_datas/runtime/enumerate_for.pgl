@@ -1,0 +1,24 @@
+package main;
+func main() {
+    arr := ["alpha", "beta", "gamma"];
+    for i, name in arr {
+        println(sprintf("%d: %s", i, name));
+    };
+
+    nums := [10, 20, 30];
+    for idx, val in nums {
+        println(sprintf("nums[%d] = %d", idx, val));
+    };
+
+    for i, ch in "abc" {
+        println(sprintf("char %d = %d", i, ch));
+    };
+
+    for i, v in 3 {
+        println(sprintf("range %d = %d", i, v));
+    };
+
+    for i, v in range(2, 5) {
+        println(sprintf("range2 %d = %d", i, v));
+    };
+}
