@@ -78,7 +78,7 @@ const std::set<std::string> BUILTIN_FUNCTIONS = {
     "str_split", "str_repeat", "str_count", "str_replace_all",
     "str_join",
     "int_to_str", "str_to_int", "int",
-    "read_file", "write_file",
+    "read_file", "write_file", "read_line",
     "str_char_at", "char_to_str",
     "make_array", "array_get", "array_set",
     "make_str_array", "str_array_get", "str_array_set",
@@ -132,6 +132,7 @@ size_t builtinParamCount(const std::string &name) {
     if (name == "make_array" || name == "make_str_array") return 1;
     if (name == "args") return 1;
     if (name == "args_count") return 0;
+    if (name == "read_line") return 0;
     if (name == "str_concat" || name == "str_eq") return 2;
     if (name == "str_index_of" || name == "str_starts_with") return 2;
     if (name == "str_ends_with") return 2;
@@ -219,6 +220,7 @@ std::string builtinReturnType(const std::string &name) {
         name == "str_replace_all" || name == "str_trim" ||
         name == "str_to_upper" || name == "str_to_lower" || name == "str_repeat" ||
         name == "int_to_str" || name == "char_to_str" || name == "read_file" ||
+        name == "read_line" ||
         name == "args" || name == "str_array_get" || name == "pipeline_cache_str" ||
         name == "pipeline_output_get" || name == "reflect_type_name" ||
         name == "reflect_field_name" || name == "reflect_field_type" ||
@@ -279,6 +281,7 @@ std::vector<std::string> builtinParamTypes(const std::string &name) {
     if (name == "int_to_str") return {"int"};
     if (name == "str_to_int" || name == "int") return {"string"};
     if (name == "read_file") return {"string"};
+    if (name == "read_line") return {};
     if (name == "char_to_str") return {"int"};
     if (name == "make_array" || name == "make_str_array") return {"int"};
     if (name == "args") return {"int"};

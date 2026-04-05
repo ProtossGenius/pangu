@@ -1,0 +1,19 @@
+package main;
+
+func double(x int) int { return x * 2; }
+
+func main() {
+    name := "world";
+    n := 42;
+
+    println("len=${len(name)}");
+    println("double=${double(5)}");
+    println("n+1=${n + 1}");
+    println("n*2=${n * 2}");
+
+    a := 3;
+    b := 4;
+    println("${a} + ${b} = ${a + b}");
+
+    println("big=${n > 10 ? 1 : 0}");
+}

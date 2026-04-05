@@ -74,6 +74,18 @@ void analysis(const std::string &file, pglang::PPipelineFactory factory) {
         new lexer::DInChar(0, -1, SourceLocation{file, line, column, eof_line_text})));
 }
 
+void analysisString(const std::string &source, pglang::PPipelineFactory factory) {
+    const std::string &file = "<interp>";
+    int line = 1, column = 1;
+    for (char ch : source) {
+        factory->accept(PData(
+            new lexer::DInChar(ch, 0, SourceLocation{file, line, column, source})));
+        if (ch == '\n') { ++line; column = 1; } else { ++column; }
+    }
+    factory->accept(PData(
+        new lexer::DInChar(0, -1, SourceLocation{file, line, column, source})));
+}
+
 const pglang::ProductPack PACK_PRINT = [](auto factory, auto pro) {
     auto lex = ((lexer::DLex *) pro.get());
     if (lex->typeId() == lexer::ELexPipeline::Space) {

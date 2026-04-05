@@ -914,3 +914,20 @@ char *pg_sprintf(const char *fmt, ...) {
     va_end(args2);
     return buf;
 }
+
+// read_line: reads a line from stdin, returns allocated string (without newline)
+char *read_line(void) {
+    size_t cap = 256;
+    size_t len = 0;
+    char *buf = (char *)malloc(cap);
+    int c;
+    while ((c = getchar()) != EOF && c != '\n') {
+        if (len + 1 >= cap) {
+            cap *= 2;
+            buf = (char *)realloc(buf, cap);
+        }
+        buf[len++] = (char)c;
+    }
+    buf[len] = '\0';
+    return buf;
+}

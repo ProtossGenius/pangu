@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "grammer/datas.h"
+#include "grammer/grammer.h"
 #include "pgcodes/datas.h"
 
 #ifdef T
@@ -2959,8 +2960,23 @@ class ModuleBuilder {
                             _builder.CreateCall(sb_app_int, {sb, val});
                         }
                     } else {
-                        throw std::runtime_error(
-                            "string interpolation: unknown variable '" + expr_str + "'");
+                        // General expression: parse and emit
+                        auto parsed = grammer::parseExpression(expr_str);
+                        if (!parsed) {
+                            throw std::runtime_error(
+                                "string interpolation: failed to parse expression '" + expr_str + "'");
+                        }
+                        // Store parsed AST in a vector to keep it alive
+                        auto *expr_code = parsed.get();
+                        _interp_expr_storage.push_back(std::move(parsed));
+                        auto *val = emitExpression(expr_code);
+                        if (val->getType() == _builder.getInt32Ty()) {
+                            _builder.CreateCall(sb_app_int, {sb, val});
+                        } else if (val->getType() == _builder.getInt8Ty()) {
+                            _builder.CreateCall(sb_app_char, {sb, val});
+                        } else {
+                            _builder.CreateCall(sb_app, {sb, val});
+                        }
                     }
                 }
                 continue;
@@ -4867,6 +4883,12 @@ class ModuleBuilder {
                 throw std::runtime_error("read_file expects 1 argument");
             return emitReadFile(args[0]);
         }
+        if (callee == "read_line") {
+            auto fn = _module->getOrInsertFunction(
+                "read_line",
+                llvm::FunctionType::get(_builder.getPtrTy(), {}, false));
+            return _builder.CreateCall(fn, {}, "line");
+        }
         if (callee == "write_file") {
             auto args = emitCallArgs(args_code);
             if (args.size() != 2)
@@ -6428,6 +6450,8 @@ class ModuleBuilder {
     std::vector<LoopContext>                    _loop_stack;
     // Defer stack: AST nodes of deferred expressions (LIFO order)
     std::vector<const pgcodes::GCode *>         _defer_stack;
+    // Storage for parsed interpolation expressions (keeps AST alive)
+    std::vector<std::unique_ptr<pgcodes::GCode>> _interp_expr_storage;
     std::string                                _current_module_id;
     const std::map<std::string, std::string>  *_current_imports = nullptr;
     bool                                      _terminated = false;
