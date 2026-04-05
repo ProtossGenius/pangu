@@ -1,0 +1,19 @@
+package main;
+
+func main() {
+    x := 10;
+    x += 5;
+    println(int_to_str(x));
+    x -= 3;
+    println(int_to_str(x));
+    x *= 2;
+    println(int_to_str(x));
+    x /= 4;
+    println(int_to_str(x));
+    x %= 3;
+    println(int_to_str(x));
+    
+    s := "hello";
+    s += " world";
+    println(s);
+}

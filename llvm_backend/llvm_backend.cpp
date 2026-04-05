@@ -2266,6 +2266,10 @@ class ModuleBuilder {
         if (oper == ":=" || oper == "=") {
             return emitAssignment(code, oper == ":=");
         }
+        if (oper == "+=" || oper == "-=" || oper == "*=" || oper == "/=" ||
+            oper == "%=" || oper == "&=" || oper == "|=" || oper == "^=") {
+            return emitCompoundAssignment(code, oper);
+        }
         if (oper == "match") {
             return emitMatchExpression(code);
         }
@@ -3267,6 +3271,45 @@ class ModuleBuilder {
 
         _builder.CreateStore(value, slot);
         return value;
+    }
+
+    llvm::Value *emitCompoundAssignment(const pgcodes::GCode *code,
+                                        const std::string &oper) {
+        auto *left = code->getLeft();
+        if (left == nullptr ||
+            left->getValueType() != pgcodes::ValueType::IDENTIFIER) {
+            throw std::runtime_error("compound assignment requires identifier");
+        }
+        const std::string &name = left->getValue();
+        auto it = _variables.find(name);
+        if (it == _variables.end()) {
+            throw std::runtime_error("assign to undefined variable: " + name);
+        }
+        auto *slot = it->second;
+        auto *cur = _builder.CreateLoad(slot->getAllocatedType(), slot, name);
+        auto *rhs = emitExpression(code->getRight());
+
+        // String concatenation: s += "..."
+        if (oper == "+=" && cur->getType()->isPointerTy() &&
+            rhs->getType()->isPointerTy()) {
+            auto *result = emitStrConcat({cur, rhs});
+            _builder.CreateStore(result, slot);
+            return result;
+        }
+
+        llvm::Value *result = nullptr;
+        if (oper == "+=")      result = _builder.CreateAdd(cur, rhs, "addtmp");
+        else if (oper == "-=") result = _builder.CreateSub(cur, rhs, "subtmp");
+        else if (oper == "*=") result = _builder.CreateMul(cur, rhs, "multmp");
+        else if (oper == "/=") result = _builder.CreateSDiv(cur, rhs, "divtmp");
+        else if (oper == "%=") result = _builder.CreateSRem(cur, rhs, "modtmp");
+        else if (oper == "&=") result = _builder.CreateAnd(cur, rhs, "andtmp");
+        else if (oper == "|=") result = _builder.CreateOr(cur, rhs, "ortmp");
+        else if (oper == "^=") result = _builder.CreateXor(cur, rhs, "xortmp");
+        else throw std::runtime_error("unsupported compound assignment: " + oper);
+
+        _builder.CreateStore(result, slot);
+        return result;
     }
 
     llvm::Value *emitIncDec(const pgcodes::GCode *code, bool is_inc) {

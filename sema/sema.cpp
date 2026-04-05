@@ -737,6 +737,15 @@ class ProgramChecker {
             checkExpression(code->getRight());
             return;
         }
+        if (oper == "+=" || oper == "-=" || oper == "*=" || oper == "/=" ||
+            oper == "%=" || oper == "&=" || oper == "|=" || oper == "^=") {
+            if (code->getLeft() != nullptr &&
+                code->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+                checkIdentifierRef(code->getLeft(), code->getLeft()->getValue());
+            }
+            checkExpression(code->getRight());
+            return;
+        }
         if (oper == "(") {
             // Parenthesized expr or call.
             if (code->getLeft() != nullptr &&
