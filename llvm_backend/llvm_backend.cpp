@@ -1169,8 +1169,11 @@ class ModuleBuilder {
         }
         emitStatement(function.code.get());
         if (!_terminated) {
+            emitDeferredCleanup();
             _builder.CreateRet(llvm::ConstantInt::get(_builder.getInt32Ty(), 0));
         }
+        // Clear defer stack for next function
+        _defer_stack.clear();
     }
 
     void bindParameters(const grammer::GFunction &function) {
@@ -2102,6 +2105,13 @@ class ModuleBuilder {
                containsReturnPrefix(code->getRight());
     }
 
+    // Emit all deferred expressions in LIFO order (called before return)
+    void emitDeferredCleanup() {
+        for (int i = static_cast<int>(_defer_stack.size()) - 1; i >= 0; --i) {
+            emitExpression(_defer_stack[i]);
+        }
+    }
+
     llvm::Value *emitReturnExpressionValue(const pgcodes::GCode *code) {
         if (code == nullptr) {
             return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
@@ -2231,11 +2241,13 @@ class ModuleBuilder {
                 std::vector<llvm::Value *> vals;
                 collectMultiReturnValues(code, vals);
                 auto *packed = packMultiReturn(vals);
+                emitDeferredCleanup();
                 _builder.CreateRet(packed);
                 _terminated = true;
                 return packed;
             }
             auto *value = emitReturnExpressionTree(code);
+            emitDeferredCleanup();
             _builder.CreateRet(value);
             _terminated = true;
             return value;
@@ -2248,6 +2260,11 @@ class ModuleBuilder {
                 // treat return(expr) as just expr
                 if (_suppress_return && callee == "return") {
                     return emitExpression(args_code);
+                }
+                // defer(expr) — store the expression for later execution
+                if (callee == "defer") {
+                    _defer_stack.push_back(args_code);
+                    return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
                 }
                 return emitCall(resolveCurrentFunction(callee), callee, args_code);
             }
@@ -4111,6 +4128,12 @@ class ModuleBuilder {
     llvm::Value *emitCall(llvm::Function *callee_function,
                           const std::string &callee,
                           const pgcodes::GCode *args_code) {
+        // defer(expr) — store expression AST for cleanup before return
+        if (callee == "defer") {
+            _defer_stack.push_back(args_code);
+            return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+        }
+
         // Interface value creation: InterfaceName(concrete_value)
         auto iface_it = _interface_types.find(callee);
         if (iface_it != _interface_types.end()) {
@@ -5870,6 +5893,8 @@ class ModuleBuilder {
     llvm::StructType                          *_match_enum_stype = nullptr;
     bool                                       _suppress_return = false;
     std::vector<LoopContext>                    _loop_stack;
+    // Defer stack: AST nodes of deferred expressions (LIFO order)
+    std::vector<const pgcodes::GCode *>         _defer_stack;
     std::string                                _current_module_id;
     const std::map<std::string, std::string>  *_current_imports = nullptr;
     bool                                      _terminated = false;

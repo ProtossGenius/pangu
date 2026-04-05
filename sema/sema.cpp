@@ -106,6 +106,8 @@ const std::set<std::string> BUILTIN_FUNCTIONS = {
     "sb_build", "sb_reset", "sb_len",
     // Universal
     "len", "str", "chr",
+    // Control flow
+    "defer",
 };
 
 bool isBuiltin(const std::string &name) {
@@ -194,6 +196,7 @@ size_t builtinParamCount(const std::string &name) {
     if (name == "len") return 1;
     if (name == "str") return 1;
     if (name == "chr") return 1;
+    if (name == "defer") return 1;
     return 0;
 }
 
@@ -255,6 +258,7 @@ std::vector<std::string> builtinParamTypes(const std::string &name) {
     if (name == "len") return {"unknown"};  // polymorphic
     if (name == "str") return {"int"};
     if (name == "chr") return {"int"};
+    if (name == "defer") return {"unknown"};
     if (name == "exit" || name == "panic") return {"int"};
     if (name == "system") return {"string"};
     if (name == "str_len") return {"string"};

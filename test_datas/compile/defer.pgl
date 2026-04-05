@@ -1,0 +1,28 @@
+package main;
+
+func test_lifo() {
+    defer(println("third"));
+    defer(println("second"));
+    defer(println("first"));
+    println("start");
+}
+
+func test_return() int {
+    defer(println("cleanup"));
+    println("computing");
+    return(100);
+}
+
+func greet(name string) {
+    defer(println("bye"));
+    println(str_concat("hello ", name));
+}
+
+func main() {
+    test_lifo();
+    println("---");
+    r := test_return();
+    println(r);
+    println("---");
+    greet("world");
+}
