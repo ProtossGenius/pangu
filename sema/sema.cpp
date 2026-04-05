@@ -1381,8 +1381,22 @@ class ProgramChecker {
 
         // Import-qualified call: alias.func(...)
         if (left->getValueType() != pgcodes::ValueType::IDENTIFIER) {
+            // Expression.method(args) — validate expression and args, skip func lookup
             checkExpression(left);
-            checkExpression(right);
+            // Extract args from the method call pattern if present
+            const pgcodes::GCode *args_code = nullptr;
+            if (right->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                right->getOper() == "(" && right->getLeft() != nullptr) {
+                args_code = right->getRight();
+            } else if (right->getValueType() == pgcodes::ValueType::IDENTIFIER &&
+                       isSuffixCallNode(right->getRight())) {
+                args_code = right->getRight()->getRight();
+            }
+            if (args_code != nullptr) {
+                checkCallArgs(args_code);
+            } else {
+                checkExpression(right);
+            }
             return;
         }
 
