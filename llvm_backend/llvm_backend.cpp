@@ -3151,6 +3151,39 @@ class ModuleBuilder {
             return value;
         }
 
+        // Handle index assignment: arr[idx] = value
+        if (left != nullptr &&
+            left->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            left->getOper() == "[") {
+            auto *value = emitExpression(code->getRight());
+            auto *idx_code = left->getRight();
+            auto *container_code = left->getLeft();
+            auto *index = emitExpression(idx_code);
+            if (index->getType() != _builder.getInt32Ty()) {
+                index = _builder.CreateIntCast(index, _builder.getInt32Ty(), true, "idx");
+            }
+            if (container_code &&
+                container_code->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+                const std::string &varName = container_code->getValue();
+                auto sem_it = _variable_sem_types.find(varName);
+                if (sem_it != _variable_sem_types.end()) {
+                    const std::string &sem = sem_it->second;
+                    auto *obj = emitValue(container_code);
+                    if (sem == "DynArray") {
+                        return _builder.CreateCall(
+                            _module->getFunction("dyn_array_set"),
+                            {obj, index, value});
+                    }
+                    if (sem == "DynStrArray") {
+                        return _builder.CreateCall(
+                            _module->getFunction("dyn_str_array_set"),
+                            {obj, index, value});
+                    }
+                }
+            }
+            throw std::runtime_error("unsupported index assignment");
+        }
+
         if (left == nullptr ||
             left->getValueType() != pgcodes::ValueType::IDENTIFIER) {
             throw std::runtime_error("assignment left value must be identifier");
