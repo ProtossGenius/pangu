@@ -30,7 +30,13 @@ enum class TypeDefStep {
     READ_TYPE,
 };
 
-void dropType(IPipelineFactory *factory, PProduct &&pro) {}
+void dropType(IPipelineFactory *factory, PProduct &&pro) {
+    auto *td = static_cast<GTypeDef *>(pro.get());
+    if (td->isAlias()) {
+        auto *pkg = static_cast<GPackage *>(factory->getTopProduct());
+        pkg->addTypeAlias(td->name(), td->aliasTarget());
+    }
+}
 void PipeTypeDef::createProduct(IPipelineFactory *factory) {
     factory->pushProduct(PProduct(new GTypeDef()), dropType);
 }
@@ -67,31 +73,36 @@ void PipeTypeDef::accept(IPipelineFactory *factory, PData &&data) {
                             lex->to_string());
         }
         auto name = topProduct->name();
-        factory->packProduct();
-        if (str == "struct") {
-            auto ptr = new GStruct();
-            ptr->setName(name);
-            factory->choicePipeline(EGrammer::Struct);
-            factory->pushProduct(PProduct(ptr), packStructToContainer);
-        } else if (str == "enum") {
-            auto ptr = new GEnum();
-            ptr->setName(name);
-            factory->choicePipeline(EGrammer::Enum);
-            factory->pushProduct(PProduct(ptr), packTypeDefToPackage);
-        } else if (str == "interface") {
-            auto ptr = new GInterface();
-            ptr->setName(name);
-            factory->choicePipeline(EGrammer::Interface);
-            factory->pushProduct(PProduct(ptr), packTypeDefToPackage);
-        } else if (str == "func" || str == "pipeline") {
-            factory->undealData(std::move(data));
-            auto ptr = new GFuncDef();
-            ptr->setName(name);
-            ptr->setDeclKeyword(str);
-            factory->choicePipeline(EGrammer::TypeFunc);
-            factory->pushProduct(PProduct(ptr), packFuncDefToPackage);
+        if (str == "struct" || str == "enum" || str == "interface" ||
+            str == "func" || str == "pipeline") {
+            factory->packProduct();
+            if (str == "struct") {
+                auto ptr = new GStruct();
+                ptr->setName(name);
+                factory->choicePipeline(EGrammer::Struct);
+                factory->pushProduct(PProduct(ptr), packStructToContainer);
+            } else if (str == "enum") {
+                auto ptr = new GEnum();
+                ptr->setName(name);
+                factory->choicePipeline(EGrammer::Enum);
+                factory->pushProduct(PProduct(ptr), packTypeDefToPackage);
+            } else if (str == "interface") {
+                auto ptr = new GInterface();
+                ptr->setName(name);
+                factory->choicePipeline(EGrammer::Interface);
+                factory->pushProduct(PProduct(ptr), packTypeDefToPackage);
+            } else {
+                factory->undealData(std::move(data));
+                auto ptr = new GFuncDef();
+                ptr->setName(name);
+                ptr->setDeclKeyword(str);
+                factory->choicePipeline(EGrammer::TypeFunc);
+                factory->pushProduct(PProduct(ptr), packFuncDefToPackage);
+            }
         } else {
-            factory->onFail("unknow type " + str);
+            // Type alias: type Name TargetType
+            topProduct->setAliasTarget(str);
+            factory->packProduct();
         }
         return;
     }

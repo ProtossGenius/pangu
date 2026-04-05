@@ -43,7 +43,11 @@ void packFuncToPackage(IPipelineFactory *factory, PProduct &&pro) {
 }
 
 void packTypeDefToPackage(IPipelineFactory *factory, PProduct &&pro) {
+    auto *td = static_cast<GTypeDef *>(pro.get());
     auto top = static_cast<GPackage *>(factory->getTopProduct());
+    if (td->isAlias()) {
+        top->addTypeAlias(td->name(), td->aliasTarget());
+    }
     top->type_defs.addTypeDef(PTypeDef(static_cast<GTypeDef *>(pro.release())));
 }
 

@@ -198,6 +198,13 @@ class ModuleBuilder {
     }
 
     void declareConstants() {
+        // Collect type aliases from all packages
+        for (const auto &unit : _program.packages) {
+            const auto &pkg = *unit.package;
+            for (const auto &kv : pkg.typeAliases()) {
+                _type_aliases[kv.first] = kv.second;
+            }
+        }
         for (const auto &unit : _program.packages) {
             const auto &pkg = *unit.package;
             for (const auto &kv : pkg.constants()) {
@@ -973,6 +980,11 @@ class ModuleBuilder {
         auto tp_it = _type_param_map.find(name);
         if (tp_it != _type_param_map.end()) {
             return resolveTypeName(tp_it->second);
+        }
+        // Type alias resolution
+        auto alias_it = _type_aliases.find(name);
+        if (alias_it != _type_aliases.end()) {
+            return resolveTypeName(alias_it->second);
         }
         if (name == "int")    return _builder.getInt32Ty();
         if (name == "char")   return _builder.getInt32Ty();
@@ -6462,6 +6474,8 @@ class ModuleBuilder {
     std::map<std::string, bool>                   _global_const_is_string;
     // Generics: type parameter substitution map (active during monomorphization)
     std::map<std::string, std::string>         _type_param_map;
+    // Type aliases: alias name → target type name
+    std::map<std::string, std::string>         _type_aliases;
     // Generics: template storage (key → generic function + package unit)
     std::map<std::string, GenericTemplate>      _generic_templates;
     // Generics: already-instantiated specializations (mangled_name → llvm::Function*)

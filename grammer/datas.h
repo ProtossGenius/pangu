@@ -176,6 +176,8 @@ class GPackage : public IGrammer {
             _imports[kv.first] = std::move(kv.second);
         for (auto &kv : other._constants)
             _constants[kv.first] = kv.second;
+        for (auto &kv : other._type_aliases)
+            _type_aliases[kv.first] = kv.second;
     }
 
     // Constant value: int, string, or char
@@ -191,6 +193,13 @@ class GPackage : public IGrammer {
         return _constants;
     }
 
+    void addTypeAlias(const std::string &alias, const std::string &target) {
+        _type_aliases[alias] = target;
+    }
+    const std::map<std::string, std::string> &typeAliases() const {
+        return _type_aliases;
+    }
+
     GFunctionContainer  functions;
     GTypeFunctContainer function_defs;
     GTypeDefContainer   type_defs;
@@ -201,6 +210,7 @@ class GPackage : public IGrammer {
   private:
     std::map<std::string, PImport> _imports;
     std::map<std::string, ConstValue> _constants;
+    std::map<std::string, std::string> _type_aliases;
 };
 // import "package path" [as alias_name];
 class GImport : public IGrammer {
@@ -278,9 +288,13 @@ class GTypeDef : public IGrammer {
     const std::vector<std::pair<std::string, std::string>> &annotations() const {
         return _annotations;
     }
+    void setAliasTarget(const std::string &target) { _alias_target = target; }
+    const std::string &aliasTarget() const { return _alias_target; }
+    bool isAlias() const { return !_alias_target.empty(); }
 
   private:
     std::vector<std::pair<std::string, std::string>> _annotations;
+    std::string _alias_target;
 };
 class GEnum : public GTypeDef {
   public:

@@ -24,5 +24,4 @@ copilot --resume=f48f3658-4956-47c9-ac0e-602eee5d3d4a
     直接用pangu来编译的时候，出现pgassert_msg 错误，这个没有输出源码错误所在的行
     用build/bootstrap 来编译的时候，报错 examples/bootstrap_lexer_pipeline.pgl:32: error: unexpected token '<' at start of statement
 
-2. ==> 没有这个运算符，如果已经加了就删除掉，改为使用>>。
-3. (xx) >> pipeline_name  这个语法是用来新建pipeline的
+2. (xx) >> pipeline_name  这个语法是用来新建pipeline的

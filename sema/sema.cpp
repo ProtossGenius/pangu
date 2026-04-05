@@ -499,6 +499,10 @@ class ProgramChecker {
                     _constant_types[kv.first] = "int";
                 }
             }
+            // Collect type aliases
+            for (const auto &kv : unit.package->typeAliases()) {
+                _type_aliases[kv.first] = kv.second;
+            }
         }
     }
 
@@ -817,8 +821,8 @@ class ProgramChecker {
                 if (it != _defined_vars.end() && !it->second.empty()) {
                     std::string rhs_type = inferType(code->getRight());
                     if (!rhs_type.empty() &&
-                        !typesCompatible(rhs_type, it->second)) {
-                        auto ca = categorize(rhs_type), ce = categorize(it->second);
+                        !typesMatch(rhs_type, it->second)) {
+                        auto ca = categorize(resolveType(rhs_type)), ce = categorize(resolveType(it->second));
                         if (!(ca == TypeCat::INT && _enum_names.count(it->second)) &&
                             !(ce == TypeCat::INT && _enum_names.count(rhs_type))) {
                             const auto &loc = code->location();
@@ -1235,10 +1239,10 @@ class ProgramChecker {
         // return value.  When the inferred type is a struct but the
         // expected return type is primitive, it is almost certainly a
         // false positive — skip.
-        if (_struct_names.count(actual) && categorize(_current_return_type) != TypeCat::STRUCT)
+        if (_struct_names.count(resolveType(actual)) && categorize(resolveType(_current_return_type)) != TypeCat::STRUCT)
             return;
-        if (!typesCompatible(actual, _current_return_type)) {
-            auto ca = categorize(actual), ce = categorize(_current_return_type);
+        if (!typesMatch(actual, _current_return_type)) {
+            auto ca = categorize(resolveType(actual)), ce = categorize(resolveType(_current_return_type));
             if (ca == TypeCat::INT && _enum_names.count(_current_return_type)) return;
             if (ce == TypeCat::INT && _enum_names.count(actual)) return;
             // Try to get location from the return node or the expression.
@@ -1263,11 +1267,11 @@ class ProgramChecker {
             std::string actual   = inferType(nodes[i]);
             const std::string &expected = param_types[i];
             if (!actual.empty() && !expected.empty() &&
-                !typesCompatible(actual, expected)) {
+                !typesMatch(actual, expected)) {
                 // For enums, int/bool compatibility — be lenient
-                auto ca = categorize(actual), ce = categorize(expected);
-                if (ca == TypeCat::INT && _enum_names.count(expected)) continue;
-                if (ce == TypeCat::INT && _enum_names.count(actual))   continue;
+                auto ca = categorize(resolveType(actual)), ce = categorize(resolveType(expected));
+                if (ca == TypeCat::INT && _enum_names.count(resolveType(expected))) continue;
+                if (ce == TypeCat::INT && _enum_names.count(resolveType(actual)))   continue;
 
                 emitError(loc, "argument " + std::to_string(i + 1) +
                           " of '" + func_name + "' expects type '" +
@@ -1686,6 +1690,17 @@ class ProgramChecker {
         }
     }
 
+    // Resolve type aliases to their target type
+    std::string resolveType(const std::string &t) const {
+        auto it = _type_aliases.find(t);
+        if (it != _type_aliases.end()) return resolveType(it->second);
+        return t;
+    }
+
+    bool typesMatch(const std::string &a, const std::string &b) {
+        return typesCompatible(resolveType(a), resolveType(b));
+    }
+
     const llvm_backend::Program                &_program;
     ModuleTable                                 _module_functions;
     CheckResult                                 _result;
@@ -1703,6 +1718,7 @@ class ProgramChecker {
     std::set<std::string>                       _generic_type_params; // active type params
     StructFieldMap                              _struct_fields;
     std::map<std::string, std::string>          _constant_types; // name → "int"|"string"
+    std::map<std::string, std::string>          _type_aliases; // alias → target
 };
 
 } // namespace

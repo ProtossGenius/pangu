@@ -1,0 +1,19 @@
+package main;
+
+type Name string;
+type Age int;
+
+func greet(n Name) {
+    println("Hello, ${n}!");
+}
+
+func show_age(a Age) {
+    println("Age: ${a}");
+}
+
+func main() {
+    name := "Pangu";
+    greet(name);
+    age := 25;
+    show_age(age);
+}
