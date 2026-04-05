@@ -2390,6 +2390,14 @@ class ModuleBuilder {
             return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
         }
         if (oper == "[") {
+            // Array literal: [1, 2, 3] — left is "]" or null, right has elements
+            if (code->getLeft() == nullptr ||
+                (code->getLeft()->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                 code->getLeft()->getOper() == "]") ||
+                (code->getLeft()->getValueType() != pgcodes::ValueType::NOT_VALUE &&
+                 code->getLeft()->getValue() == "]")) {
+                return emitArrayLiteral(code->getRight());
+            }
             return emitIndexAccess(code);
         }
         if (oper == "++" || oper == "--") {
@@ -2907,6 +2915,53 @@ class ModuleBuilder {
     }
 
     // Emit expr.field — returns the field value (supports nested access)
+    // Array literal: [1, 2, 3] or ["a", "b", "c"]
+    // Creates a DynArray or DynStrArray and pushes all elements
+    llvm::Value *emitArrayLiteral(const pgcodes::GCode *elements) {
+        std::vector<const pgcodes::GCode *> elems;
+        collectArrayElements(elements, elems);
+
+        if (elems.empty()) {
+            return _builder.CreateCall(
+                _module->getFunction("make_dyn_array"), {}, "arr");
+        }
+
+        auto *first = emitExpression(elems[0]);
+        bool is_str = first->getType()->isPointerTy();
+
+        if (is_str) {
+            auto *arr = _builder.CreateCall(
+                _module->getFunction("make_dyn_str_array"), {}, "sarr");
+            auto *push_fn = _module->getFunction("dyn_str_array_push");
+            _builder.CreateCall(push_fn, {arr, first});
+            for (size_t i = 1; i < elems.size(); ++i) {
+                _builder.CreateCall(push_fn, {arr, emitExpression(elems[i])});
+            }
+            return arr;
+        } else {
+            auto *arr = _builder.CreateCall(
+                _module->getFunction("make_dyn_array"), {}, "iarr");
+            auto *push_fn = _module->getFunction("dyn_array_push");
+            _builder.CreateCall(push_fn, {arr, first});
+            for (size_t i = 1; i < elems.size(); ++i) {
+                _builder.CreateCall(push_fn, {arr, emitExpression(elems[i])});
+            }
+            return arr;
+        }
+    }
+
+    void collectArrayElements(const pgcodes::GCode *code,
+                              std::vector<const pgcodes::GCode *> &elems) {
+        if (code == nullptr) return;
+        if (code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            code->getOper() == ",") {
+            collectArrayElements(code->getLeft(), elems);
+            collectArrayElements(code->getRight(), elems);
+            return;
+        }
+        elems.push_back(code);
+    }
+
     // Index access: arr[idx] or str[idx]
     // Two forms:
     //   1. Operator form: code->oper=="[", left=container, right=index
@@ -3297,6 +3352,20 @@ class ModuleBuilder {
                             }
                         }
                     }
+                }
+            }
+            // Pattern 5: array literal [elem, ...] — infer DynArray or DynStrArray
+            else if (rhs->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                     rhs->getOper() == "[") {
+                // Check if first element is a string
+                std::vector<const pgcodes::GCode *> elems;
+                collectArrayElements(rhs->getRight(), elems);
+                if (!elems.empty() &&
+                    elems[0]->getValueType() != pgcodes::ValueType::NOT_VALUE &&
+                    elems[0]->getValueType() == pgcodes::ValueType::STRING) {
+                    _variable_sem_types[name] = "DynStrArray";
+                } else {
+                    _variable_sem_types[name] = "DynArray";
                 }
             }
             if (!rhs_callee.empty()) {

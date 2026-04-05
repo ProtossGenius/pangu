@@ -1,0 +1,18 @@
+package main;
+func main() {
+    nums := [10, 20, 30];
+    println(len(nums));
+    println(nums[0]);
+    println(nums[1]);
+    println(nums[2]);
+
+    words := ["hello", "world", "test"];
+    println(len(words));
+    println(words[0]);
+    println(words[1]);
+    println(words[2]);
+
+    single := [42];
+    println(len(single));
+    println(single[0]);
+}
