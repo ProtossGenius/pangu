@@ -75,7 +75,7 @@ const std::set<std::string> BUILTIN_FUNCTIONS = {
     "str_index_of", "str_starts_with", "str_ends_with", "str_replace",
     "str_contains", "str_trim", "str_to_upper", "str_to_lower",
     "str_split", "str_repeat", "str_count", "str_replace_all",
-    "int_to_str", "str_to_int",
+    "int_to_str", "str_to_int", "int",
     "read_file", "write_file",
     "str_char_at", "char_to_str",
     "make_array", "array_get", "array_set",
@@ -118,7 +118,7 @@ size_t builtinParamCount(const std::string &name) {
     if (name == "println" || name == "print" || name == "exit") return 1;
     if (name == "panic") return 1;
     if (name == "system") return 1;
-    if (name == "str_len" || name == "int_to_str" || name == "str_to_int")
+    if (name == "str_len" || name == "int_to_str" || name == "str_to_int" || name == "int")
         return 1;
     if (name == "read_file" || name == "char_to_str") return 1;
     if (name == "make_array" || name == "make_str_array") return 1;
@@ -218,7 +218,7 @@ std::string builtinReturnType(const std::string &name) {
         return "ptr";
     }
     // Functions returning int
-    if (name == "str_len" || name == "str_to_int" || name == "str_eq" ||
+    if (name == "str_len" || name == "str_to_int" || name == "int" || name == "str_eq" ||
         name == "str_index_of" || name == "str_starts_with" || name == "str_ends_with" ||
         name == "str_contains" || name == "str_count" ||
         name == "str_char_at" || name == "array_get" || name == "args_count" ||
@@ -263,7 +263,7 @@ std::vector<std::string> builtinParamTypes(const std::string &name) {
     if (name == "system") return {"string"};
     if (name == "str_len") return {"string"};
     if (name == "int_to_str") return {"int"};
-    if (name == "str_to_int") return {"string"};
+    if (name == "str_to_int" || name == "int") return {"string"};
     if (name == "read_file") return {"string"};
     if (name == "char_to_str") return {"int"};
     if (name == "make_array" || name == "make_str_array") return {"int"};

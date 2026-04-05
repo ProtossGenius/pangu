@@ -871,3 +871,17 @@ char *str_replace_all(const char *s, const char *old_s, const char *new_s) {
     strcpy(wp, p);
     return result;
 }
+
+// sprintf wrapper: formats string like C sprintf, returns allocated string
+#include <stdarg.h>
+char *pg_sprintf(const char *fmt, ...) {
+    va_list args, args2;
+    va_start(args, fmt);
+    va_copy(args2, args);
+    int len = vsnprintf(NULL, 0, fmt, args);
+    va_end(args);
+    char *buf = (char *)malloc(len + 1);
+    vsnprintf(buf, len + 1, fmt, args2);
+    va_end(args2);
+    return buf;
+}

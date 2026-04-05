@@ -4475,10 +4475,10 @@ class ModuleBuilder {
                 throw std::runtime_error("int_to_str/str expects 1 argument");
             return emitIntToStr(args);
         }
-        if (callee == "str_to_int") {
+        if (callee == "str_to_int" || callee == "int") {
             auto args = emitCallArgs(args_code);
             if (args.size() != 1)
-                throw std::runtime_error("str_to_int expects 1 argument");
+                throw std::runtime_error("str_to_int/int expects 1 argument");
             return emitStrToInt(args);
         }
         if (callee == "str_index_of") {
@@ -5025,7 +5025,7 @@ class ModuleBuilder {
                                    const std::string &method_name) {
         // DynArray methods
         if (type_name == "DynArray") {
-            if (method_name == "push")   return "dyn_array_push";
+            if (method_name == "push" || method_name == "append")   return "dyn_array_push";
             if (method_name == "get")    return "dyn_array_get";
             if (method_name == "set")    return "dyn_array_set";
             if (method_name == "size")   return "dyn_array_size";
@@ -5033,7 +5033,7 @@ class ModuleBuilder {
         }
         // DynStrArray methods
         if (type_name == "DynStrArray") {
-            if (method_name == "push")   return "dyn_str_array_push";
+            if (method_name == "push" || method_name == "append")   return "dyn_str_array_push";
             if (method_name == "get")    return "dyn_str_array_get";
             if (method_name == "set")    return "dyn_str_array_set";
             if (method_name == "size")   return "dyn_str_array_size";
