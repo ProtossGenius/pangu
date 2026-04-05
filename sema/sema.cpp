@@ -113,6 +113,8 @@ const std::set<std::string> BUILTIN_FUNCTIONS = {
     "defer",
     // Range
     "range",
+    // Map literal constructors
+    "map_of", "int_map_of",
 };
 
 bool isBuiltin(const std::string &name) {
@@ -204,6 +206,8 @@ size_t builtinParamCount(const std::string &name) {
     if (name == "defer") return 1;
     if (name == "range") return 2;
     if (name == "sprintf") return SIZE_MAX; // variadic
+    if (name == "map_of") return SIZE_MAX;  // variadic: key, val pairs
+    if (name == "int_map_of") return SIZE_MAX; // variadic: key, val pairs
     return 0;
 }
 
@@ -237,8 +241,8 @@ std::string builtinReturnType(const std::string &name) {
         return "int";
     }
     // HashMap
-    if (name == "make_map") return "HashMap";
-    if (name == "make_int_map") return "IntMap";
+    if (name == "make_map" || name == "map_of") return "HashMap";
+    if (name == "make_int_map" || name == "int_map_of") return "IntMap";
     if (name == "map_get") return "string";
     if (name == "map_has" || name == "map_size") return "int";
     if (name == "map_keys" || name == "int_map_keys") return "DynStrArray";

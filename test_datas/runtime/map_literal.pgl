@@ -1,0 +1,26 @@
+package main;
+
+func main() {
+    // map_of creates a HashMap with key-value pairs
+    colors := map_of("red", "#ff0000", "green", "#00ff00", "blue", "#0000ff");
+    println(map_get(colors, "red"));
+    println(map_get(colors, "green"));
+    println(map_get(colors, "blue"));
+    println(map_size(colors));
+
+    // int_map_of creates an IntMap with key-value pairs
+    scores := int_map_of("alice", 95, "bob", 87, "charlie", 92);
+    println(int_map_get(scores, "alice"));
+    println(int_map_get(scores, "bob"));
+    println(int_map_get(scores, "charlie"));
+    println(int_map_size(scores));
+
+    // Can iterate over map_of result
+    for key in colors {
+        println(sprintf("%s = %s", key, map_get(colors, key)));
+    };
+
+    // Empty map_of should work too (though make_map is simpler)
+    empty := map_of();
+    println(map_size(empty));
+}

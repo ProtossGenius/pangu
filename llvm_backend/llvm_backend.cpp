@@ -3656,7 +3656,11 @@ class ModuleBuilder {
                     _variable_sem_types[name] = "DynStrArray";
                 } else if (rhs_callee == "make_map") {
                     _variable_sem_types[name] = "HashMap";
+                } else if (rhs_callee == "map_of") {
+                    _variable_sem_types[name] = "HashMap";
                 } else if (rhs_callee == "make_int_map") {
+                    _variable_sem_types[name] = "IntMap";
+                } else if (rhs_callee == "int_map_of") {
                     _variable_sem_types[name] = "IntMap";
                 } else if (rhs_callee == "make_str_builder") {
                     _variable_sem_types[name] = "StringBuilder";
@@ -4952,6 +4956,20 @@ class ModuleBuilder {
             auto *fn = _module->getFunction("make_map");
             return _builder.CreateCall(fn, {}, "map_ptr");
         }
+        if (callee == "map_of") {
+            // map_of("k1", "v1", "k2", "v2", ...) → HashMap
+            auto args = emitCallArgs(args_code);
+            if (args.size() % 2 != 0) {
+                throw std::runtime_error("map_of() requires even number of arguments (key-value pairs)");
+            }
+            auto *make_fn = _module->getFunction("make_map");
+            auto *set_fn = _module->getFunction("map_set");
+            auto *m = _builder.CreateCall(make_fn, {}, "map_of");
+            for (size_t i = 0; i < args.size(); i += 2) {
+                _builder.CreateCall(set_fn, {m, args[i], args[i+1]});
+            }
+            return m;
+        }
         if (callee == "map_set") {
             auto args = emitCallArgs(args_code);
             auto *fn = _module->getFunction("map_set");
@@ -4988,6 +5006,20 @@ class ModuleBuilder {
         if (callee == "make_int_map") {
             auto *fn = _module->getFunction("make_int_map");
             return _builder.CreateCall(fn, {}, "imap_ptr");
+        }
+        if (callee == "int_map_of") {
+            // int_map_of("k1", 1, "k2", 2, ...) → IntMap
+            auto args = emitCallArgs(args_code);
+            if (args.size() % 2 != 0) {
+                throw std::runtime_error("int_map_of() requires even number of arguments (key-value pairs)");
+            }
+            auto *make_fn = _module->getFunction("make_int_map");
+            auto *set_fn = _module->getFunction("int_map_set");
+            auto *m = _builder.CreateCall(make_fn, {}, "imap_of");
+            for (size_t i = 0; i < args.size(); i += 2) {
+                _builder.CreateCall(set_fn, {m, args[i], args[i+1]});
+            }
+            return m;
         }
         if (callee == "int_map_set") {
             auto args = emitCallArgs(args_code);

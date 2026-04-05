@@ -1,0 +1,13 @@
+package main;
+
+func main() {
+    m := map_of("a", "1", "b", "2", "c", "3");
+    println(map_get(m, "a"));
+    println(map_get(m, "b"));
+    println(map_get(m, "c"));
+    println(map_size(m));
+
+    im := int_map_of("x", 10, "y", 20);
+    println(int_map_get(im, "x"));
+    println(int_map_get(im, "y"));
+}
