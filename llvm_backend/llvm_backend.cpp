@@ -1294,6 +1294,10 @@ class ModuleBuilder {
         if (oper == "for_inf") {
             return emitInfiniteLoop(code);
         }
+        if (oper == "defer") {
+            _defer_stack.push_back(code->getRight());
+            return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+        }
         if (oper == "switch") {
             return emitSwitchStatement(code);
         }

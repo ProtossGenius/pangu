@@ -56,6 +56,14 @@ void pack_as_return(IPipelineFactory *factory, PProduct &&data) {
     topProduct->setRight(code);
 }
 
+void pack_as_defer(IPipelineFactory *factory, PProduct &&data) {
+    GCode *code       = static_cast<GCode *>(data.release());
+    GCode *topProduct = static_cast<GCode *>(factory->getTopProduct());
+    pgassert(topProduct != nullptr);
+    topProduct->setOper("defer");
+    topProduct->setRight(code);
+}
+
 void pack_lambda_params(IPipelineFactory *factory, PProduct &&data) {
     GCode *code       = static_cast<GCode *>(data.release());
     GCode *topProduct = static_cast<GCode *>(factory->getTopProduct());

@@ -140,7 +140,7 @@ const std::set<std::string> keywords{
     "class",   "switch",  "goto",    "try",    "catch",  "public",
     "static",  "const",   "final",   "var",    "pipeline",
     "impl",    "enum",    "interface","switcher","worker",
-    "case",    "default", "match",   "for_in",
+    "case",    "default", "match",   "for_in", "defer",
 };
 bool is_keywords(DLex *lex) {
 

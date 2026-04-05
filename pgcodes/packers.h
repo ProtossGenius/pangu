@@ -10,6 +10,7 @@ void pack_as_left(IPipelineFactory *factory, PProduct &&data);
 void pack_as_if_action(IPipelineFactory *factory, PProduct &&data);
 void pack_as_if_else(IPipelineFactory *factory, PProduct &&data);
 void pack_as_return(IPipelineFactory *factory, PProduct &&data);
+void pack_as_defer(IPipelineFactory *factory, PProduct &&data);
 void pack_lambda_params(IPipelineFactory *factory, PProduct &&data);
 void pack_lambda_body(IPipelineFactory *factory, PProduct &&data);
 } // namespace pgcodes

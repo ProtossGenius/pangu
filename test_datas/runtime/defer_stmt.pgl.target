@@ -1,0 +1,8 @@
+start
+processing
+process deferred
+42
+end
+cleanup
+deferred 2
+deferred 1

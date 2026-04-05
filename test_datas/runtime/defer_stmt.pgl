@@ -1,0 +1,21 @@
+package main;
+
+func cleanup() {
+    println("cleanup");
+}
+
+func process() int {
+    defer println("process deferred");
+    println("processing");
+    return 42;
+}
+
+func main() {
+    println("start");
+    defer println("deferred 1");
+    defer println("deferred 2");
+    result := process();
+    println(result);
+    defer cleanup();
+    println("end");
+}

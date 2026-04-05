@@ -70,6 +70,13 @@ void PipeNormal::on_START(IPipelineFactory *factory, PData &&data) {
         factory->pushProduct(PProduct(new GCode()), pack_as_return);
         return;
     }
+    if (lexer::makeIdentifier("defer") == *lex) {
+        topProduct->setStep(int(Steps::PRE_VIEW_NEXT));
+        topProduct->setLocation(lex->location());
+        factory->choicePipeline(ECodeType::Normal);
+        factory->pushProduct(PProduct(new GCode()), pack_as_defer);
+        return;
+    }
     if (lexer::is_keywords(lex)) {
         factory->undealData(std::move(data));
         factory->waitChoisePipeline();
