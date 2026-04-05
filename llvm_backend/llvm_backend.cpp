@@ -1462,7 +1462,7 @@ class ModuleBuilder {
         std::string varName = varNode->getValue();
 
         // Check semantic type of iterable (if it's a known variable)
-        enum class IterKind { RANGE, STRING, DYN_ARRAY, DYN_STR_ARRAY };
+        enum class IterKind { RANGE, STRING, DYN_ARRAY, DYN_STR_ARRAY, HASH_MAP, INT_MAP };
         IterKind iter_kind = IterKind::RANGE;
         std::string iter_var_name;
         if (iterNode->getValueType() == pgcodes::ValueType::IDENTIFIER) {
@@ -1471,6 +1471,8 @@ class ModuleBuilder {
             if (st != _variable_sem_types.end()) {
                 if (st->second == "DynArray") iter_kind = IterKind::DYN_ARRAY;
                 else if (st->second == "DynStrArray") iter_kind = IterKind::DYN_STR_ARRAY;
+                else if (st->second == "HashMap") iter_kind = IterKind::HASH_MAP;
+                else if (st->second == "IntMap") iter_kind = IterKind::INT_MAP;
             }
         }
 
@@ -1491,6 +1493,18 @@ class ModuleBuilder {
         // Get iteration count
         llvm::Value *count = nullptr;
         llvm::Value *collVal = iterVal;
+
+        // For maps, get keys array first, then iterate over keys
+        if (iter_kind == IterKind::HASH_MAP) {
+            collVal = _builder.CreateCall(
+                _module->getFunction("map_keys"), {iterVal}, "mapkeys");
+            iter_kind = IterKind::DYN_STR_ARRAY;
+        } else if (iter_kind == IterKind::INT_MAP) {
+            collVal = _builder.CreateCall(
+                _module->getFunction("int_map_keys"), {iterVal}, "mapkeys");
+            iter_kind = IterKind::DYN_STR_ARRAY;
+        }
+
         if (iter_kind == IterKind::STRING) {
             count = emitStrLen({iterVal});
         } else if (iter_kind == IterKind::DYN_ARRAY) {

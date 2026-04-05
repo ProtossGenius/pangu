@@ -626,7 +626,8 @@ class ProgramChecker {
                 if (varNode != nullptr) {
                     // Infer loop variable type from iterable
                     std::string iter_type = inferType(iterNode);
-                    if (iter_type == "DynStrArray") {
+                    if (iter_type == "DynStrArray" || iter_type == "HashMap" ||
+                        iter_type == "IntMap") {
                         _defined_vars[varNode->getValue()] = "string";
                     } else {
                         _defined_vars[varNode->getValue()] = "int";
