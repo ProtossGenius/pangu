@@ -61,7 +61,9 @@ JIT and AOT modes.
 1_000_000   // underscore separators (ignored, for readability)
 "hello\n"   // string (supports \n \t \\ \" \0 \xNN \0NNN)
 `raw\nstr`  // backtick string (multiline, raw — no escape processing)
-"${name}"   // string interpolation — embeds variable/expression value
+"${name}"   // string interpolation — embeds variable value
+"${len(s)}" // expression interpolation — embeds function call result
+"${a + b}"  // expression interpolation — embeds arithmetic result
 'A'         // char literal → integer (ASCII value)
 true false  // bool → integer (1 / 0)
 [1, 2, 3]   // array literal → DynArray (int elements)
@@ -243,6 +245,22 @@ n := int("42");        // string → int (alias for str_to_int)
 s := str(42);          // int → string (alias for int_to_str)
 c := chr(65);          // int → single-char string (alias for char_to_str)
 ```
+
+### Type Aliases
+
+```pgl
+type Name string;     // Name is an alias for string
+type Age int;          // Age is an alias for int
+
+func greet(n Name) {
+    println("Hello, ${n}!");
+}
+
+name := "Pangu";
+greet(name);           // string is compatible with Name
+```
+
+Type aliases create a new name for an existing type. The alias and the original type are fully interchangeable.
 
 ### Struct Methods (impl blocks)
 
@@ -530,6 +548,7 @@ Low-level state management for manual pipeline implementations:
 |----------|-------------|
 | `println(val)` | Print with newline (auto-detects int/string) |
 | `print(val)` | Print without newline |
+| `read_line()` | Read a line from stdin (returns string) |
 | `read_file(path)` | Read file contents as string |
 | `write_file(path, content)` | Write string to file |
 | `args(index)` | Get command-line argument |
