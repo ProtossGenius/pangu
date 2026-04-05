@@ -3196,11 +3196,22 @@ class ModuleBuilder {
         // Allocate on stack
         auto *alloca = createVariableSlot(struct_name + ".tmp", stype);
 
-        // Collect field assignments from the comma/colon tree
+        // Collect field assignments and spread sources
         std::vector<std::pair<std::string, const pgcodes::GCode *>> assignments;
-        collectFieldAssignments(fields_code, assignments);
+        std::string spread_var;
+        collectFieldAssignments(fields_code, assignments, &spread_var);
 
-        // Store each field
+        // If there's a spread, copy all fields from the source first
+        if (!spread_var.empty()) {
+            auto vit = _variables.find(spread_var);
+            if (vit == _variables.end()) {
+                throw std::runtime_error("undefined variable in spread: " + spread_var);
+            }
+            auto *src_val = _builder.CreateLoad(stype, vit->second, spread_var + ".spread");
+            _builder.CreateStore(src_val, alloca);
+        }
+
+        // Store each explicitly specified field (overrides spread)
         for (const auto &[fname, val_code] : assignments) {
             auto fi = info.field_index.find(fname);
             if (fi == info.field_index.end()) {
@@ -3217,23 +3228,49 @@ class ModuleBuilder {
         return _builder.CreateLoad(stype, alloca, struct_name + ".val");
     }
 
+    // Check if a node represents the ... spread operator (three nested dots)
+    bool isSpreadNode(const pgcodes::GCode *code, std::string &var_name) {
+        // Pattern: .(.(. var)) — three nested dot operators
+        if (code == nullptr) return false;
+        if (code->getValueType() != pgcodes::ValueType::NOT_VALUE ||
+            code->getOper() != ".") return false;
+        auto *d2 = code->getRight();
+        if (d2 == nullptr || d2->getValueType() != pgcodes::ValueType::NOT_VALUE ||
+            d2->getOper() != ".") return false;
+        auto *d3 = d2->getRight();
+        if (d3 == nullptr || d3->getValueType() != pgcodes::ValueType::NOT_VALUE ||
+            d3->getOper() != ".") return false;
+        auto *var = d3->getRight();
+        if (var == nullptr || var->getValueType() != pgcodes::ValueType::IDENTIFIER)
+            return false;
+        var_name = var->getValue();
+        return true;
+    }
+
     void collectFieldAssignments(
         const pgcodes::GCode *code,
-        std::vector<std::pair<std::string, const pgcodes::GCode *>> &out) {
+        std::vector<std::pair<std::string, const pgcodes::GCode *>> &out,
+        std::string *spread_var = nullptr) {
         if (code == nullptr) return;
+        // Check for spread operator: ...var
+        std::string svar;
+        if (isSpreadNode(code, svar)) {
+            if (spread_var != nullptr) *spread_var = svar;
+            return;
+        }
         // Strip grouping
         if (code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
             code->getOper() == "(" && code->getLeft() != nullptr &&
             code->getLeft()->getValueType() == pgcodes::ValueType::NOT_VALUE &&
             code->getLeft()->getOper() == ")") {
-            collectFieldAssignments(code->getRight(), out);
+            collectFieldAssignments(code->getRight(), out, spread_var);
             return;
         }
         // Comma-separated
         if (code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
             code->getOper() == ",") {
-            collectFieldAssignments(code->getLeft(), out);
-            collectFieldAssignments(code->getRight(), out);
+            collectFieldAssignments(code->getLeft(), out, spread_var);
+            collectFieldAssignments(code->getRight(), out, spread_var);
             return;
         }
         // Single field: field: value

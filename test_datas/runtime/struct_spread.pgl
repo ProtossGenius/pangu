@@ -1,0 +1,41 @@
+package main;
+
+type Point struct {
+    x int;
+    y int;
+    z int;
+}
+
+type Config struct {
+    width int;
+    height int;
+    title string;
+}
+
+func main() {
+    // Basic spread — copy all, override one
+    p1 := Point{x: 1, y: 2, z: 3};
+    p2 := Point{...p1, x: 10};
+    println(p2.x);
+    println(p2.y);
+    println(p2.z);
+
+    // Spread — override multiple fields
+    p3 := Point{...p1, y: 20, z: 30};
+    println(p3.x);
+    println(p3.y);
+    println(p3.z);
+
+    // Spread with string fields
+    c1 := Config{width: 800, height: 600, title: "Hello"};
+    c2 := Config{...c1, title: "World"};
+    println(c2.width);
+    println(c2.height);
+    println(c2.title);
+
+    // Spread with no overrides
+    p4 := Point{...p1};
+    println(p4.x);
+    println(p4.y);
+    println(p4.z);
+}
