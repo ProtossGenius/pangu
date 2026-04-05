@@ -1,0 +1,23 @@
+package main;
+
+func classify(cmd string) string {
+    switch(cmd) {
+        case "start": { return "begin"; }
+        case "stop": { return "end"; }
+        case "pause": { return "wait"; }
+        default: { return "unknown"; }
+    }
+}
+
+func main() {
+    println(classify("start"));
+    println(classify("stop"));
+    println(classify("pause"));
+    println(classify("other"));
+    
+    fruit := "apple";
+    switch(fruit) {
+        case "apple": { println("red"); }
+        case "banana": { println("yellow"); }
+    }
+}

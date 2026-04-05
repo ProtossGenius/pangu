@@ -1721,13 +1721,95 @@ class ModuleBuilder {
         }
     }
 
+    // String switch: generates if-else chain with str_eq comparisons
+    llvm::Value *emitStringSwitchStatement(const pgcodes::GCode *code,
+                                            llvm::Value *cond_value) {
+        auto *function = _current_function;
+
+        std::vector<const pgcodes::GCode *> cases;
+        collectCaseNodes(code->getRight(), cases);
+
+        auto *end_block = llvm::BasicBlock::Create(*_context, "sswitch.end");
+        const pgcodes::GCode *default_case = nullptr;
+        
+        // Separate cases into value cases and default
+        std::vector<const pgcodes::GCode *> value_cases;
+        for (auto *c : cases) {
+            if (c->getLeft() == nullptr) {
+                default_case = c;
+            } else {
+                value_cases.push_back(c);
+            }
+        }
+
+        // Generate if-else chain
+        bool all_terminated = true;
+        for (size_t i = 0; i < value_cases.size(); ++i) {
+            auto *case_val = emitExpression(value_cases[i]->getLeft());
+            auto *cmp = emitStrEq({cond_value, case_val});
+            auto *then_bb = llvm::BasicBlock::Create(
+                *_context, "sswitch.case." + std::to_string(i), function);
+            auto *next_bb = llvm::BasicBlock::Create(
+                *_context, "sswitch.next." + std::to_string(i));
+            _builder.CreateCondBr(
+                _builder.CreateICmpNE(cmp,
+                    llvm::ConstantInt::get(_builder.getInt32Ty(), 0)),
+                then_bb, next_bb);
+
+            // Case body
+            _builder.SetInsertPoint(then_bb);
+            _terminated = false;
+            emitStatement(value_cases[i]->getRight());
+            bool block_terminated =
+                _terminated || _builder.GetInsertBlock()->getTerminator() != nullptr;
+            if (!block_terminated) {
+                _builder.CreateBr(end_block);
+            }
+            if (!block_terminated) all_terminated = false;
+
+            // Continue to next check
+            function->insert(function->end(), next_bb);
+            _builder.SetInsertPoint(next_bb);
+        }
+
+        // Default case
+        if (default_case != nullptr) {
+            _terminated = false;
+            emitStatement(default_case->getRight());
+            bool block_terminated =
+                _terminated || _builder.GetInsertBlock()->getTerminator() != nullptr;
+            if (!block_terminated) {
+                _builder.CreateBr(end_block);
+            }
+            if (!block_terminated) all_terminated = false;
+        } else {
+            _builder.CreateBr(end_block);
+            all_terminated = false;
+        }
+
+        if (!all_terminated || cases.empty()) {
+            function->insert(function->end(), end_block);
+            _builder.SetInsertPoint(end_block);
+            _terminated = false;
+        } else {
+            _terminated = true;
+        }
+        return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+    }
+
     llvm::Value *emitSwitchStatement(const pgcodes::GCode *code) {
         auto *function = _current_function;
 
         // Evaluate the switch condition
         auto *cond_value = emitExpression(code->getLeft());
+
+        // String switch: emit as if-else chain with str_eq
+        if (cond_value->getType()->isPointerTy()) {
+            return emitStringSwitchStatement(code, cond_value);
+        }
+
         if (!cond_value->getType()->isIntegerTy()) {
-            throw std::runtime_error("switch condition must be an integer");
+            throw std::runtime_error("switch condition must be an integer or string");
         }
 
         // Collect case nodes from the body
