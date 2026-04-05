@@ -125,6 +125,9 @@ p.x = 10;
 func translate(p Point, dx int) Point {
     return Point{x: p.x + dx, y: p.y};
 }
+
+// Struct spread — copy fields from existing struct, override some
+p2 := Point{...p, x: 10};   // p2.x=10, p2.y=p.y
 ```
 
 Structs support `@annotation` metadata for reflection:
