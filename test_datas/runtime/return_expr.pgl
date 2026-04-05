@@ -1,0 +1,49 @@
+package main;
+
+func is_even(n int) bool {
+    return n % 2 == 0;
+}
+
+func is_positive(n int) bool {
+    return n > 0;
+}
+
+func both_positive(a int, b int) bool {
+    return a > 0 && b > 0;
+}
+
+func either_positive(a int, b int) bool {
+    return a > 0 || b > 0;
+}
+
+func sum_gt(a int, b int, threshold int) bool {
+    return a + b > threshold;
+}
+
+func max(a int, b int) int {
+    return a > b ? a : b;
+}
+
+func clamp(v int, lo int, hi int) int {
+    if (v < lo) { return lo; }
+    if (v > hi) { return hi; }
+    return v;
+}
+
+func main() {
+    println(is_even(4));
+    println(is_even(5));
+    println(is_positive(3));
+    println(is_positive(-1));
+    println(both_positive(1, 2));
+    println(both_positive(1, -1));
+    println(either_positive(-1, 2));
+    println(either_positive(-1, -2));
+    println(sum_gt(3, 4, 5));
+    println(sum_gt(1, 2, 5));
+    println(max(3, 7));
+    println(max(9, 2));
+    println(clamp(5, 1, 10));
+    println(clamp(-1, 1, 10));
+    println(clamp(15, 1, 10));
+}

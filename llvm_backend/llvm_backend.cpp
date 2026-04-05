@@ -2796,8 +2796,40 @@ class ModuleBuilder {
                 emitReturnExpressionTree(code->getLeft()),
                 emitReturnExpressionTree(code->getRight()), "retdiv");
         }
+        if (oper == "%") {
+            return _builder.CreateSRem(
+                emitReturnExpressionTree(code->getLeft()),
+                emitReturnExpressionTree(code->getRight()), "retmod");
+        }
+        if (oper == "&&" || oper == "||" || oper == "&" || oper == "|" ||
+            oper == "^" || oper == "~") {
+            _suppress_return = true;
+            auto *val = emitExpression(code);
+            _suppress_return = false;
+            return val;
+        }
         if (isComparisonOperator(oper)) {
-            return emitComparison(code, oper);
+            // Suppress return so emitComparison's emitExpression calls
+            // don't trigger premature ret instructions.
+            _suppress_return = true;
+            auto *cmp_val = emitComparison(code, oper);
+            _suppress_return = false;
+            return cmp_val;
+        }
+        if (oper == "?") {
+            _suppress_return = true;
+            auto *val = emitTernary(code);
+            _suppress_return = false;
+            return val;
+        }
+        if (oper == "(" && code->getLeft() != nullptr &&
+            !(code->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER &&
+              code->getLeft()->getValue() == "return")) {
+            // Non-return function call in return expression
+            _suppress_return = true;
+            auto *val = emitExpression(code);
+            _suppress_return = false;
+            return val;
         }
         if (oper == ".") {
             const auto *left  = code->getLeft();
