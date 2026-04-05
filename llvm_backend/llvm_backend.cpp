@@ -2245,6 +2245,13 @@ class ModuleBuilder {
                 return emitStructLiteral(code->getValue(),
                                          code->getRight()->getRight());
             }
+            // Index access (suffix form): name[idx]
+            if (code->getRight() != nullptr &&
+                code->getRight()->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                code->getRight()->getOper() == "[") {
+                // Build a synthetic code node with left=identifier, right=index
+                return emitIndexAccess(code);
+            }
             return emitValue(code);
         }
 
@@ -2331,6 +2338,9 @@ class ModuleBuilder {
             }
             emitStatement(code);
             return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+        }
+        if (oper == "[") {
+            return emitIndexAccess(code);
         }
         if (oper == "++" || oper == "--") {
             return emitIncDec(code, oper == "++");
@@ -2847,6 +2857,53 @@ class ModuleBuilder {
     }
 
     // Emit expr.field — returns the field value (supports nested access)
+    // Index access: arr[idx] or str[idx]
+    // Two forms:
+    //   1. Operator form: code->oper=="[", left=container, right=index
+    //   2. Suffix form: code is IDENTIFIER, code->right is [node with right=index
+    llvm::Value *emitIndexAccess(const pgcodes::GCode *code) {
+        const pgcodes::GCode *container_code = nullptr;
+        const pgcodes::GCode *index_code = nullptr;
+
+        if (code->getValueType() != pgcodes::ValueType::NOT_VALUE) {
+            // Suffix form: IDENTIFIER with [ suffix
+            container_code = code;  // the identifier itself
+            index_code = code->getRight()->getRight();  // inside the [...]
+        } else {
+            // Operator form: [ with left and right
+            container_code = code->getLeft();
+            index_code = code->getRight();
+        }
+
+        auto *index = emitExpression(index_code);
+        if (index->getType() != _builder.getInt32Ty()) {
+            index = _builder.CreateIntCast(index, _builder.getInt32Ty(), true, "idx");
+        }
+
+        // Check semantic type for typed dispatch
+        if (container_code &&
+            container_code->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+            const std::string &varName = container_code->getValue();
+            auto sem_it = _variable_sem_types.find(varName);
+            if (sem_it != _variable_sem_types.end()) {
+                const std::string &sem = sem_it->second;
+                auto *obj = emitValue(container_code);
+                if (sem == "DynArray") {
+                    return _builder.CreateCall(
+                        _module->getFunction("dyn_array_get"), {obj, index}, "aget");
+                }
+                if (sem == "DynStrArray") {
+                    return _builder.CreateCall(
+                        _module->getFunction("dyn_str_array_get"), {obj, index}, "saget");
+                }
+            }
+        }
+
+        // Default: string char_at
+        auto *obj = emitValue(container_code);
+        return emitStrCharAt(obj, index);
+    }
+
     llvm::Value *emitFieldAccess(const pgcodes::GCode *code) {
         auto fg = resolveFieldGEP(code);
         return _builder.CreateLoad(fg.type, fg.ptr,

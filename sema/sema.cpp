@@ -860,6 +860,20 @@ class ProgramChecker {
                 return inferCallReturnType(name);
             }
 
+            // Index access: name[idx]
+            if (code->getRight() != nullptr &&
+                code->getRight()->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                code->getRight()->getOper() == "[") {
+                auto it = _defined_vars.find(name);
+                if (it != _defined_vars.end()) {
+                    const std::string &vt = it->second;
+                    if (vt == "string") return "int";
+                    if (vt == "DynArray") return "int";
+                    if (vt == "DynStrArray") return "string";
+                }
+                return "";
+            }
+
             // Struct literal: StructName{...}
             if (code->getRight() != nullptr &&
                 code->getRight()->getValueType() == pgcodes::ValueType::NOT_VALUE &&
@@ -945,6 +959,15 @@ class ProgramChecker {
         }
         if (oper == "!") return "int";
         if (oper == "++" || oper == "--") return "int";
+
+        // Index access: expr[idx]
+        if (oper == "[") {
+            std::string container_type = inferType(code->getLeft());
+            if (container_type == "string") return "int";         // char code
+            if (container_type == "DynArray") return "int";
+            if (container_type == "DynStrArray") return "string";
+            return "";
+        }
 
         return "";
     }

@@ -1,0 +1,21 @@
+package main;
+
+func main() {
+    arr := make_dyn_array();
+    arr.push(10);
+    arr.push(20);
+    arr.push(30);
+    println(int_to_str(arr[0]));
+    println(int_to_str(arr[1]));
+    println(int_to_str(arr[2]));
+    
+    sa := make_dyn_str_array();
+    sa.push("hello");
+    sa.push("world");
+    println(sa[0]);
+    println(sa[1]);
+    
+    s := "abcde";
+    println(int_to_str(s[0]));
+    println(int_to_str(s[4]));
+}
