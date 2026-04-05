@@ -970,8 +970,15 @@ class ProgramChecker {
         if (oper == "!") return "int";
         if (oper == "++" || oper == "--") return "int";
 
-        // Index access: expr[idx]
+        // Index access: expr[idx] or slice expr[start:end]
         if (oper == "[") {
+            // Check for slice: [start:end]
+            auto *idx = code->getRight();
+            if (idx != nullptr &&
+                idx->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                idx->getOper() == ":") {
+                return "string";  // slice always returns string
+            }
             std::string container_type = inferType(code->getLeft());
             if (container_type == "string") return "int";         // char code
             if (container_type == "DynArray") return "int";

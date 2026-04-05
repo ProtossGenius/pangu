@@ -2908,6 +2908,22 @@ class ModuleBuilder {
             index_code = code->getRight();
         }
 
+        // Slice: container[start:end]
+        if (index_code != nullptr &&
+            index_code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            index_code->getOper() == ":") {
+            auto *obj = emitValue(container_code);
+            auto *start = emitExpression(index_code->getLeft());
+            auto *end = emitExpression(index_code->getRight());
+            if (start->getType() != _builder.getInt32Ty())
+                start = _builder.CreateIntCast(start, _builder.getInt32Ty(), true);
+            if (end->getType() != _builder.getInt32Ty())
+                end = _builder.CreateIntCast(end, _builder.getInt32Ty(), true);
+            // len = end - start
+            auto *len = _builder.CreateSub(end, start, "slicelen");
+            return emitStrSubstr({obj, start, len});
+        }
+
         auto *index = emitExpression(index_code);
         if (index->getType() != _builder.getInt32Ty()) {
             index = _builder.CreateIntCast(index, _builder.getInt32Ty(), true, "idx");
