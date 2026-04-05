@@ -74,8 +74,10 @@ true false  // bool → integer (1 / 0)
 +  -  *  /  %          // arithmetic
 == != > < >= <=        // comparison (works on int and string)
 && ||  !               // logical (short-circuit)
+&  |  ^  ~             // bitwise AND, OR, XOR, NOT
 ++ --                   // prefix increment/decrement
 =  :=                   // assignment / define-assignment
++= -= *= /= %= &= |= ^=  // compound assignment
 .  ::                   // field access / enum variant
 >> <>                   // stream push / in-place transform
 ( ) [ ] { } , ; : ->   // delimiters
@@ -285,6 +287,34 @@ name := match (c) {
 
 Match supports enum variants, integer literals, wildcard `_`, string comparison, and data enum destructuring with field binding.
 
+### Nil Literal
+
+```pgl
+x := maybe_get(flag);
+if (x == nil) {
+    println("not found");
+}
+```
+
+`nil` is a null pointer constant. Comparison with nil uses pointer equality, not strcmp.
+
+## Index Access and Slicing
+
+```pgl
+// Array indexing
+arr := make_dyn_array();
+arr.push(10);
+x := arr[0];        // 10
+arr[0] = 99;         // index assignment
+
+// String character access (returns int)
+s := "hello";
+ch := s[0];          // 104 ('h')
+
+// String slicing [start:end]
+sub := s[0:3];       // "hel"
+```
+
 ## Modules and Imports
 
 ### Package Declaration
@@ -493,6 +523,29 @@ Low-level state management for manual pipeline implementations:
 | `reflect_annotation_key(type, i)` | Annotation key |
 | `reflect_annotation_value(type, i)` | Annotation value |
 
+### Method Call Syntax
+
+Built-in types support method-call syntax as syntactic sugar:
+
+```pgl
+arr := make_dyn_array();
+arr.push(10);           // dyn_array_push(arr, 10)
+x := arr.get(0);        // dyn_array_get(arr, 0)
+n := arr.size();         // dyn_array_size(arr)
+
+m := make_map();
+m.set("key", "val");    // map_set(m, "key", "val")
+v := m.get("key");      // map_get(m, "key")
+for k in m { ... }       // iterates over keys
+
+s := "hello";
+n := s.len();            // str_len(s)
+ch := s.char_at(0);      // str_char_at(s, 0)
+sub := s.substr(0, 3);   // str_substr(s, 0, 3)
+```
+
+Supported types: DynArray, DynStrArray, HashMap, IntMap, StringBuilder, string.
+
 ## Semantic Analysis
 
 The `sema` module validates before LLVM lowering:
@@ -659,5 +712,7 @@ println(apply(fn, 3)); // pass as argument
 ## Planned / Not Yet Implemented
 
 - Range patterns in match expressions
+- Defer / cleanup statements
+- Error handling with Result type
 - Auto-generated pipeline `run` state machine
 - Full pipeline body syntax (`type X pipeline { def in T; ... }`)
