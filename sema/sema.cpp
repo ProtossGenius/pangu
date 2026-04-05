@@ -23,7 +23,9 @@ TypeCat categorize(const std::string &type_name) {
         return TypeCat::INT;
     if (type_name == "string")                       return TypeCat::STRING;
     if (type_name == "ptr" || type_name == "func" ||
-        type_name == "DynArray" || type_name == "DynStrArray")
+        type_name == "DynArray" || type_name == "DynStrArray" ||
+        type_name == "HashMap" || type_name == "IntMap" ||
+        type_name == "StringBuilder")
                                                      return TypeCat::PTR;
     return TypeCat::STRUCT; // struct or enum name
 }
@@ -208,14 +210,16 @@ std::string builtinReturnType(const std::string &name) {
         return "int";
     }
     // HashMap
-    if (name == "make_map" || name == "make_int_map") return "ptr";
+    if (name == "make_map") return "HashMap";
+    if (name == "make_int_map") return "IntMap";
     if (name == "map_get") return "string";
     if (name == "map_has" || name == "map_size") return "int";
+    if (name == "map_keys" || name == "int_map_keys") return "DynStrArray";
     if (name == "int_map_get" || name == "int_map_has" || name == "int_map_size") return "int";
     // Dynamic array
     if (name == "make_dyn_array") return "DynArray";
     if (name == "make_dyn_str_array") return "DynStrArray";
-    if (name == "make_str_builder") return "ptr";
+    if (name == "make_str_builder") return "StringBuilder";
     if (name == "sb_build") return "string";
     if (name == "sb_len") return "int";
     if (name == "dyn_array_get" || name == "dyn_array_size" || name == "dyn_array_pop") return "int";

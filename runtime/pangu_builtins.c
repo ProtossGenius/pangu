@@ -5,6 +5,10 @@
 #include <dirent.h>
 #include <unistd.h>
 
+// Forward declarations for cross-references
+void *make_dyn_str_array(void);
+void  dyn_str_array_push(void *ap, const char *val);
+
 // --- Backtrace with PGL source location (Linux) ---
 
 // JIT function address → source location registry
@@ -484,6 +488,17 @@ void map_delete(void *mp, const char *key) {
     }
 }
 
+void *map_keys(void *mp) {
+    HashMap *m = (HashMap *)mp;
+    void *arr = make_dyn_str_array();
+    for (int i = 0; i < m->capacity; i++) {
+        if (m->buckets[i].occupied) {
+            dyn_str_array_push(arr, m->buckets[i].key);
+        }
+    }
+    return arr;
+}
+
 // ── Integer Map: string → int ──
 
 typedef struct {
@@ -566,6 +581,17 @@ int int_map_has(void *mp, const char *key) {
 
 int int_map_size(void *mp) {
     return ((IntMap *)mp)->size;
+}
+
+void *int_map_keys(void *mp) {
+    IntMap *m = (IntMap *)mp;
+    void *arr = make_dyn_str_array();
+    for (int i = 0; i < m->capacity; i++) {
+        if (m->buckets[i].occupied) {
+            dyn_str_array_push(arr, m->buckets[i].key);
+        }
+    }
+    return arr;
 }
 
 // ── Dynamic Array (resizable int array) ──

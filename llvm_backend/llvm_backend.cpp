@@ -402,6 +402,8 @@ class ModuleBuilder {
             llvm::FunctionType::get(i32_ty, {ptr_ty}, false));
         _module->getOrInsertFunction("map_delete",
             llvm::FunctionType::get(void_ty, {ptr_ty, ptr_ty}, false));
+        _module->getOrInsertFunction("map_keys",
+            llvm::FunctionType::get(ptr_ty, {ptr_ty}, false));
 
         // ── IntMap (string→int) ──
         _module->getOrInsertFunction("make_int_map",
@@ -414,6 +416,8 @@ class ModuleBuilder {
             llvm::FunctionType::get(i32_ty, {ptr_ty, ptr_ty}, false));
         _module->getOrInsertFunction("int_map_size",
             llvm::FunctionType::get(i32_ty, {ptr_ty}, false));
+        _module->getOrInsertFunction("int_map_keys",
+            llvm::FunctionType::get(ptr_ty, {ptr_ty}, false));
 
         // ── Dynamic Array (int) ──
         _module->getOrInsertFunction("make_dyn_array",
@@ -3082,6 +3086,24 @@ class ModuleBuilder {
                      _struct_types.count(rhs->getLeft()->getValue()) != 0) {
                 _variable_sem_types[name] = rhs->getLeft()->getValue();
             }
+            // Pattern 4: method call obj.method() — infer from method return type
+            else if (rhs->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                     rhs->getOper() == ".") {
+                std::string obj_name, method_name;
+                const pgcodes::GCode *m_args = nullptr;
+                if (extractQualifiedCall(rhs, obj_name, method_name, m_args)) {
+                    auto obj_it = _variable_sem_types.find(obj_name);
+                    if (obj_it != _variable_sem_types.end()) {
+                        std::string resolved = resolveMethodName(obj_it->second, method_name);
+                        if (!resolved.empty()) {
+                            std::string ret_type = inferMethodReturnType(resolved);
+                            if (!ret_type.empty()) {
+                                _variable_sem_types[name] = ret_type;
+                            }
+                        }
+                    }
+                }
+            }
             if (!rhs_callee.empty()) {
                 if (rhs_callee == "make_dyn_array") {
                     _variable_sem_types[name] = "DynArray";
@@ -4232,6 +4254,11 @@ class ModuleBuilder {
             _builder.CreateCall(fn, {args[0], args[1]});
             return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
         }
+        if (callee == "map_keys") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("map_keys");
+            return _builder.CreateCall(fn, {args[0]}, "map_keys");
+        }
         // ── IntMap (string→int) builtins ──
         if (callee == "make_int_map") {
             auto *fn = _module->getFunction("make_int_map");
@@ -4257,6 +4284,11 @@ class ModuleBuilder {
             auto args = emitCallArgs(args_code);
             auto *fn = _module->getFunction("int_map_size");
             return _builder.CreateCall(fn, {args[0]}, "imap_sz");
+        }
+        if (callee == "int_map_keys") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("int_map_keys");
+            return _builder.CreateCall(fn, {args[0]}, "imap_keys");
         }
         // ── Dynamic Array (int) builtins ──
         if (callee == "make_dyn_array") {
@@ -4450,6 +4482,8 @@ class ModuleBuilder {
             if (method_name == "set")    return "map_set";
             if (method_name == "has")    return "map_has";
             if (method_name == "size")   return "map_size";
+            if (method_name == "delete") return "map_delete";
+            if (method_name == "keys")   return "map_keys";
         }
         // IntMap methods
         if (type_name == "IntMap") {
@@ -4457,6 +4491,7 @@ class ModuleBuilder {
             if (method_name == "set")    return "int_map_set";
             if (method_name == "has")    return "int_map_has";
             if (method_name == "size")   return "int_map_size";
+            if (method_name == "keys")   return "int_map_keys";
         }
         // StringBuilder methods
         if (type_name == "StringBuilder") {
@@ -4476,6 +4511,17 @@ class ModuleBuilder {
             if (method_name == "eq")          return "str_eq";
             if (method_name == "concat")      return "str_concat";
         }
+        return "";
+    }
+
+    // Infer the semantic return type of a resolved method/function name
+    std::string inferMethodReturnType(const std::string &func_name) {
+        if (func_name == "map_keys" || func_name == "int_map_keys")
+            return "DynStrArray";
+        if (func_name == "map_get" || func_name == "str_concat" ||
+            func_name == "str_substr" || func_name == "str_replace" ||
+            func_name == "sb_build" || func_name == "dyn_str_array_get")
+            return "string";
         return "";
     }
 
