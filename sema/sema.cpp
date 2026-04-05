@@ -1038,6 +1038,50 @@ class ProgramChecker {
                     }
                 }
             }
+
+            // Instance method call: var.method(args) — infer from semantic type
+            if (!callee.empty()) {
+                std::string owner_type = inferType(left);
+                std::string ret = inferMethodReturnType(owner_type, callee);
+                if (!ret.empty()) return ret;
+            }
+        }
+        return "";
+    }
+
+    // Infer return type of a method call on a given owner type
+    std::string inferMethodReturnType(const std::string &owner_type,
+                                       const std::string &method) {
+        if (owner_type == "HashMap") {
+            if (method == "keys") return "DynStrArray";
+            if (method == "get") return "string";
+        }
+        if (owner_type == "IntMap") {
+            if (method == "keys") return "DynStrArray";
+            if (method == "get") return "int";
+        }
+        if (owner_type == "DynArray") {
+            if (method == "get") return "int";
+            if (method == "size") return "int";
+        }
+        if (owner_type == "DynStrArray") {
+            if (method == "get") return "string";
+            if (method == "size") return "int";
+        }
+        if (owner_type == "StringBuilder") {
+            if (method == "build") return "string";
+            if (method == "len") return "int";
+        }
+        if (owner_type == "string") {
+            if (method == "len") return "int";
+            if (method == "char_at") return "int";
+            if (method == "index_of") return "int";
+            if (method == "substr") return "string";
+            if (method == "starts_with") return "int";
+            if (method == "ends_with") return "int";
+            if (method == "replace") return "string";
+            if (method == "eq") return "int";
+            if (method == "concat") return "string";
         }
         return "";
     }
