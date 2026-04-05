@@ -2572,6 +2572,8 @@ class ModuleBuilder {
                 return llvm::ConstantInt::get(_builder.getInt32Ty(), 1);
             if (name == "false")
                 return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+            if (name == "nil")
+                return llvm::ConstantPointerNull::get(_builder.getPtrTy());
             // Pipeline control flow constants
             if (name == "CONTINUE")
                 return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
@@ -2858,6 +2860,21 @@ class ModuleBuilder {
 
         // String comparison: use strcmp for == and !=
         if (left->getType()->isPointerTy() && right->getType()->isPointerTy()) {
+            // Nil comparison: use pointer comparison, not strcmp
+            bool left_is_nil = llvm::isa<llvm::ConstantPointerNull>(left);
+            bool right_is_nil = llvm::isa<llvm::ConstantPointerNull>(right);
+            if (left_is_nil || right_is_nil) {
+                llvm::Value *cmp = nullptr;
+                if (oper == "==") {
+                    cmp = _builder.CreateICmpEQ(left, right, "nilcmp");
+                } else if (oper == "!=") {
+                    cmp = _builder.CreateICmpNE(left, right, "nilcmp");
+                } else {
+                    throw std::runtime_error(
+                        "unsupported nil comparison operator: " + oper);
+                }
+                return _builder.CreateZExt(cmp, _builder.getInt32Ty(), "booltmp");
+            }
             auto *cmp_result = _builder.CreateCall(getStrcmp(), {left, right},
                                                    "strcmp");
             llvm::Value *cmp = nullptr;
@@ -2890,6 +2907,17 @@ class ModuleBuilder {
                     "unsupported string comparison operator: " + oper);
             }
             return _builder.CreateZExt(cmp, _builder.getInt32Ty(), "booltmp");
+        }
+
+        // Handle type mismatch: cast int to ptr or ptr to int for comparison
+        if (left->getType()->isPointerTy() != right->getType()->isPointerTy()) {
+            if (left->getType()->isPointerTy()) {
+                left = _builder.CreatePtrToInt(left, _builder.getInt64Ty(), "p2i");
+                right = _builder.CreateIntCast(right, _builder.getInt64Ty(), true, "i2l");
+            } else {
+                right = _builder.CreatePtrToInt(right, _builder.getInt64Ty(), "p2i");
+                left = _builder.CreateIntCast(left, _builder.getInt64Ty(), true, "i2l");
+            }
         }
 
         llvm::Value *cmp = nullptr;
