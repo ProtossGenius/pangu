@@ -485,6 +485,8 @@ class ModuleBuilder {
             llvm::FunctionType::get(void_ty, {ptr_ty, i32_ty, ptr_ty}, false));
         _module->getOrInsertFunction("dyn_str_array_size",
             llvm::FunctionType::get(i32_ty, {ptr_ty}, false));
+        _module->getOrInsertFunction("str_join",
+            llvm::FunctionType::get(ptr_ty, {ptr_ty, ptr_ty}, false));
 
         // ── String Builder ──
         _module->getOrInsertFunction("make_str_builder",
@@ -4740,6 +4742,13 @@ class ModuleBuilder {
                 {_builder.getPtrTy(), _builder.getPtrTy()},
                 args);
         }
+        if (callee == "str_join") {
+            auto args = emitCallArgs(args_code);
+            if (args.size() != 2)
+                throw std::runtime_error("str_join expects 2 arguments (array, separator)");
+            return _builder.CreateCall(
+                _module->getFunction("str_join"), {args[0], args[1]}, "joined");
+        }
         if (callee == "str_repeat") {
             auto args = emitCallArgs(args_code);
             if (args.size() != 2)
@@ -5258,6 +5267,7 @@ class ModuleBuilder {
             if (method_name == "get")    return "dyn_str_array_get";
             if (method_name == "set")    return "dyn_str_array_set";
             if (method_name == "size" || method_name == "len") return "dyn_str_array_size";
+            if (method_name == "join")   return "str_join";
         }
         // HashMap methods
         if (type_name == "HashMap") {
@@ -5315,7 +5325,7 @@ class ModuleBuilder {
             func_name == "str_substr" || func_name == "str_replace" ||
             func_name == "str_replace_all" || func_name == "str_trim" ||
             func_name == "str_to_upper" || func_name == "str_to_lower" ||
-            func_name == "str_repeat" ||
+            func_name == "str_repeat" || func_name == "str_join" ||
             func_name == "sb_build" || func_name == "dyn_str_array_get")
             return "string";
         if (func_name == "str_contains" || func_name == "str_ends_with" ||
@@ -5413,6 +5423,10 @@ class ModuleBuilder {
             return emitRuntimeCall("str_replace_all",
                 _builder.getPtrTy(),
                 {_builder.getPtrTy(), _builder.getPtrTy(), _builder.getPtrTy()}, args);
+        }
+        if (func_name == "str_join") {
+            return _builder.CreateCall(
+                _module->getFunction("str_join"), {args[0], args[1]}, "joined");
         }
         throw std::runtime_error("method function not found: " + func_name);
     }

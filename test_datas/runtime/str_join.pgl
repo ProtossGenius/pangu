@@ -1,0 +1,23 @@
+package main;
+
+func main() {
+    // str_join function
+    words := ["hello", "world", "test"];
+    println(str_join(words, ", "));
+    println(str_join(words, " "));
+    println(str_join(words, ""));
+
+    // Method call form
+    parts := ["a", "b", "c", "d"];
+    println(parts.join("-"));
+    println(parts.join("::"));
+
+    // Single element
+    single := ["only"];
+    println(single.join(", "));
+
+    // Round-trip: split then join
+    csv := "one,two,three";
+    arr := str_split(csv, ",");
+    println(arr.join(" | "));
+}

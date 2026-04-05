@@ -683,6 +683,35 @@ int dyn_str_array_size(void *ap) {
     return ((DynStrArray *)ap)->size;
 }
 
+// str_join(arr, sep) → join all strings in arr with separator sep
+const char *str_join(void *ap, const char *sep) {
+    DynStrArray *a = (DynStrArray *)ap;
+    if (a->size == 0) {
+        char *empty = (char *)malloc(1);
+        empty[0] = '\0';
+        return empty;
+    }
+    int sep_len = strlen(sep);
+    int total = 0;
+    for (int i = 0; i < a->size; i++) {
+        total += strlen(a->data[i]);
+        if (i > 0) total += sep_len;
+    }
+    char *result = (char *)malloc(total + 1);
+    int pos = 0;
+    for (int i = 0; i < a->size; i++) {
+        if (i > 0) {
+            memcpy(result + pos, sep, sep_len);
+            pos += sep_len;
+        }
+        int slen = strlen(a->data[i]);
+        memcpy(result + pos, a->data[i], slen);
+        pos += slen;
+    }
+    result[pos] = '\0';
+    return result;
+}
+
 // ── String Builder ──
 
 typedef struct {

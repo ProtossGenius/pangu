@@ -76,6 +76,7 @@ const std::set<std::string> BUILTIN_FUNCTIONS = {
     "str_index_of", "str_starts_with", "str_ends_with", "str_replace",
     "str_contains", "str_trim", "str_to_upper", "str_to_lower",
     "str_split", "str_repeat", "str_count", "str_replace_all",
+    "str_join",
     "int_to_str", "str_to_int", "int",
     "read_file", "write_file",
     "str_char_at", "char_to_str",
@@ -137,6 +138,7 @@ size_t builtinParamCount(const std::string &name) {
     if (name == "str_contains") return 2;
     if (name == "str_split") return 2;
     if (name == "str_count") return 2;
+    if (name == "str_join") return 2;
     if (name == "str_repeat") return 2;
     if (name == "str_trim" || name == "str_to_upper" || name == "str_to_lower") return 1;
     if (name == "str_replace_all") return 3;
@@ -221,7 +223,7 @@ std::string builtinReturnType(const std::string &name) {
         name == "pipeline_output_get" || name == "reflect_type_name" ||
         name == "reflect_field_name" || name == "reflect_field_type" ||
         name == "reflect_annotation_key" || name == "reflect_annotation_value" ||
-        name == "sprintf") {
+        name == "sprintf" || name == "str_join") {
         return "string";
     }
     // Functions returning ptr
