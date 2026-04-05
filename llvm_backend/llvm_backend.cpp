@@ -1740,7 +1740,7 @@ class ModuleBuilder {
                           std::vector<const pgcodes::GCode *> &arms) {
         if (code == nullptr) return;
         if (code->getValueType() == pgcodes::ValueType::NOT_VALUE &&
-            code->getOper() == ";") {
+            (code->getOper() == ";" || code->getOper() == ",")) {
             collectMatchArms(code->getLeft(), arms);
             collectMatchArms(code->getRight(), arms);
             return;
