@@ -1290,6 +1290,9 @@ class ModuleBuilder {
         if (oper == "for_in") {
             return emitForInStatement(code);
         }
+        if (oper == "for_inf") {
+            return emitInfiniteLoop(code);
+        }
         if (oper == "switch") {
             return emitSwitchStatement(code);
         }
@@ -1397,6 +1400,31 @@ class ModuleBuilder {
         }
 
         // End block
+        function->insert(function->end(), end_block);
+        _builder.SetInsertPoint(end_block);
+        _terminated = false;
+        return llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+    }
+
+    // ── for { body } — infinite loop (break to exit) ─────────────────
+    llvm::Value *emitInfiniteLoop(const pgcodes::GCode *code) {
+        auto *function = _current_function;
+
+        auto *body_block = llvm::BasicBlock::Create(*_context, "loop.body", function);
+        auto *end_block  = llvm::BasicBlock::Create(*_context, "loop.end");
+
+        _builder.CreateBr(body_block);
+
+        _builder.SetInsertPoint(body_block);
+        _terminated = false;
+        _loop_stack.push_back({end_block, body_block});
+        emitStatement(code->getRight());
+        _loop_stack.pop_back();
+        if (!_terminated &&
+            _builder.GetInsertBlock()->getTerminator() == nullptr) {
+            _builder.CreateBr(body_block);
+        }
+
         function->insert(function->end(), end_block);
         _builder.SetInsertPoint(end_block);
         _terminated = false;

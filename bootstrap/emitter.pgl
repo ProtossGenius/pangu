@@ -638,6 +638,18 @@ func emit_stmt(ctx string, id int, ind int) string {
         return sb_build(sb);
     }
 
+    // INFINITE LOOP: for { body }
+    if (k == 23) {
+        body := emit_block(ctx, nright(ctx, id), ind);
+        sb := make_str_builder();
+        sb_append(sb, pad);
+        sb_append(sb, "for (;;) {\n");
+        sb_append(sb, body);
+        sb_append(sb, pad);
+        sb_append(sb, "}\n");
+        return sb_build(sb);
+    }
+
     // FOR
     if (k == 12) {
         init_id := nextra(ctx, id);

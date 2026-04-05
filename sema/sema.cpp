@@ -670,6 +670,11 @@ class ProgramChecker {
             checkStatement(code->getRight());
             return;
         }
+        if (oper == "for_inf") {
+            // for { body } — infinite loop
+            checkStatement(code->getRight());
+            return;
+        }
         if (oper == "for_in") {
             // for x in iterable { body }
             // for i, x in iterable { body }

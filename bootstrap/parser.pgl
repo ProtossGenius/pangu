@@ -797,6 +797,16 @@ func parse_for(tok_types string, tok_values string, tok_lines string,
                lefts string, rights string, extras string,
                ncount string) int {
     p_advance(pos_arr); // skip 'for'
+
+    // for { body } — infinite loop
+    if (p_is_sym(tok_types, tok_values, pos_arr, "{") == 1) {
+        body := parse_block(tok_types, tok_values, tok_lines, pos_arr, src_file,
+                            kinds, svals, ivals, lefts, rights, extras, ncount);
+        nd := node_new(kinds, svals, ivals, lefts, rights, extras, ncount);
+        node_set(kinds, svals, ivals, lefts, rights, extras, nd, 23, "", 0, -1, body, -1);
+        return nd;
+    }
+
     p_expect_sym(tok_types, tok_values, tok_lines, pos_arr, "(", src_file);
 
     // Init: ident := expr or ident = expr

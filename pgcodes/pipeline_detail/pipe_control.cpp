@@ -113,6 +113,13 @@ void PipeFor::on_WAIT_HEADER(IPipelineFactory *factory, PData &&data) {
         factory->pushProduct(PProduct(new GCode()), pack_as_left);
         return;
     }
+    // for { body }  -- infinite loop
+    if (lexer::makeSymbol("{") == *lex) {
+        topProduct->setOper("for_inf");
+        factory->undealData(std::move(data));
+        topProduct->setStep(int(Steps::WAIT_ACTION));
+        return;
+    }
     // for x in expr { body }  -- range-based
     if (type == lexer::ELexPipeline::Identifier) {
         topProduct->setOper("for_in");
