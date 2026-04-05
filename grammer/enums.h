@@ -17,6 +17,7 @@ enum EGrammer {
     TypeFunc,    // type func(...) ...
     Func,        // func name(...) (...)
     CodeBlock,   // {code...}
+    Const,       // const NAME = VALUE;
 };
 
 }

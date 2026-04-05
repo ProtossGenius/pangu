@@ -623,6 +623,9 @@ void PipePackage::accept(IPipelineFactory *factory, PData &&data) {
     if (lexer::makeIdentifier("impl") == *lex) {
         return factory->choicePipeline(EGrammer::Impl);
     }
+    if (lexer::makeIdentifier("const") == *lex) {
+        return factory->choicePipeline(EGrammer::Const);
+    }
 
     if (lex->typeId() == lexer::ELexPipeline::Space ||
         lex->typeId() == lexer::ELexPipeline::Comments ||
@@ -637,6 +640,89 @@ void PipeIgnore::createProduct(IPipelineFactory *factory) {
 }
 void PipeIgnore::accept(IPipelineFactory *factory, PData &&data) {
     factory->packProduct();
+}
+
+// --- Global constant: const NAME = VALUE; ---
+static std::string s_const_name;
+static GPackage::ConstValue s_const_value;
+static bool s_const_negate = false;
+
+static const pglang::ProductPack PACK_CONST = [](auto factory, auto pro) {
+    auto *pkg = static_cast<GPackage *>(factory->getTopProduct());
+    pkg->addConstant(s_const_name, s_const_value);
+};
+
+void PipeConst::createProduct(IPipelineFactory *factory) {
+    s_const_name.clear();
+    s_const_value = {};
+    s_const_negate = false;
+    factory->pushProduct(PProduct(new GIgnore()), PACK_CONST);
+}
+
+enum class ConstStep {
+    READ_CONST = 0,
+    READ_NAME,
+    WAIT_ASSIGN,
+    READ_VALUE,
+    WAIT_SEMI,
+};
+
+void PipeConst::accept(IPipelineFactory *factory, PData &&data) {
+    GET_LEX(data);
+    auto *topProduct = factory->getTopProduct();
+    if (lexer::ELexPipeline::Space == type) return;
+
+    switch (topProduct->getStep()) {
+    case int(ConstStep::READ_CONST):
+        // skip the 'const' keyword itself
+        topProduct->setStep(int(ConstStep::READ_NAME));
+        return;
+    case int(ConstStep::READ_NAME):
+        if (type != lexer::ELexPipeline::Identifier) {
+            factory->onFail("const: expected identifier name, got: " + lex->to_string());
+        }
+        s_const_name = str;
+        topProduct->setStep(int(ConstStep::WAIT_ASSIGN));
+        return;
+    case int(ConstStep::WAIT_ASSIGN):
+        if (makeSymbol("=") != *lex) {
+            factory->onFail("const: expected '=', got: " + lex->to_string());
+        }
+        topProduct->setStep(int(ConstStep::READ_VALUE));
+        return;
+    case int(ConstStep::READ_VALUE):
+        if (type == lexer::ELexPipeline::Number) {
+            s_const_value.kind = GPackage::ConstValue::INT;
+            int64_t v = std::stoll(str);
+            s_const_value.int_val = s_const_negate ? -v : v;
+            s_const_negate = false;
+        } else if (type == lexer::ELexPipeline::String) {
+            s_const_value.kind = GPackage::ConstValue::STRING;
+            s_const_value.str_val = str;
+        } else if (type == lexer::ELexPipeline::Char) {
+            s_const_value.kind = GPackage::ConstValue::CHAR;
+            s_const_value.int_val = static_cast<int64_t>(str[0]);
+        } else if (type == lexer::ELexPipeline::Identifier && str == "true") {
+            s_const_value.kind = GPackage::ConstValue::INT;
+            s_const_value.int_val = 1;
+        } else if (type == lexer::ELexPipeline::Identifier && str == "false") {
+            s_const_value.kind = GPackage::ConstValue::INT;
+            s_const_value.int_val = 0;
+        } else if (makeSymbol("-") == *lex) {
+            s_const_negate = true;
+            return; // stay in READ_VALUE
+        } else {
+            factory->onFail("const: expected literal value, got: " + lex->to_string());
+        }
+        topProduct->setStep(int(ConstStep::WAIT_SEMI));
+        return;
+    case int(ConstStep::WAIT_SEMI):
+        if (makeSymbol(";") != *lex) {
+            factory->onFail("const: expected ';', got: " + lex->to_string());
+        }
+        factory->packProduct();
+        return;
+    }
 }
 
 enum class ImplStep {

@@ -474,6 +474,14 @@ class ProgramChecker {
                     _interface_names.insert(giface->name());
                 }
             }
+            // Collect constants
+            for (const auto &kv : unit.package->constants()) {
+                if (kv.second.kind == grammer::GPackage::ConstValue::STRING) {
+                    _constant_types[kv.first] = "string";
+                } else {
+                    _constant_types[kv.first] = "int";
+                }
+            }
         }
     }
 
@@ -930,6 +938,10 @@ class ProgramChecker {
             // Variable reference
             auto it = _defined_vars.find(name);
             if (it != _defined_vars.end()) return it->second;
+
+            // Constant reference
+            auto ct_it = _constant_types.find(name);
+            if (ct_it != _constant_types.end()) return ct_it->second;
 
             // Function reference (bare function name used as value)
             {
@@ -1475,7 +1487,7 @@ class ProgramChecker {
         if (_current_imports != nullptr && _current_imports->count(name) != 0) {
             return;
         }
-        if (_defined_vars.count(name) == 0) {
+        if (_defined_vars.count(name) == 0 && _constant_types.count(name) == 0) {
             emitError(node->location(), "undefined variable '" + name + "'",
                       name.size());
         }
@@ -1633,6 +1645,7 @@ class ProgramChecker {
     std::set<std::string>                       _interface_names;
     std::set<std::string>                       _generic_type_params; // active type params
     StructFieldMap                              _struct_fields;
+    std::map<std::string, std::string>          _constant_types; // name → "int"|"string"
 };
 
 } // namespace

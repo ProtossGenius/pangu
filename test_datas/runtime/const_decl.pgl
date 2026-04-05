@@ -1,0 +1,26 @@
+package main;
+const MAX = 100;
+const NAME = "Pangu";
+const NEG = -42;
+const YES = true;
+const NO = false;
+const CH = 'A';
+
+func main() {
+    println(MAX);
+    println(NAME);
+    println(NEG);
+    println(YES);
+    println(NO);
+    println(CH);
+
+    x := MAX + 10;
+    println(x);
+
+    msg := "Hello ${NAME}!";
+    println(msg);
+
+    if (YES) {
+        println("const bool works");
+    }
+}

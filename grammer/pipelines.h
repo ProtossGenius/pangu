@@ -37,6 +37,7 @@ GRAMMER_CLASS(Ignore);
 GRAMMER_CLASS(VarArray);
 GRAMMER_CLASS(TypeFunc);
 GRAMMER_CLASS(Func);
+GRAMMER_CLASS(Const);
 
 static Reg __reg_pipe_CodeBlock([]() {
     GRAMMER_PIPElINES[ EGrammer::CodeBlock ] = []() {

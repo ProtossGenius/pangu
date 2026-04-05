@@ -94,6 +94,7 @@ class ModuleBuilder {
 
     void buildAllFunctions() {
         declareArgcArgvGlobals();
+        declareConstants();
         declareStructTypes();
         declareEnumTypes();
         declareInterfaceTypes();
@@ -192,6 +193,46 @@ class ModuleBuilder {
             llvm::ConstantPointerNull::get(
                 llvm::PointerType::get(*_context, 0)),
             "__pangu_argv");
+    }
+
+    void declareConstants() {
+        for (const auto &unit : _program.packages) {
+            const auto &pkg = *unit.package;
+            for (const auto &kv : pkg.constants()) {
+                const std::string &name = kv.first;
+                const auto &val = kv.second;
+                if (val.kind == grammer::GPackage::ConstValue::STRING) {
+                    // Create global string data
+                    auto *str_data = llvm::ConstantDataArray::getString(
+                        *_context, val.str_val, true);
+                    auto *str_gv = new llvm::GlobalVariable(
+                        *_module, str_data->getType(), true,
+                        llvm::GlobalVariable::PrivateLinkage,
+                        str_data, ".str.const." + name);
+                    // Create a constant GEP to get ptr to first char
+                    auto *zero = llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+                    llvm::Constant *indices[] = {zero, zero};
+                    auto *str_ptr = llvm::ConstantExpr::getInBoundsGetElementPtr(
+                        str_data->getType(), str_gv, indices);
+                    // Store as global ptr constant
+                    auto *gv = new llvm::GlobalVariable(
+                        *_module, _builder.getPtrTy(), true,
+                        llvm::GlobalVariable::InternalLinkage,
+                        str_ptr, "const." + name);
+                    _global_constants[name] = gv;
+                    _global_const_is_string[name] = true;
+                } else {
+                    // INT or CHAR
+                    auto *gv = new llvm::GlobalVariable(
+                        *_module, _builder.getInt32Ty(), true,
+                        llvm::GlobalVariable::InternalLinkage,
+                        llvm::ConstantInt::get(_builder.getInt32Ty(), val.int_val),
+                        "const." + name);
+                    _global_constants[name] = gv;
+                    _global_const_is_string[name] = false;
+                }
+            }
+        }
     }
 
     // --- DWARF Debug Info ---
@@ -2616,8 +2657,22 @@ class ModuleBuilder {
                         _builder.CreateCall(sb_app, {sb, val});
                     }
                 } else {
-                    throw std::runtime_error(
-                        "string interpolation: unknown variable '" + expr_str + "'");
+                    // Check global constants
+                    auto gc_it = _global_constants.find(expr_str);
+                    if (gc_it != _global_constants.end()) {
+                        bool is_str = _global_const_is_string.count(expr_str) &&
+                                      _global_const_is_string[expr_str];
+                        if (is_str) {
+                            auto *val = _builder.CreateLoad(_builder.getPtrTy(), gc_it->second, expr_str);
+                            _builder.CreateCall(sb_app, {sb, val});
+                        } else {
+                            auto *val = _builder.CreateLoad(_builder.getInt32Ty(), gc_it->second, expr_str);
+                            _builder.CreateCall(sb_app_int, {sb, val});
+                        }
+                    } else {
+                        throw std::runtime_error(
+                            "string interpolation: unknown variable '" + expr_str + "'");
+                    }
                 }
                 continue;
             }
@@ -2666,6 +2721,16 @@ class ModuleBuilder {
             }
             auto it = _variables.find(name);
             if (it == _variables.end()) {
+                // Check global constants
+                auto gc_it = _global_constants.find(name);
+                if (gc_it != _global_constants.end()) {
+                    auto *gv = gc_it->second;
+                    bool is_str = _global_const_is_string.count(name) &&
+                                  _global_const_is_string[name];
+                    auto *load_type = is_str ? (llvm::Type*)_builder.getPtrTy()
+                                             : (llvm::Type*)_builder.getInt32Ty();
+                    return _builder.CreateLoad(load_type, gv, name);
+                }
                 // Check if it's a function reference (function as value)
                 auto *func = resolveCurrentFunction(name);
                 if (func) return wrapFuncAsClosure(func);
@@ -5969,6 +6034,9 @@ class ModuleBuilder {
     bool                                      _terminated = false;
     llvm::GlobalVariable                      *_argc_global = nullptr;
     llvm::GlobalVariable                      *_argv_global = nullptr;
+    // Global constants: name → GlobalVariable (loaded as needed)
+    std::map<std::string, llvm::GlobalVariable *> _global_constants;
+    std::map<std::string, bool>                   _global_const_is_string;
     // Generics: type parameter substitution map (active during monomorphization)
     std::map<std::string, std::string>         _type_param_map;
     // Generics: template storage (key → generic function + package unit)

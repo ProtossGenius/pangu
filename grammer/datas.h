@@ -174,6 +174,21 @@ class GPackage : public IGrammer {
         impls.mergeFrom(other.impls);
         for (auto &kv : other._imports)
             _imports[kv.first] = std::move(kv.second);
+        for (auto &kv : other._constants)
+            _constants[kv.first] = kv.second;
+    }
+
+    // Constant value: int, string, or char
+    struct ConstValue {
+        enum Kind { INT, STRING, CHAR } kind;
+        int64_t int_val = 0;
+        std::string str_val;
+    };
+    void addConstant(const std::string &name, const ConstValue &val) {
+        _constants[name] = val;
+    }
+    const std::map<std::string, ConstValue> &constants() const {
+        return _constants;
     }
 
     GFunctionContainer  functions;
@@ -185,6 +200,7 @@ class GPackage : public IGrammer {
 
   private:
     std::map<std::string, PImport> _imports;
+    std::map<std::string, ConstValue> _constants;
 };
 // import "package path" [as alias_name];
 class GImport : public IGrammer {
