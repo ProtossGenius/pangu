@@ -4236,10 +4236,10 @@ class ModuleBuilder {
                 throw std::runtime_error("str_substr expects 3 arguments");
             return emitStrSubstr(args);
         }
-        if (callee == "int_to_str") {
+        if (callee == "int_to_str" || callee == "str") {
             auto args = emitCallArgs(args_code);
             if (args.size() != 1)
-                throw std::runtime_error("int_to_str expects 1 argument");
+                throw std::runtime_error("int_to_str/str expects 1 argument");
             return emitIntToStr(args);
         }
         if (callee == "str_to_int") {
@@ -4286,10 +4286,10 @@ class ModuleBuilder {
                 throw std::runtime_error("str_char_at expects 2 arguments");
             return emitStrCharAt(args[0], args[1]);
         }
-        if (callee == "char_to_str") {
+        if (callee == "char_to_str" || callee == "chr") {
             auto args = emitCallArgs(args_code);
             if (args.size() != 1)
-                throw std::runtime_error("char_to_str expects 1 argument");
+                throw std::runtime_error("char_to_str/chr expects 1 argument");
             return emitCharToStr(args[0]);
         }
         // Array builtins
