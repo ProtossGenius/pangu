@@ -540,6 +540,7 @@ Low-level state management for manual pipeline implementations:
 | `int_to_str(n)` | Integer to string |
 | `str_to_int(s)` | String to integer |
 | `sprintf(fmt, ...)` | Format string (C printf syntax) |
+| `str_join(arr, sep)` | Join string array with separator |
 
 ### Arrays (Fixed-size)
 
@@ -557,21 +558,27 @@ Low-level state management for manual pipeline implementations:
 | Function | Description |
 |----------|-------------|
 | `make_map()` | Create empty map |
+| `map_of("k1", "v1", ...)` | Create map with initial pairs |
 | `map_set(m, key, val)` | Set key-value pair |
 | `map_get(m, key)` | Get value (empty string if missing) |
 | `map_has(m, key)` | Check key exists (1/0) |
 | `map_size(m)` | Number of entries |
 | `map_delete(m, key)` | Remove entry |
+| `m["key"]` | Subscript read (→ map_get) |
+| `m["key"] = val` | Subscript write (→ map_set) |
 
 ### IntMap (string → int)
 
 | Function | Description |
 |----------|-------------|
 | `make_int_map()` | Create empty int map |
+| `int_map_of("k1", 1, ...)` | Create int map with initial pairs |
 | `int_map_set(m, key, val)` | Set key-value pair |
 | `int_map_get(m, key)` | Get value (0 if missing) |
 | `int_map_has(m, key)` | Check key exists (1/0) |
 | `int_map_size(m)` | Number of entries |
+| `m["key"]` | Subscript read (→ int_map_get) |
+| `m["key"] = val` | Subscript write (→ int_map_set) |
 
 ### Dynamic Array (resizable int)
 
@@ -638,11 +645,22 @@ x := arr.get(0);        // dyn_array_get(arr, 0)
 n := arr.len();          // dyn_array_size(arr)
 n := arr.size();         // same as len()
 
+names := ["alice", "bob", "charlie"];
+println(names.join(", "));  // str_join(names, ", ") → "alice, bob, charlie"
+
 m := make_map();
 m.set("key", "val");    // map_set(m, "key", "val")
 v := m.get("key");      // map_get(m, "key")
 n := m.len();            // map_size(m)
 for k in m { ... }       // iterates over keys
+
+// Map/IntMap subscript syntax
+m["key"] = "value";     // map_set(m, "key", "value")
+v := m["key"];           // map_get(m, "key")
+
+// Map literal constructors
+colors := map_of("red", "#ff0000", "green", "#00ff00");
+scores := int_map_of("math", 95, "eng", 87);
 
 s := "hello";
 n := s.len();            // str_len(s)
