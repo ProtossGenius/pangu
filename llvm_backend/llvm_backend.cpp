@@ -1506,10 +1506,34 @@ class ModuleBuilder {
         std::string varName = varNode->getValue();
 
         // Check semantic type of iterable (if it's a known variable)
-        enum class IterKind { RANGE, STRING, DYN_ARRAY, DYN_STR_ARRAY, HASH_MAP, INT_MAP };
+        enum class IterKind { RANGE, STRING, DYN_ARRAY, DYN_STR_ARRAY, HASH_MAP, INT_MAP, RANGE_FROM_TO };
         IterKind iter_kind = IterKind::RANGE;
         std::string iter_var_name;
-        if (iterNode->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+        llvm::Value *range_start = nullptr; // for RANGE_FROM_TO
+        llvm::Value *range_end   = nullptr;
+
+        // Detect range(start, end) call
+        if (iterNode->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            iterNode->getOper() == "(" && iterNode->getLeft() != nullptr &&
+            iterNode->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER &&
+            iterNode->getLeft()->getValue() == "range") {
+            iter_kind = IterKind::RANGE_FROM_TO;
+            // Extract two args from the call
+            // AST: iterNode(oper="(", left=range, right=("(", left=")", right=",(...)")))
+            auto *argsOuter = iterNode->getRight();
+            const pgcodes::GCode *args = nullptr;
+            if (argsOuter != nullptr && argsOuter->getOper() == "(") {
+                args = argsOuter->getRight();
+            } else {
+                args = argsOuter;
+            }
+            if (args != nullptr && args->getOper() == ",") {
+                range_start = emitExpression(args->getLeft());
+                range_end   = emitExpression(args->getRight());
+            } else {
+                throw std::runtime_error("range() expects 2 arguments: range(start, end)");
+            }
+        } else if (iterNode->getValueType() == pgcodes::ValueType::IDENTIFIER) {
             iter_var_name = iterNode->getValue();
             auto st = _variable_sem_types.find(iter_var_name);
             if (st != _variable_sem_types.end()) {
@@ -1522,7 +1546,9 @@ class ModuleBuilder {
 
         // Evaluate iterable expression
         llvm::Value *iterVal = nullptr;
-        if (iterNode->getValueType() == pgcodes::ValueType::NUMBER) {
+        if (iter_kind == IterKind::RANGE_FROM_TO) {
+            iterVal = range_end; // end value is the "count" for this mode
+        } else if (iterNode->getValueType() == pgcodes::ValueType::NUMBER) {
             iterVal = llvm::ConstantInt::get(_builder.getInt32Ty(),
                                              std::stoi(iterNode->getValue()));
         } else {
@@ -1576,8 +1602,10 @@ class ModuleBuilder {
         // Allocate hidden index counter
         auto *indexAlloca = createVariableSlot(
             varName + ".__idx", _builder.getInt32Ty());
-        _builder.CreateStore(
-            llvm::ConstantInt::get(_builder.getInt32Ty(), 0), indexAlloca);
+        llvm::Value *start_val = (iter_kind == IterKind::RANGE_FROM_TO && range_start)
+            ? range_start
+            : llvm::ConstantInt::get(_builder.getInt32Ty(), 0);
+        _builder.CreateStore(start_val, indexAlloca);
 
         // Allocate loop variable (type depends on collection)
         llvm::Type *var_type = _builder.getInt32Ty();

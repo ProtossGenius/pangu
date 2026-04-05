@@ -108,6 +108,8 @@ const std::set<std::string> BUILTIN_FUNCTIONS = {
     "len", "str", "chr",
     // Control flow
     "defer",
+    // Range
+    "range",
 };
 
 bool isBuiltin(const std::string &name) {
@@ -197,6 +199,7 @@ size_t builtinParamCount(const std::string &name) {
     if (name == "str") return 1;
     if (name == "chr") return 1;
     if (name == "defer") return 1;
+    if (name == "range") return 2;
     return 0;
 }
 

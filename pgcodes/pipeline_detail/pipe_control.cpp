@@ -161,10 +161,43 @@ void PipeFor::on_WAIT_ITER_EXPR(IPipelineFactory *factory, PData &&data) {
         inNode->setLeft(topProduct->releaseLeft());
         inNode->setRight(iterNode);
         topProduct->setLeft(inNode);
-        topProduct->setStep(int(Steps::WAIT_ACTION));
+        // Check if next token is '(' for function call (e.g. range(0, 5))
+        topProduct->setStep(int(Steps::CHECK_ITER_CALL));
         return;
     }
     factory->onFail("'for <var> in' expects identifier, number, or string");
+}
+void PipeFor::on_CHECK_ITER_CALL(IPipelineFactory *factory, PData &&data) {
+    GET_LEX(data);
+    GET_TOP(factory, GCode);
+    if (lexer::ELexPipeline::Space == type) {
+        return;
+    }
+    if (lexer::makeSymbol("(") == *lex) {
+        // It's a function call like range(0, 5) — parse call args as sub-expression
+        factory->undealData(std::move(data));
+        topProduct->setStep(int(Steps::WAIT_ACTION));
+        // Pack lambda: wraps the parsed args into a call node on the iterable
+        auto pack_call = [](IPipelineFactory *f, PProduct &&prod) {
+            GCode *argsNode = static_cast<GCode *>(prod.release());
+            GCode *parent   = static_cast<GCode *>(f->getTopProduct());
+            auto *inNode    = parent->getLeft();
+            if (inNode == nullptr) return;
+            auto *identNode = inNode->releaseRight();
+            // Build: callNode("(", left=identNode, right=argsNode)
+            auto *callNode = new GCode();
+            callNode->setOper("(");
+            callNode->setLeft(identNode);
+            callNode->setRight(argsNode);
+            inNode->setRight(callNode);
+        };
+        factory->choicePipeline(ECodeType::Block);
+        factory->pushProduct(PProduct(new GCode()), pack_call);
+        return;
+    }
+    // Not a call — just go to WAIT_ACTION with the simple iterable
+    factory->undealData(std::move(data));
+    topProduct->setStep(int(Steps::WAIT_ACTION));
 }
 void PipeFor::on_WAIT_ACTION(IPipelineFactory *factory, PData &&data) {
     GET_TOP(factory, GCode);
