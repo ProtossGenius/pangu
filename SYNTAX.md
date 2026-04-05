@@ -57,8 +57,11 @@ JIT and AOT modes.
 42          // integer
 0xFF        // hex integer
 "hello\n"   // string (supports \n \t \\ \" \0 \xNN \0NNN)
+"${name}"   // string interpolation — embeds variable/expression value
 'A'         // char literal → integer (ASCII value)
 true false  // bool → integer (1 / 0)
+[1, 2, 3]   // array literal → DynArray (int elements)
+["a", "b"]  // array literal → DynStrArray (string elements)
 ```
 
 ### Keywords
@@ -187,13 +190,52 @@ func add(a int, b int) int {
 }
 
 func greet(name string) {
-    println(str_concat("Hello, ", name));
+    println("Hello, ${name}");
 }
 
 func main() {
     result := add(1, 2);
     greet("world");
 }
+```
+
+### Multi-Return Values
+
+```pgl
+func divmod(a int, b int) (int, int) {
+    return a / b, a % b;
+}
+
+q, r := divmod(17, 5);   // q=3, r=2
+```
+
+### Global Constants
+
+```pgl
+const MAX_SIZE = 1024;
+const PI_NAME = "pi";
+const NEWLINE = '\n';
+const DEBUG = true;
+```
+
+Constants are compile-time values accessible anywhere in the package.
+
+### Defer
+
+```pgl
+func process() {
+    f := open_file("data.txt");
+    defer(close_file(f));    // runs when function returns
+    // ... work with f ...
+}
+```
+
+### Type Conversion Aliases
+
+```pgl
+n := int("42");        // string → int (alias for str_to_int)
+s := str(42);          // int → string (alias for int_to_str)
+c := chr(65);          // int → single-char string (alias for char_to_str)
 ```
 
 ### Struct Methods (impl blocks)
@@ -251,6 +293,11 @@ for i in 5 {
     println(i);  // prints 0, 1, 2, 3, 4
 }
 
+// For-in with range(start, end)
+for i in range(2, 7) {
+    println(i);  // prints 2, 3, 4, 5, 6
+}
+
 // For-in with variable bound
 n := 10;
 for i in n {
@@ -260,6 +307,22 @@ for i in n {
 // For-in string iteration
 for ch in "hello" {
     println(ch);  // prints ASCII codes: 104, 101, 108, 108, 111
+}
+
+// For-in collection iteration
+arr := [10, 20, 30];
+for val in arr {
+    println(val);
+}
+
+names := ["alice", "bob"];
+for name in names {
+    println(name);
+}
+
+m := make_map();
+for key in m {
+    println(key);  // iterates over map keys
 }
 ```
 
@@ -271,6 +334,22 @@ switch (x) {
     case 2: println("two");
     default: println("other");
 }
+
+// String switch (generates if-else chain with str_eq)
+switch (cmd) {
+    case "start": { println("starting"); }
+    case "stop":  { println("stopping"); }
+    default:      { println("unknown command"); }
+}
+```
+
+### Ternary Expression
+
+```pgl
+result := x > 5 ? "big" : "small";
+max := a > b ? a : b;
+// Nested ternary requires explicit parentheses:
+grade := score > 90 ? "A" : (score > 60 ? "B" : "C");
 ```
 
 ### Match Expression
@@ -435,8 +514,17 @@ Low-level state management for manual pipeline implementations:
 | `str_starts_with(s, prefix)` | Prefix check |
 | `str_ends_with(s, suffix)` | Suffix check |
 | `str_replace(s, old, new)` | Replace substring |
+| `str_contains(s, sub)` | Check if contains substring |
+| `str_trim(s)` | Trim whitespace |
+| `str_to_upper(s)` | Convert to uppercase |
+| `str_to_lower(s)` | Convert to lowercase |
+| `str_split(s, delim)` | Split into DynStrArray |
+| `str_repeat(s, n)` | Repeat string n times |
+| `str_count(s, sub)` | Count occurrences |
+| `str_replace_all(s, old, new)` | Replace all occurrences |
 | `int_to_str(n)` | Integer to string |
 | `str_to_int(s)` | String to integer |
+| `sprintf(fmt, ...)` | Format string (C printf syntax) |
 
 ### Arrays (Fixed-size)
 
@@ -528,20 +616,27 @@ Low-level state management for manual pipeline implementations:
 Built-in types support method-call syntax as syntactic sugar:
 
 ```pgl
-arr := make_dyn_array();
+arr := [1, 2, 3];
 arr.push(10);           // dyn_array_push(arr, 10)
+arr.append(20);         // alias for push
 x := arr.get(0);        // dyn_array_get(arr, 0)
-n := arr.size();         // dyn_array_size(arr)
+n := arr.len();          // dyn_array_size(arr)
+n := arr.size();         // same as len()
 
 m := make_map();
 m.set("key", "val");    // map_set(m, "key", "val")
 v := m.get("key");      // map_get(m, "key")
+n := m.len();            // map_size(m)
 for k in m { ... }       // iterates over keys
 
 s := "hello";
 n := s.len();            // str_len(s)
 ch := s.char_at(0);      // str_char_at(s, 0)
 sub := s.substr(0, 3);   // str_substr(s, 0, 3)
+
+sb := make_str_builder();
+sb.append("hello");
+result := sb.build();
 ```
 
 Supported types: DynArray, DynStrArray, HashMap, IntMap, StringBuilder, string.
@@ -712,7 +807,6 @@ println(apply(fn, 3)); // pass as argument
 ## Planned / Not Yet Implemented
 
 - Range patterns in match expressions
-- Defer / cleanup statements
 - Error handling with Result type
 - Auto-generated pipeline `run` state machine
 - Full pipeline body syntax (`type X pipeline { def in T; ... }`)
