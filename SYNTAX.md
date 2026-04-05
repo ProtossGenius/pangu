@@ -324,6 +324,21 @@ m := make_map();
 for key in m {
     println(key);  // iterates over map keys
 }
+
+// Enumerate form: for index, value in collection
+arr2 := ["alpha", "beta", "gamma"];
+for i, name in arr2 {
+    println(sprintf("%d: %s", i, name));  // 0: alpha, 1: beta, 2: gamma
+}
+
+nums := [10, 20, 30];
+for idx, val in nums {
+    println(sprintf("nums[%d] = %d", idx, val));
+}
+
+for i, v in range(2, 5) {
+    println(sprintf("%d -> %d", i, v));  // i=0,1,2  v=2,3,4
+}
 ```
 
 ### Switch / Case

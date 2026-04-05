@@ -1,0 +1,17 @@
+package main;
+
+func main() {
+    names := ["alpha", "beta", "gamma"];
+    for i, name in names {
+        println(sprintf("%d: %s", i, name));
+    };
+
+    nums := [10, 20, 30];
+    for idx, val in nums {
+        println(sprintf("nums[%d] = %d", idx, val));
+    };
+
+    for i, v in range(2, 5) {
+        println(sprintf("r %d = %d", i, v));
+    };
+}
