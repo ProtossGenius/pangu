@@ -389,6 +389,18 @@ size_t countArgs(const pgcodes::GCode *args_code) {
         args_code->getOper().empty()) {
         return 0;
     }
+    // Strip grouping parens: ("(", left=")", right=inner)
+    const auto *stripped = args_code;
+    while (stripped != nullptr &&
+           stripped->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+           stripped->getOper() == "(" && stripped->getLeft() != nullptr &&
+           stripped->getLeft()->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+           stripped->getLeft()->getOper() == ")") {
+        stripped = stripped->getRight();
+    }
+    if (stripped != args_code) {
+        return countArgs(stripped);
+    }
     std::vector<const pgcodes::GCode *> nodes;
     collectArgNodes(args_code, nodes);
     return nodes.size();

@@ -1616,6 +1616,43 @@ class ModuleBuilder {
                 else if (st->second == "HashMap") iter_kind = IterKind::HASH_MAP;
                 else if (st->second == "IntMap") iter_kind = IterKind::INT_MAP;
             }
+        } else if (iterNode->getValueType() == pgcodes::ValueType::NOT_VALUE) {
+            // Try to infer collection type from expression
+            // Case 1: func_call() — check return type of user function
+            std::string call_name;
+            if (iterNode->getOper() == "(" && iterNode->getLeft() != nullptr &&
+                iterNode->getLeft()->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+                call_name = iterNode->getLeft()->getValue();
+            }
+            // Case 2: obj.method() — check return type semantics
+            if (iterNode->getOper() == "(" && iterNode->getLeft() != nullptr &&
+                iterNode->getLeft()->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+                iterNode->getLeft()->getOper() == ".") {
+                auto *method = iterNode->getLeft()->getRight();
+                if (method && method->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+                    // size()/len() returns int (RANGE)
+                    // keys() returns DynStrArray
+                    std::string mname = method->getValue();
+                    if (mname == "keys") iter_kind = IterKind::DYN_STR_ARRAY;
+                }
+            }
+            // Check user-defined function return type
+            if (!call_name.empty() && iter_kind == IterKind::RANGE) {
+                for (const auto &unit : _program.packages) {
+                    auto fit = unit.package->functions.items().find(call_name);
+                    if (fit != unit.package->functions.items().end()) {
+                        auto *rv = fit->second->result.getVariable("return");
+                        if (rv) {
+                            std::string rt = rv->getType()->name();
+                            if (rt == "DynArray") iter_kind = IterKind::DYN_ARRAY;
+                            else if (rt == "DynStrArray") iter_kind = IterKind::DYN_STR_ARRAY;
+                            else if (rt == "HashMap") iter_kind = IterKind::HASH_MAP;
+                            else if (rt == "IntMap") iter_kind = IterKind::INT_MAP;
+                        }
+                        break;
+                    }
+                }
+            }
         }
 
         // Evaluate iterable expression
@@ -5873,6 +5910,27 @@ class ModuleBuilder {
         if (left->getValueType() == pgcodes::ValueType::NOT_VALUE &&
             left->getOper() == ")") {
             return emitExpression(code->getRight());
+        }
+        // Method call from for-in: ("(", left=(".", obj, method), right=args)
+        // Reconstruct as: obj.method(args) — a qualified/method call
+        if (left->getValueType() == pgcodes::ValueType::NOT_VALUE &&
+            left->getOper() == ".") {
+            const auto *obj = left->getLeft();
+            const auto *method = left->getRight();
+            if (obj && method) {
+                std::string obj_name;
+                std::string method_name;
+                // Extract obj and method names
+                if (obj->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+                    obj_name = obj->getValue();
+                }
+                if (method->getValueType() == pgcodes::ValueType::IDENTIFIER) {
+                    method_name = method->getValue();
+                }
+                if (!obj_name.empty() && !method_name.empty()) {
+                    return emitQualifiedCall(obj_name, method_name, code->getRight());
+                }
+            }
         }
         throw std::runtime_error("unsupported parenthesis expression");
     }

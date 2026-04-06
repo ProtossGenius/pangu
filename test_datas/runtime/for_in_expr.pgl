@@ -1,0 +1,33 @@
+package main;
+
+func get_count() int {
+    return 3;
+}
+
+func get_names() DynStrArray {
+    names := make_dyn_str_array();
+    names.push("alice");
+    names.push("bob");
+    return names;
+}
+
+func main() {
+    // for i in func_call()
+    for i in get_count() {
+        println(i);
+    }
+
+    // for i in arr.size()
+    arr := make_dyn_array();
+    arr.push(10);
+    arr.push(20);
+    arr.push(30);
+    for i in arr.size() {
+        println(arr.get(i));
+    }
+
+    // for x in func_returning_array()
+    for name in get_names() {
+        println(name);
+    }
+}

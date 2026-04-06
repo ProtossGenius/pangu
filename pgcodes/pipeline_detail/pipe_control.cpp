@@ -215,17 +215,15 @@ void PipeFor::on_CHECK_ITER_CALL(IPipelineFactory *factory, PData &&data) {
         return;
     }
     if (lexer::makeSymbol("(") == *lex) {
-        // It's a function call like range(0, 5) — parse call args as sub-expression
+        // Function/method call: range(0,5) or arr.size()
         factory->undealData(std::move(data));
-        topProduct->setStep(int(Steps::WAIT_ACTION));
-        // Pack lambda: wraps the parsed args into a call node on the iterable
+        topProduct->setStep(int(Steps::CHECK_ITER_CALL)); // loop back for chaining
         auto pack_call = [](IPipelineFactory *f, PProduct &&prod) {
             GCode *argsNode = static_cast<GCode *>(prod.release());
             GCode *parent   = static_cast<GCode *>(f->getTopProduct());
             auto *inNode    = parent->getLeft();
             if (inNode == nullptr) return;
             auto *identNode = inNode->releaseRight();
-            // Build: callNode("(", left=identNode, right=argsNode)
             auto *callNode = new GCode();
             callNode->setOper("(");
             callNode->setLeft(identNode);
@@ -236,9 +234,39 @@ void PipeFor::on_CHECK_ITER_CALL(IPipelineFactory *factory, PData &&data) {
         factory->pushProduct(PProduct(new GCode()), pack_call);
         return;
     }
-    // Not a call — just go to WAIT_ACTION with the simple iterable
+    if (lexer::makeSymbol(".") == *lex) {
+        // Dot access: arr.size or obj.field.method
+        topProduct->setStep(int(Steps::CHECK_ITER_DOT));
+        return;
+    }
+    // Done — go to WAIT_ACTION
     factory->undealData(std::move(data));
     topProduct->setStep(int(Steps::WAIT_ACTION));
+}
+void PipeFor::on_CHECK_ITER_DOT(IPipelineFactory *factory, PData &&data) {
+    GET_LEX(data);
+    GET_TOP(factory, GCode);
+    if (lexer::ELexPipeline::Space == type) {
+        return;
+    }
+    // After '.', expect an identifier for the field/method name
+    if (type == lexer::ELexPipeline::Identifier) {
+        auto *inNode = topProduct->getLeft();
+        if (inNode == nullptr) return;
+        auto *prevNode = inNode->releaseRight();
+        auto *fieldNode = new GCode();
+        fieldNode->setValue(lex->get(), pgcodes::ValueType::IDENTIFIER);
+        fieldNode->setLocation(lex->location());
+        auto *dotNode = new GCode();
+        dotNode->setOper(".");
+        dotNode->setLeft(prevNode);
+        dotNode->setRight(fieldNode);
+        inNode->setRight(dotNode);
+        // Check for ( call or another . after this
+        topProduct->setStep(int(Steps::CHECK_ITER_CALL));
+        return;
+    }
+    factory->onFail("expected identifier after '.' in for-in iterable");
 }
 void PipeFor::on_WAIT_ACTION(IPipelineFactory *factory, PData &&data) {
     GET_TOP(factory, GCode);
