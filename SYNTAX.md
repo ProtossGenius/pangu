@@ -352,6 +352,15 @@ for key in m {
     println(key);  // iterates over map keys
 }
 
+// For-in with expressions (method calls, function calls)
+for i in arr.size() {
+    println(i);  // 0, 1, 2
+}
+
+for name in get_names() {
+    println(name);  // iterates returned collection
+}
+
 // Enumerate form: for index, value in collection
 arr2 := ["alpha", "beta", "gamma"];
 for i, name in arr2 {
@@ -609,6 +618,7 @@ Low-level state management for manual pipeline implementations:
 | `map_has(m, key)` | Check key exists (1/0) |
 | `map_size(m)` | Number of entries |
 | `map_delete(m, key)` | Remove entry |
+| `map_keys(m)` | Get all keys as DynStrArray |
 | `m["key"]` | Subscript read (→ map_get) |
 | `m["key"] = val` | Subscript write (→ map_set) |
 
@@ -622,6 +632,7 @@ Low-level state management for manual pipeline implementations:
 | `int_map_get(m, key)` | Get value (0 if missing) |
 | `int_map_has(m, key)` | Check key exists (1/0) |
 | `int_map_size(m)` | Number of entries |
+| `int_map_keys(m)` | Get all keys as DynStrArray |
 | `m["key"]` | Subscript read (→ int_map_get) |
 | `m["key"] = val` | Subscript write (→ int_map_set) |
 
