@@ -1,0 +1,163 @@
+package main;
+
+// ============================================================
+// Pangu Bootstrap2 Compiler — Entry Point
+// Usage:
+//   bootstrap2 compile <file.pgl|dir/> [-o output]
+//   bootstrap2 emit-c  <file.pgl|dir/>
+//   bootstrap2 parse   <file.pgl|dir/>
+// ============================================================
+
+func merge_programs(kinds string, lefts string, rights string, root1 int, root2 int) {
+    w := array_get(lefts, root1);
+    last := -1;
+    while (w != -1) {
+        last = w;
+        w = array_get(rights, w);
+    }
+    w2 := array_get(lefts, root2);
+    if (w2 != -1) { w2 = array_get(rights, w2); }
+    if (last != -1 && w2 != -1) {
+        array_set(rights, last, w2);
+    }
+}
+
+func parse_file(filepath string, kinds string, svals string, ivals string,
+                lefts string, rights string, extras string, ncount string) int {
+    source := read_file(filepath);
+    tok_types := make_array(50000);
+    tok_values := make_str_array(50000);
+    tok_lines := make_array(50000);
+    tok_cols := make_array(50000);
+    tok_count := tokenize(source, tok_types, tok_values, tok_lines, tok_cols);
+    pos_arr := make_array(1);
+    array_set(pos_arr, 0, 0);
+    return parse_program(tok_types, tok_values, tok_lines, tok_count, pos_arr, filepath,
+                         kinds, svals, ivals, lefts, rights, extras, ncount);
+}
+
+func print_usage() {
+    println("Pangu Bootstrap2 Compiler");
+    println("");
+    println("USAGE:");
+    println("  bootstrap2 <command> <file.pgl|dir/> [options]");
+    println("");
+    println("COMMANDS:");
+    println("  compile <input> [-o output]  Compile to native executable via C");
+    println("  emit-c  <input>              Emit C code to stdout");
+    println("  parse   <input>              Parse and dump AST");
+    println("");
+    println("OPTIONS:");
+    println("  -o <path>     Set output binary path (default: a.out)");
+    println("  --help, -h    Show this help message");
+}
+
+func main() {
+    if (args_count() < 2) {
+        print_usage();
+        exit(1);
+    }
+
+    if (args(1) == "--help" || args(1) == "-h") {
+        print_usage();
+        exit(0);
+    }
+
+    if (args_count() < 3) {
+        print_usage();
+        exit(1);
+    }
+
+    mode := args(1);
+    input_path := args(2);
+    output_path := "a.out";
+
+    // Parse -o flag
+    i := 3;
+    while (i < args_count()) {
+        if (args(i) == "-o" && i + 1 < args_count()) {
+            i = i + 1;
+            output_path = args(i);
+        }
+        i = i + 1;
+    }
+
+    // Shared AST arrays
+    kinds := make_array(200000);
+    svals := make_str_array(200000);
+    ivals := make_array(200000);
+    lefts := make_array(200000);
+    rights := make_array(200000);
+    extras := make_array(200000);
+    ncount := make_array(1);
+    array_set(ncount, 0, 0);
+
+    root := -1;
+
+    if (is_directory(input_path) == 1) {
+        file_arr := make_str_array(1000);
+        n_files := find_pgl_files(input_path, file_arr);
+        if (n_files == 0) {
+            print("No .pgl files found in: "); println(input_path);
+            exit(1);
+        }
+        fi := 0;
+        while (fi < n_files) {
+            filepath := str_array_get(file_arr, fi);
+            file_root := parse_file(filepath, kinds, svals, ivals, lefts, rights, extras, ncount);
+            if (root == -1) {
+                root = file_root;
+            } else {
+                merge_programs(kinds, lefts, rights, root, file_root);
+            }
+            fi = fi + 1;
+        }
+    } else {
+        fi := 2;
+        while (fi < args_count()) {
+            filepath := args(fi);
+            if (filepath == "-o") {
+                fi = fi + 2;
+                continue;
+            }
+            file_root := parse_file(filepath, kinds, svals, ivals, lefts, rights, extras, ncount);
+            if (root == -1) {
+                root = file_root;
+            } else {
+                merge_programs(kinds, lefts, rights, root, file_root);
+            }
+            fi = fi + 1;
+        }
+    }
+
+    if (root == -1) {
+        println("No input files");
+        exit(1);
+    }
+
+    if (mode == "parse") {
+        dump_ast(kinds, svals, ivals, lefts, rights, extras, root, 0);
+        println(str_concat("Nodes: ", int_to_str(array_get(ncount, 0))));
+    } else if (mode == "emit-c") {
+        runtime_code := read_file("bootstrap/runtime.c");
+        c_code := emit_c(root, kinds, svals, ivals, lefts, rights, extras, runtime_code);
+        print(c_code);
+    } else if (mode == "compile") {
+        runtime_code := read_file("bootstrap/runtime.c");
+        c_code := emit_c(root, kinds, svals, ivals, lefts, rights, extras, runtime_code);
+        tmp_c := str_concat(output_path, ".c");
+        write_file(tmp_c, c_code);
+        cmd := str_concat("gcc -O2 -rdynamic -o ", str_concat(output_path, str_concat(" ", tmp_c)));
+        ret := system(cmd);
+        system(str_concat("rm -f ", tmp_c));
+        if (ret != 0) {
+            print("gcc failed with exit code: "); println(int_to_str(ret));
+            exit(1);
+        }
+        println(output_path);
+    } else {
+        print("Unknown command: "); println(mode);
+        print_usage();
+        exit(1);
+    }
+}

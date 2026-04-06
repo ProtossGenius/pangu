@@ -1,0 +1,950 @@
+package main;
+
+// ============================================================
+// Pangu Bootstrap2 C Emitter
+// Walks AST parallel arrays (with LISTNODE wrappers), outputs C code.
+// Uses NodeKind / CType enums from types.pgl instead of magic numbers.
+// ============================================================
+
+// --- Context layout (str_array, 12 slots) ---
+// 0=kinds 1=svals 2=ivals 3=lefts 4=rights 5=extras
+// 6=vnames 7=vtypes 8=vcount 9=fn_names 10=fn_types 11=fn_count
+
+func ctx_new(kinds string, svals string, ivals string,
+             lefts string, rights string, extras string) string {
+    ctx := make_str_array(12);
+    str_array_set(ctx, 0, kinds);
+    str_array_set(ctx, 1, svals);
+    str_array_set(ctx, 2, ivals);
+    str_array_set(ctx, 3, lefts);
+    str_array_set(ctx, 4, rights);
+    str_array_set(ctx, 5, extras);
+    str_array_set(ctx, 6, make_str_array(10000));
+    str_array_set(ctx, 7, make_array(10000));
+    str_array_set(ctx, 8, make_array(1));
+    str_array_set(ctx, 9, make_str_array(1000));
+    str_array_set(ctx, 10, make_array(1000));
+    str_array_set(ctx, 11, make_array(1));
+    array_set(str_array_get(ctx, 8), 0, 0);
+    array_set(str_array_get(ctx, 11), 0, 0);
+    return ctx;
+}
+
+// --- Node accessors ---
+func nkind(ctx string, id int) int    { return array_get(str_array_get(ctx, 0), id); }
+func nsval(ctx string, id int) string { return str_array_get(str_array_get(ctx, 1), id); }
+func nival(ctx string, id int) int    { return array_get(str_array_get(ctx, 2), id); }
+func nleft(ctx string, id int) int    { return array_get(str_array_get(ctx, 3), id); }
+func nright(ctx string, id int) int   { return array_get(str_array_get(ctx, 4), id); }
+func nextra(ctx string, id int) int   { return array_get(str_array_get(ctx, 5), id); }
+
+// --- List traversal helpers (LISTNODE = NK_LIST) ---
+func lval(ctx string, w int) int {
+    if (w < 0) { return -1; }
+    if (nkind(ctx, w) == NodeKind::NK_LIST) { return nleft(ctx, w); }
+    return w;
+}
+func lnext(ctx string, w int) int {
+    if (w < 0) { return -1; }
+    return nright(ctx, w);
+}
+
+// --- Scope management ---
+func scope_push(ctx string, name string, tp int) {
+    vc := array_get(str_array_get(ctx, 8), 0);
+    str_array_set(str_array_get(ctx, 6), vc, name);
+    array_set(str_array_get(ctx, 7), vc, tp);
+    array_set(str_array_get(ctx, 8), 0, vc + 1);
+}
+func scope_find(ctx string, name string) int {
+    vc := array_get(str_array_get(ctx, 8), 0);
+    i := vc - 1;
+    while (i >= 0) {
+        if (str_eq(str_array_get(str_array_get(ctx, 6), i), name) == 1) {
+            return array_get(str_array_get(ctx, 7), i);
+        }
+        i = i - 1;
+    }
+    return -1;
+}
+func scope_save(ctx string) int {
+    return array_get(str_array_get(ctx, 8), 0);
+}
+func scope_restore(ctx string, saved int) {
+    array_set(str_array_get(ctx, 8), 0, saved);
+}
+
+// --- Function return type table ---
+func fn_push(ctx string, name string, tp int) {
+    fc := array_get(str_array_get(ctx, 11), 0);
+    str_array_set(str_array_get(ctx, 9), fc, name);
+    array_set(str_array_get(ctx, 10), fc, tp);
+    array_set(str_array_get(ctx, 11), 0, fc + 1);
+}
+func fn_find(ctx string, name string) int {
+    fc := array_get(str_array_get(ctx, 11), 0);
+    i := 0;
+    while (i < fc) {
+        if (str_eq(str_array_get(str_array_get(ctx, 9), i), name) == 1) {
+            return array_get(str_array_get(ctx, 10), i);
+        }
+        i = i + 1;
+    }
+    return CType::CT_INT;
+}
+
+// --- String helpers ---
+func indent_str(n int) string {
+    sb := make_str_builder();
+    i := 0;
+    while (i < n) {
+        sb_append(sb, "    ");
+        i = i + 1;
+    }
+    return sb_build(sb);
+}
+
+// --- Type system ---
+func type_to_c(t int) string {
+    if (t == CType::CT_STRING) { return "char*"; }
+    if (t == CType::CT_VOID) { return "void"; }
+    return "int";
+}
+func pgl_type_to_code(t string) int {
+    if (str_eq(t, "string") == 1) { return CType::CT_STRING; }
+    if (str_eq(t, "ptr") == 1) { return CType::CT_STRING; }
+    return CType::CT_INT;
+}
+
+// --- C identifier helpers ---
+func c_escape(s string) string {
+    bs := char_to_str(92);
+    dq := char_to_str(34);
+    sb := make_str_builder();
+    i := 0;
+    len := str_len(s);
+    while (i < len) {
+        ch := str_char_at(s, i);
+        if (ch == 10) { sb_append(sb, bs); sb_append(sb, "n"); }
+        else if (ch == 9) { sb_append(sb, bs); sb_append(sb, "t"); }
+        else if (ch == 13) { sb_append(sb, bs); sb_append(sb, "r"); }
+        else if (ch == 0) { sb_append(sb, bs); sb_append(sb, "0"); }
+        else if (ch == 92) { sb_append(sb, bs); sb_append(sb, bs); }
+        else if (ch == 34) { sb_append(sb, bs); sb_append(sb, dq); }
+        else { sb_append_char(sb, ch); }
+        i = i + 1;
+    }
+    return sb_build(sb);
+}
+
+func c_func_name(name string) string {
+    sb := make_str_builder();
+    i := 0;
+    len := str_len(name);
+    while (i < len) {
+        ch := str_char_at(name, i);
+        if (ch == 46) { sb_append(sb, "_"); }
+        else { sb_append_char(sb, ch); }
+        i = i + 1;
+    }
+    return sb_build(sb);
+}
+
+// --- Type inference ---
+func infer_type(ctx string, id int) int {
+    if (id < 0) { return CType::CT_INT; }
+    k := nkind(ctx, id);
+    sv := nsval(ctx, id);
+    if (k == NodeKind::NK_NUMBER) { return CType::CT_INT; }
+    if (k == NodeKind::NK_STRING) { return CType::CT_STRING; }
+    if (k == NodeKind::NK_IDENT) {
+        t := scope_find(ctx, sv);
+        if (t >= 0) { return t; }
+        return CType::CT_INT;
+    }
+    if (k == NodeKind::NK_BINOP) {
+        if (str_eq(sv, "+") == 1) {
+            lt := infer_type(ctx, nleft(ctx, id));
+            if (lt == CType::CT_STRING) { return CType::CT_STRING; }
+        }
+        return CType::CT_INT;
+    }
+    if (k == NodeKind::NK_UNARYOP) { return infer_type(ctx, nleft(ctx, id)); }
+    if (k == NodeKind::NK_CALL) {
+        if (str_eq(sv, "str_concat") == 1) { return CType::CT_STRING; }
+        if (str_eq(sv, "char_to_str") == 1) { return CType::CT_STRING; }
+        if (str_eq(sv, "int_to_str") == 1) { return CType::CT_STRING; }
+        if (str_eq(sv, "str_substr") == 1) { return CType::CT_STRING; }
+        if (str_eq(sv, "read_file") == 1) { return CType::CT_STRING; }
+        if (str_eq(sv, "args") == 1) { return CType::CT_STRING; }
+        if (str_eq(sv, "str_array_get") == 1) { return CType::CT_STRING; }
+        if (str_eq(sv, "str_replace") == 1) { return CType::CT_STRING; }
+        if (str_eq(sv, "make_array") == 1) { return CType::CT_STRING; }
+        if (str_eq(sv, "make_str_array") == 1) { return CType::CT_STRING; }
+        if (str_eq(sv, "pipeline_create") == 1) { return CType::CT_STRING; }
+        if (str_eq(sv, "pipeline_cache_str") == 1) { return CType::CT_STRING; }
+        if (str_eq(sv, "pipeline_output_get") == 1) { return CType::CT_STRING; }
+        if (str_eq(sv, "make_map") == 1) { return CType::CT_STRING; }
+        if (str_eq(sv, "map_get") == 1) { return CType::CT_STRING; }
+        if (str_eq(sv, "make_int_map") == 1) { return CType::CT_STRING; }
+        if (str_eq(sv, "make_dyn_array") == 1) { return CType::CT_STRING; }
+        if (str_eq(sv, "make_dyn_str_array") == 1) { return CType::CT_STRING; }
+        if (str_eq(sv, "dyn_str_array_get") == 1) { return CType::CT_STRING; }
+        if (str_eq(sv, "make_str_builder") == 1) { return CType::CT_STRING; }
+        if (str_eq(sv, "sb_build") == 1) { return CType::CT_STRING; }
+        return fn_find(ctx, sv);
+    }
+    return CType::CT_INT;
+}
+
+// --- Builtin C name mapping ---
+func builtin_c_name(name string, arg_type int) string {
+    if (str_eq(name, "println") == 1) {
+        if (arg_type == CType::CT_STRING) { return "pg_println_str"; }
+        return "pg_println_int";
+    }
+    if (str_eq(name, "print") == 1) {
+        if (arg_type == CType::CT_STRING) { return "pg_print_str"; }
+        return "pg_print_int";
+    }
+    if (str_eq(name, "exit") == 1) { return "exit"; }
+    if (str_eq(name, "panic") == 1) { return "pg_panic"; }
+    if (str_eq(name, "system") == 1) { return "pg_system"; }
+    if (str_eq(name, "str_len") == 1) { return "pg_str_len"; }
+    if (str_eq(name, "str_char_at") == 1) { return "pg_str_char_at"; }
+    if (str_eq(name, "char_to_str") == 1) { return "pg_char_to_str"; }
+    if (str_eq(name, "str_concat") == 1) { return "pg_str_concat"; }
+    if (str_eq(name, "str_eq") == 1) { return "pg_str_eq"; }
+    if (str_eq(name, "str_substr") == 1) { return "pg_str_substr"; }
+    if (str_eq(name, "str_index_of") == 1) { return "pg_str_index_of"; }
+    if (str_eq(name, "str_starts_with") == 1) { return "pg_str_starts_with"; }
+    if (str_eq(name, "str_replace") == 1) { return "pg_str_replace"; }
+    if (str_eq(name, "str_to_int") == 1) { return "pg_str_to_int"; }
+    if (str_eq(name, "int_to_str") == 1) { return "pg_int_to_str"; }
+    if (str_eq(name, "read_file") == 1) { return "pg_read_file"; }
+    if (str_eq(name, "write_file") == 1) { return "pg_write_file"; }
+    if (str_eq(name, "make_array") == 1) { return "pg_make_array"; }
+    if (str_eq(name, "array_get") == 1) { return "pg_array_get"; }
+    if (str_eq(name, "array_set") == 1) { return "pg_array_set"; }
+    if (str_eq(name, "make_str_array") == 1) { return "pg_make_str_array"; }
+    if (str_eq(name, "str_array_get") == 1) { return "pg_str_array_get"; }
+    if (str_eq(name, "str_array_set") == 1) { return "pg_str_array_set"; }
+    if (str_eq(name, "args") == 1) { return "pg_args"; }
+    if (str_eq(name, "args_count") == 1) { return "pg_args_count"; }
+    if (str_eq(name, "find_pgl_files") == 1) { return "pg_find_pgl_files"; }
+    if (str_eq(name, "is_directory") == 1) { return "pg_is_directory"; }
+    if (str_eq(name, "str_ends_with") == 1) { return "pg_str_ends_with"; }
+    if (str_eq(name, "pipeline_create") == 1) { return "pg_pipeline_create"; }
+    if (str_eq(name, "pipeline_destroy") == 1) { return "pg_pipeline_destroy"; }
+    if (str_eq(name, "pipeline_cache_append") == 1) { return "pg_pipeline_cache_append"; }
+    if (str_eq(name, "pipeline_cache_str") == 1) { return "pg_pipeline_cache_str"; }
+    if (str_eq(name, "pipeline_cache_reset") == 1) { return "pg_pipeline_cache_reset"; }
+    if (str_eq(name, "pipeline_emit") == 1) { return "pg_pipeline_emit"; }
+    if (str_eq(name, "pipeline_output_count") == 1) { return "pg_pipeline_output_count"; }
+    if (str_eq(name, "pipeline_output_get") == 1) { return "pg_pipeline_output_get"; }
+    if (str_eq(name, "pipeline_set_worker") == 1) { return "pg_pipeline_set_worker"; }
+    if (str_eq(name, "pipeline_get_worker") == 1) { return "pg_pipeline_get_worker"; }
+    if (str_eq(name, "make_map") == 1) { return "pg_make_map"; }
+    if (str_eq(name, "map_set") == 1) { return "pg_map_set"; }
+    if (str_eq(name, "map_get") == 1) { return "pg_map_get"; }
+    if (str_eq(name, "map_has") == 1) { return "pg_map_has"; }
+    if (str_eq(name, "map_size") == 1) { return "pg_map_size"; }
+    if (str_eq(name, "map_delete") == 1) { return "pg_map_delete"; }
+    if (str_eq(name, "make_int_map") == 1) { return "pg_make_int_map"; }
+    if (str_eq(name, "int_map_set") == 1) { return "pg_int_map_set"; }
+    if (str_eq(name, "int_map_get") == 1) { return "pg_int_map_get"; }
+    if (str_eq(name, "int_map_has") == 1) { return "pg_int_map_has"; }
+    if (str_eq(name, "int_map_size") == 1) { return "pg_int_map_size"; }
+    if (str_eq(name, "make_dyn_array") == 1) { return "pg_make_dyn_array"; }
+    if (str_eq(name, "dyn_array_push") == 1) { return "pg_dyn_array_push"; }
+    if (str_eq(name, "dyn_array_get") == 1) { return "pg_dyn_array_get"; }
+    if (str_eq(name, "dyn_array_set") == 1) { return "pg_dyn_array_set"; }
+    if (str_eq(name, "dyn_array_size") == 1) { return "pg_dyn_array_size"; }
+    if (str_eq(name, "dyn_array_pop") == 1) { return "pg_dyn_array_pop"; }
+    if (str_eq(name, "make_dyn_str_array") == 1) { return "pg_make_dyn_str_array"; }
+    if (str_eq(name, "dyn_str_array_push") == 1) { return "pg_dyn_str_array_push"; }
+    if (str_eq(name, "dyn_str_array_get") == 1) { return "pg_dyn_str_array_get"; }
+    if (str_eq(name, "dyn_str_array_set") == 1) { return "pg_dyn_str_array_set"; }
+    if (str_eq(name, "dyn_str_array_size") == 1) { return "pg_dyn_str_array_size"; }
+    if (str_eq(name, "make_str_builder") == 1) { return "pg_make_str_builder"; }
+    if (str_eq(name, "sb_append") == 1) { return "pg_sb_append"; }
+    if (str_eq(name, "sb_append_int") == 1) { return "pg_sb_append_int"; }
+    if (str_eq(name, "sb_append_char") == 1) { return "pg_sb_append_char"; }
+    if (str_eq(name, "sb_build") == 1) { return "pg_sb_build"; }
+    if (str_eq(name, "sb_reset") == 1) { return "pg_sb_reset"; }
+    if (str_eq(name, "sb_len") == 1) { return "pg_sb_len"; }
+    return name;
+}
+
+func is_builtin(name string) int {
+    if (str_eq(builtin_c_name(name, 0), name) == 0) { return 1; }
+    return 0;
+}
+
+// ============================================================
+// String interpolation emitter — generates GCC statement expression
+// ============================================================
+func emit_interp_string(ctx string, raw string) string {
+    sb := make_str_builder();
+    sb_append(sb, "({char* _isb=pg_make_str_builder();");
+    i := 0;
+    len := str_len(raw);
+    dq := char_to_str(34);
+    bs := char_to_str(92);
+    lit := make_str_builder();
+    while (i < len) {
+        ch := str_char_at(raw, i);
+        // Escaped dollar: \$
+        if (ch == 92 && i + 1 < len && str_char_at(raw, i + 1) == 36) {
+            sb_append_char(lit, 36);
+            i = i + 2;
+        }
+        // Interpolation: ${
+        else if (ch == 36 && i + 1 < len && str_char_at(raw, i + 1) == 123) {
+            // Flush literal
+            lit_s := sb_build(lit);
+            if (str_len(lit_s) > 0) {
+                sb_append(sb, "pg_sb_append(_isb,");
+                sb_append(sb, dq);
+                sb_append(sb, c_escape(lit_s));
+                sb_append(sb, dq);
+                sb_append(sb, ");");
+            }
+            sb_reset(lit);
+            i = i + 2;
+            // Extract variable name until }
+            varname := make_str_builder();
+            while (i < len && str_char_at(raw, i) != 125) {
+                sb_append_char(varname, str_char_at(raw, i));
+                i = i + 1;
+            }
+            if (i < len) { i = i + 1; }
+            vn := sb_build(varname);
+            // Check variable type
+            vt := scope_find(ctx, vn);
+            if (vt == CType::CT_STRING) {
+                sb_append(sb, "pg_sb_append(_isb,");
+                sb_append(sb, vn);
+                sb_append(sb, ");");
+            } else {
+                sb_append(sb, "pg_sb_append_int(_isb,");
+                sb_append(sb, vn);
+                sb_append(sb, ");");
+            }
+        }
+        else {
+            sb_append_char(lit, ch);
+            i = i + 1;
+        }
+    }
+    // Flush remaining literal
+    lit_s := sb_build(lit);
+    if (str_len(lit_s) > 0) {
+        sb_append(sb, "pg_sb_append(_isb,");
+        sb_append(sb, dq);
+        sb_append(sb, c_escape(lit_s));
+        sb_append(sb, dq);
+        sb_append(sb, ");");
+    }
+    sb_append(sb, "pg_sb_build(_isb);})");
+    return sb_build(sb);
+}
+
+// ============================================================
+// Expression emitter
+// ============================================================
+func emit_expr(ctx string, id int) string {
+    if (id < 0) { return "0"; }
+    k := nkind(ctx, id);
+    sv := nsval(ctx, id);
+
+    // NUMBER
+    if (k == NodeKind::NK_NUMBER) { return sv; }
+
+    // STRING
+    if (k == NodeKind::NK_STRING) {
+        // Check for string interpolation: need ${var} with non-empty var and closing }
+        idx := str_index_of(sv, "${");
+        if (idx >= 0) {
+            close := str_index_of(str_substr(sv, idx + 2, str_len(sv)), "}");
+            if (close > 0) {
+                return emit_interp_string(ctx, sv);
+            }
+        }
+        dq := char_to_str(34);
+        sb := make_str_builder();
+        sb_append(sb, dq);
+        sb_append(sb, c_escape(sv));
+        sb_append(sb, dq);
+        return sb_build(sb);
+    }
+
+    // IDENT
+    if (k == NodeKind::NK_IDENT) { return sv; }
+
+    // BINOP
+    if (k == NodeKind::NK_BINOP) {
+        l := emit_expr(ctx, nleft(ctx, id));
+        r := emit_expr(ctx, nright(ctx, id));
+        lt := infer_type(ctx, nleft(ctx, id));
+        sb := make_str_builder();
+        if (str_eq(sv, "+") == 1 && lt == CType::CT_STRING) {
+            sb_append(sb, "pg_str_concat(");
+            sb_append(sb, l);
+            sb_append(sb, ", ");
+            sb_append(sb, r);
+            sb_append(sb, ")");
+            return sb_build(sb);
+        }
+        if (lt == CType::CT_STRING && str_eq(sv, "==") == 1) {
+            sb_append(sb, "(strcmp(");
+            sb_append(sb, l);
+            sb_append(sb, ", ");
+            sb_append(sb, r);
+            sb_append(sb, ") == 0)");
+            return sb_build(sb);
+        }
+        if (lt == CType::CT_STRING && str_eq(sv, "!=") == 1) {
+            sb_append(sb, "(strcmp(");
+            sb_append(sb, l);
+            sb_append(sb, ", ");
+            sb_append(sb, r);
+            sb_append(sb, ") != 0)");
+            return sb_build(sb);
+        }
+        sb_append(sb, "(");
+        sb_append(sb, l);
+        sb_append(sb, " ");
+        sb_append(sb, sv);
+        sb_append(sb, " ");
+        sb_append(sb, r);
+        sb_append(sb, ")");
+        return sb_build(sb);
+    }
+
+    // UNARYOP
+    if (k == NodeKind::NK_UNARYOP) {
+        sb := make_str_builder();
+        sb_append(sb, "(");
+        sb_append(sb, sv);
+        sb_append(sb, emit_expr(ctx, nleft(ctx, id)));
+        sb_append(sb, ")");
+        return sb_build(sb);
+    }
+
+    // PREINC
+    if (k == NodeKind::NK_PREFIX_INCDEC) {
+        sb := make_str_builder();
+        sb_append(sb, "(");
+        sb_append(sb, sv);
+        sb_append(sb, emit_expr(ctx, nleft(ctx, id)));
+        sb_append(sb, ")");
+        return sb_build(sb);
+    }
+
+    // POSTINC
+    if (k == NodeKind::NK_POSTFIX_INCDEC) {
+        sb := make_str_builder();
+        sb_append(sb, "(");
+        sb_append(sb, emit_expr(ctx, nleft(ctx, id)));
+        sb_append(sb, sv);
+        sb_append(sb, ")");
+        return sb_build(sb);
+    }
+
+    // CALL
+    if (k == NodeKind::NK_CALL) {
+        args_sb := make_str_builder();
+        w := nleft(ctx, id);
+        first := 1;
+        while (w != -1) {
+            a := lval(ctx, w);
+            if (first == 0) { sb_append(args_sb, ", "); }
+            sb_append(args_sb, emit_expr(ctx, a));
+            first = 0;
+            w = lnext(ctx, w);
+        }
+        args_str := sb_build(args_sb);
+        sb := make_str_builder();
+        if (is_builtin(sv) == 1) {
+            arg_type := CType::CT_INT;
+            if (str_eq(sv, "println") == 1 || str_eq(sv, "print") == 1) {
+                first_a := lval(ctx, nleft(ctx, id));
+                if (first_a != -1) { arg_type = infer_type(ctx, first_a); }
+            }
+            sb_append(sb, builtin_c_name(sv, arg_type));
+            sb_append(sb, "(");
+            sb_append(sb, args_str);
+            sb_append(sb, ")");
+            return sb_build(sb);
+        }
+        sb_append(sb, c_func_name(sv));
+        sb_append(sb, "(");
+        sb_append(sb, args_str);
+        sb_append(sb, ")");
+        return sb_build(sb);
+    }
+
+    // FIELD access (x.y → x_y for enums/qualified, x.y for structs)
+    if (k == NodeKind::NK_FIELDACCESS) {
+        sb := make_str_builder();
+        sb_append(sb, emit_expr(ctx, nleft(ctx, id)));
+        sb_append(sb, "_");
+        sb_append(sb, sv);
+        return sb_build(sb);
+    }
+
+    return "0";
+}
+
+// ============================================================
+// Statement emitter
+// ============================================================
+func emit_if(ctx string, id int, ind int) string {
+    pad := indent_str(ind);
+    sb := make_str_builder();
+    cur := id;
+    first := 1;
+    while (cur != -1 && nkind(ctx, cur) == NodeKind::NK_IF) {
+        cond := emit_expr(ctx, nleft(ctx, cur));
+        then_body := emit_block(ctx, nright(ctx, cur), ind);
+        if (first == 1) {
+            sb_append(sb, pad);
+            sb_append(sb, "if (");
+            sb_append(sb, cond);
+            sb_append(sb, ") {\n");
+            sb_append(sb, then_body);
+            sb_append(sb, pad);
+            sb_append(sb, "}");
+            first = 0;
+        } else {
+            sb_append(sb, " else if (");
+            sb_append(sb, cond);
+            sb_append(sb, ") {\n");
+            sb_append(sb, then_body);
+            sb_append(sb, pad);
+            sb_append(sb, "}");
+        }
+        cur = nextra(ctx, cur);
+    }
+    if (cur != -1) {
+        sb_append(sb, " else {\n");
+        sb_append(sb, emit_block(ctx, cur, ind));
+        sb_append(sb, pad);
+        sb_append(sb, "}");
+    }
+    sb_append(sb, "\n");
+    return sb_build(sb);
+}
+
+func emit_stmt(ctx string, id int, ind int) string {
+    if (id < 0) { return ""; }
+    k := nkind(ctx, id);
+    pad := indent_str(ind);
+
+    // VARDECL
+    if (k == NodeKind::NK_VARDECL) {
+        name := nsval(ctx, id);
+        val := nleft(ctx, id);
+        tp := infer_type(ctx, val);
+        scope_push(ctx, name, tp);
+        sb := make_str_builder();
+        sb_append(sb, pad);
+        sb_append(sb, type_to_c(tp));
+        sb_append(sb, " ");
+        sb_append(sb, name);
+        sb_append(sb, " = ");
+        sb_append(sb, emit_expr(ctx, val));
+        sb_append(sb, ";\n");
+        return sb_build(sb);
+    }
+
+    // ASSIGN
+    if (k == NodeKind::NK_ASSIGN) {
+        sb := make_str_builder();
+        sb_append(sb, pad);
+        sb_append(sb, emit_expr(ctx, nleft(ctx, id)));
+        sb_append(sb, " = ");
+        sb_append(sb, emit_expr(ctx, nright(ctx, id)));
+        sb_append(sb, ";\n");
+        return sb_build(sb);
+    }
+
+    // COMPOUND_ASSIGN
+    if (k == NodeKind::NK_COMPOUND_ASSIGN) {
+        sb := make_str_builder();
+        sb_append(sb, pad);
+        sb_append(sb, emit_expr(ctx, nleft(ctx, id)));
+        sb_append(sb, " ");
+        sb_append(sb, nsval(ctx, id));
+        sb_append(sb, " ");
+        sb_append(sb, emit_expr(ctx, nright(ctx, id)));
+        sb_append(sb, ";\n");
+        return sb_build(sb);
+    }
+
+    // RETURN
+    if (k == NodeKind::NK_RETURN) {
+        val := nleft(ctx, id);
+        if (val == -1) { return str_concat(pad, "return;\n"); }
+        sb := make_str_builder();
+        sb_append(sb, pad);
+        sb_append(sb, "return ");
+        sb_append(sb, emit_expr(ctx, val));
+        sb_append(sb, ";\n");
+        return sb_build(sb);
+    }
+
+    // BREAK
+    if (k == NodeKind::NK_BREAK) { return str_concat(pad, "break;\n"); }
+
+    // CONTINUE
+    if (k == NodeKind::NK_CONTINUE) { return str_concat(pad, "continue;\n"); }
+
+    // EXPRSTMT
+    if (k == NodeKind::NK_EXPRSTMT) {
+        sb := make_str_builder();
+        sb_append(sb, pad);
+        sb_append(sb, emit_expr(ctx, nleft(ctx, id)));
+        sb_append(sb, ";\n");
+        return sb_build(sb);
+    }
+
+    // IF
+    if (k == NodeKind::NK_IF) { return emit_if(ctx, id, ind); }
+
+    // WHILE
+    if (k == NodeKind::NK_WHILE) {
+        cond := emit_expr(ctx, nleft(ctx, id));
+        body := emit_block(ctx, nright(ctx, id), ind);
+        sb := make_str_builder();
+        sb_append(sb, pad);
+        sb_append(sb, "while (");
+        sb_append(sb, cond);
+        sb_append(sb, ") {\n");
+        sb_append(sb, body);
+        sb_append(sb, pad);
+        sb_append(sb, "}\n");
+        return sb_build(sb);
+    }
+
+    // NK_INDEX (23) doubles as INFINITE_LOOP in bootstrap parser
+    if (k == NodeKind::NK_INDEX) {
+        body := emit_block(ctx, nright(ctx, id), ind);
+        sb := make_str_builder();
+        sb_append(sb, pad);
+        sb_append(sb, "for (;;) {\n");
+        sb_append(sb, body);
+        sb_append(sb, pad);
+        sb_append(sb, "}\n");
+        return sb_build(sb);
+    }
+
+    // FOR
+    if (k == NodeKind::NK_FOR) {
+        init_id := nextra(ctx, id);
+        cond_id := nleft(ctx, id);
+        step_id := nival(ctx, id);
+        body_id := nright(ctx, id);
+
+        init_s := "";
+        if (init_id != -1) {
+            ik := nkind(ctx, init_id);
+            if (ik == NodeKind::NK_VARDECL) {
+                nm := nsval(ctx, init_id);
+                vl := nleft(ctx, init_id);
+                tp := infer_type(ctx, vl);
+                scope_push(ctx, nm, tp);
+                isb := make_str_builder();
+                sb_append(isb, type_to_c(tp));
+                sb_append(isb, " ");
+                sb_append(isb, nm);
+                sb_append(isb, " = ");
+                sb_append(isb, emit_expr(ctx, vl));
+                init_s = sb_build(isb);
+            } else if (ik == NodeKind::NK_ASSIGN) {
+                isb := make_str_builder();
+                sb_append(isb, emit_expr(ctx, nleft(ctx, init_id)));
+                sb_append(isb, " = ");
+                sb_append(isb, emit_expr(ctx, nright(ctx, init_id)));
+                init_s = sb_build(isb);
+            }
+        }
+        cond_s := "";
+        if (cond_id != -1) { cond_s = emit_expr(ctx, cond_id); }
+        step_s := "";
+        if (step_id >= 0) {
+            sk := nkind(ctx, step_id);
+            if (sk == NodeKind::NK_PREFIX_INCDEC || sk == NodeKind::NK_POSTFIX_INCDEC) {
+                step_s = emit_expr(ctx, step_id);
+            } else if (sk == NodeKind::NK_ASSIGN) {
+                ssb := make_str_builder();
+                sb_append(ssb, emit_expr(ctx, nleft(ctx, step_id)));
+                sb_append(ssb, " = ");
+                sb_append(ssb, emit_expr(ctx, nright(ctx, step_id)));
+                step_s = sb_build(ssb);
+            } else if (sk == NodeKind::NK_COMPOUND_ASSIGN) {
+                ssb := make_str_builder();
+                sb_append(ssb, emit_expr(ctx, nleft(ctx, step_id)));
+                sb_append(ssb, " ");
+                sb_append(ssb, nsval(ctx, step_id));
+                sb_append(ssb, " ");
+                sb_append(ssb, emit_expr(ctx, nright(ctx, step_id)));
+                step_s = sb_build(ssb);
+            }
+        }
+        body := emit_block(ctx, body_id, ind);
+        sb := make_str_builder();
+        sb_append(sb, pad);
+        sb_append(sb, "for (");
+        sb_append(sb, init_s);
+        sb_append(sb, "; ");
+        sb_append(sb, cond_s);
+        sb_append(sb, "; ");
+        sb_append(sb, step_s);
+        sb_append(sb, ") {\n");
+        sb_append(sb, body);
+        sb_append(sb, pad);
+        sb_append(sb, "}\n");
+        return sb_build(sb);
+    }
+
+    // SWITCH
+    if (k == NodeKind::NK_SWITCH) {
+        cond := emit_expr(ctx, nleft(ctx, id));
+        sb := make_str_builder();
+        sb_append(sb, pad);
+        sb_append(sb, "switch (");
+        sb_append(sb, cond);
+        sb_append(sb, ") {\n");
+        w := nright(ctx, id);
+        while (w != -1) {
+            c := lval(ctx, w);
+            if (c != -1) {
+                ck := nkind(ctx, c);
+                if (ck == NodeKind::NK_CASE) {
+                    sb_append(sb, indent_str(ind + 1));
+                    sb_append(sb, "case ");
+                    sb_append(sb, emit_expr(ctx, nleft(ctx, c)));
+                    sb_append(sb, ":\n");
+                    sb_append(sb, emit_block(ctx, nright(ctx, c), ind + 1));
+                    sb_append(sb, indent_str(ind + 2));
+                    sb_append(sb, "break;\n");
+                } else if (ck == NodeKind::NK_DEFAULT) {
+                    sb_append(sb, indent_str(ind + 1));
+                    sb_append(sb, "default:\n");
+                    sb_append(sb, emit_block(ctx, nleft(ctx, c), ind + 1));
+                    sb_append(sb, indent_str(ind + 2));
+                    sb_append(sb, "break;\n");
+                }
+            }
+            w = lnext(ctx, w);
+        }
+        sb_append(sb, pad);
+        sb_append(sb, "}\n");
+        return sb_build(sb);
+    }
+
+    return "";
+}
+
+// ============================================================
+// Block emitter
+// ============================================================
+func emit_block(ctx string, id int, ind int) string {
+    if (id < 0) { return ""; }
+    k := nkind(ctx, id);
+    if (k != NodeKind::NK_BLOCK) { return emit_stmt(ctx, id, ind + 1); }
+    sb := make_str_builder();
+    w := nleft(ctx, id);
+    while (w != -1) {
+        s := lval(ctx, w);
+        sb_append(sb, emit_stmt(ctx, s, ind + 1));
+        w = lnext(ctx, w);
+    }
+    return sb_build(sb);
+}
+
+// ============================================================
+// Function emitter
+// ============================================================
+func emit_func_fwd(ctx string, id int, prefix string) string {
+    sv := nsval(ctx, id);
+    fname := split_name(sv);
+    rtype_s := split_type(sv);
+    rtype := CType::CT_VOID;
+    if (str_len(rtype_s) > 0) { rtype = pgl_type_to_code(rtype_s); }
+
+    if (str_eq(fname, "main") == 1 && str_len(prefix) == 0) { return ""; }
+
+    psb := make_str_builder();
+    w := nleft(ctx, id);
+    first := 1;
+    while (w != -1) {
+        p := lval(ctx, w);
+        if (p != -1 && nkind(ctx, p) == NodeKind::NK_PARAM) {
+            if (first == 0) { sb_append(psb, ", "); }
+            sb_append(psb, type_to_c(pgl_type_to_code(split_type(nsval(ctx, p)))));
+            first = 0;
+        }
+        w = lnext(ctx, w);
+    }
+
+    fn_push(ctx, str_concat(prefix, fname), rtype);
+    sb := make_str_builder();
+    sb_append(sb, type_to_c(rtype));
+    sb_append(sb, " ");
+    sb_append(sb, c_func_name(str_concat(prefix, fname)));
+    sb_append(sb, "(");
+    sb_append(sb, sb_build(psb));
+    sb_append(sb, ");\n");
+    return sb_build(sb);
+}
+
+func emit_func_body(ctx string, id int, prefix string) string {
+    sv := nsval(ctx, id);
+    fname := split_name(sv);
+    rtype_s := split_type(sv);
+    rtype := CType::CT_VOID;
+    if (str_len(rtype_s) > 0) { rtype = pgl_type_to_code(rtype_s); }
+
+    saved := scope_save(ctx);
+
+    // Build parameter list
+    psb := make_str_builder();
+    w := nleft(ctx, id);
+    first := 1;
+    while (w != -1) {
+        p := lval(ctx, w);
+        if (p != -1 && nkind(ctx, p) == NodeKind::NK_PARAM) {
+            if (first == 0) { sb_append(psb, ", "); }
+            psv := nsval(ctx, p);
+            pname := split_name(psv);
+            ptype := pgl_type_to_code(split_type(psv));
+            scope_push(ctx, pname, ptype);
+            sb_append(psb, type_to_c(ptype));
+            sb_append(psb, " ");
+            sb_append(psb, pname);
+            first = 0;
+        }
+        w = lnext(ctx, w);
+    }
+    params := sb_build(psb);
+
+    body_id := nright(ctx, id);
+    body := emit_block(ctx, body_id, 0);
+    scope_restore(ctx, saved);
+
+    sb := make_str_builder();
+    if (str_eq(fname, "main") == 1 && str_len(prefix) == 0) {
+        sb_append(sb, "int main(int argc, char** argv) {\n    _pg_argc = argc;\n    _pg_argv = argv;\n    pg_install_signal_handlers();\n");
+        sb_append(sb, body);
+        sb_append(sb, "    return 0;\n}\n\n");
+        return sb_build(sb);
+    }
+    c_fname := c_func_name(str_concat(prefix, fname));
+    sb_append(sb, type_to_c(rtype));
+    sb_append(sb, " ");
+    sb_append(sb, c_fname);
+    sb_append(sb, "(");
+    sb_append(sb, params);
+    sb_append(sb, ") {\n");
+    sb_append(sb, body);
+    sb_append(sb, "}\n\n");
+    return sb_build(sb);
+}
+
+// ============================================================
+// C runtime — loaded from external file by main.pgl
+// ============================================================
+
+// ============================================================
+// Program emitter (entry point)
+// ============================================================
+func emit_c(root int, kinds string, svals string, ivals string,
+            lefts string, rights string, extras string,
+            runtime_code string) string {
+    ctx := ctx_new(kinds, svals, ivals, lefts, rights, extras);
+    sb := make_str_builder();
+    sb_append(sb, runtime_code);
+    sb_append(sb, "\n");
+
+    // First pass: forward declarations + enums
+    fwd := make_str_builder();
+    w := nleft(ctx, root);
+    while (w != -1) {
+        child := lval(ctx, w);
+        if (child != -1) {
+            ck := nkind(ctx, child);
+            if (ck == NodeKind::NK_FUNC) {
+                sb_append(fwd, emit_func_fwd(ctx, child, ""));
+            } else if (ck == NodeKind::NK_IMPL) {
+                prefix := str_concat(split_name(nsval(ctx, child)), ".");
+                mw := nleft(ctx, child);
+                while (mw != -1) {
+                    m := lval(ctx, mw);
+                    if (m != -1 && nkind(ctx, m) == NodeKind::NK_FUNC) {
+                        sb_append(fwd, emit_func_fwd(ctx, m, prefix));
+                    }
+                    mw = lnext(ctx, mw);
+                }
+            } else if (ck == NodeKind::NK_ENUM_DEF) {
+                ename := nsval(ctx, child);
+                ew := nleft(ctx, child);
+                idx := 0;
+                while (ew != -1) {
+                    ei := lval(ctx, ew);
+                    if (ei != -1) {
+                        sb_append(fwd, "#define ");
+                        sb_append(fwd, ename);
+                        sb_append(fwd, "_");
+                        sb_append(fwd, nsval(ctx, ei));
+                        sb_append(fwd, " ");
+                        sb_append_int(fwd, idx);
+                        sb_append(fwd, "\n");
+                        idx = idx + 1;
+                    }
+                    ew = lnext(ctx, ew);
+                }
+                sb_append(fwd, "\n");
+            } else if (ck == NodeKind::NK_VARDECL && nival(ctx, child) == 1) {
+                // const declaration: emit as #define
+                cname := nsval(ctx, child);
+                cval := emit_expr(ctx, nleft(ctx, child));
+                sb_append(fwd, "#define ");
+                sb_append(fwd, cname);
+                sb_append(fwd, " ");
+                sb_append(fwd, cval);
+                sb_append(fwd, "\n");
+            }
+        }
+        w = lnext(ctx, w);
+    }
+    sb_append(sb, sb_build(fwd));
+    sb_append(sb, "\n");
+
+    // Second pass: function bodies
+    w = nleft(ctx, root);
+    while (w != -1) {
+        child := lval(ctx, w);
+        if (child != -1) {
+            ck := nkind(ctx, child);
+            if (ck == NodeKind::NK_FUNC) {
+                sb_append(sb, emit_func_body(ctx, child, ""));
+            } else if (ck == NodeKind::NK_IMPL) {
+                prefix := str_concat(split_name(nsval(ctx, child)), ".");
+                mw := nleft(ctx, child);
+                while (mw != -1) {
+                    m := lval(ctx, mw);
+                    if (m != -1 && nkind(ctx, m) == NodeKind::NK_FUNC) {
+                        sb_append(sb, emit_func_body(ctx, m, prefix));
+                    }
+                    mw = lnext(ctx, mw);
+                }
+            }
+        }
+        w = lnext(ctx, w);
+    }
+
+    return sb_build(sb);
+}

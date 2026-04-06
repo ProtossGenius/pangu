@@ -1,0 +1,355 @@
+package main;
+
+// ============================================================
+// Pangu Bootstrap2 Lexer (Pipeline Style)
+// Uses TokenType enum instead of magic numbers.
+// ============================================================
+
+// ----- Worker IDs -----
+type WorkerID enum {
+    WID_SWITCHER,   // 0 — idle / dispatch
+    WID_IDENT,      // 1 — identifier or keyword
+    WID_NUMBER,     // 2 — integer or hex literal
+    WID_STRING,     // 3 — double-quoted string
+    WID_BACKTICK,   // 4 — backtick raw string
+    WID_CHAR        // 5 — single-quoted char literal
+}
+
+// ----- Character classification -----
+
+func is_alpha(c int) int {
+    if (c >= 'a' && c <= 'z') { return 1; }
+    if (c >= 'A' && c <= 'Z') { return 1; }
+    if (c == '_' || c == '$') { return 1; }
+    return 0;
+}
+
+func is_digit(c int) int {
+    if (c >= '0' && c <= '9') { return 1; }
+    return 0;
+}
+
+func is_alnum(c int) int {
+    if (is_alpha(c) == 1) { return 1; }
+    if (is_digit(c) == 1) { return 1; }
+    return 0;
+}
+
+func is_space(c int) int {
+    if (c == ' ' || c == '\t' || c == '\n' || c == '\r') { return 1; }
+    return 0;
+}
+
+// ----- Token storage -----
+
+func add_token(types string, values string, lines string, cols string,
+               count int, ttype int, tval string, tline int, tcol int) int {
+    array_set(types, count, ttype);
+    str_array_set(values, count, tval);
+    array_set(lines, count, tline);
+    array_set(cols, count, tcol);
+    return count + 1;
+}
+
+// ----- Multi-char operator check -----
+
+func try_two_char_op(c1 int, c2 int) int {
+    if (c2 == '=') {
+        if (c1 == '=' || c1 == '!' || c1 == '<' || c1 == '>') { return 1; }
+        if (c1 == '+' || c1 == '-' || c1 == '*' || c1 == '/') { return 1; }
+        if (c1 == '%' || c1 == '&' || c1 == '|' || c1 == '^') { return 1; }
+        if (c1 == ':') { return 1; }
+    }
+    if (c1 == '&' && c2 == '&') { return 1; }
+    if (c1 == '|' && c2 == '|') { return 1; }
+    if (c1 == '+' && c2 == '+') { return 1; }
+    if (c1 == '-' && c2 == '-') { return 1; }
+    if (c1 == '-' && c2 == '>') { return 1; }
+    if (c1 == ':' && c2 == ':') { return 1; }
+    if (c1 == '<' && c2 == '<') { return 1; }
+    if (c1 == '>' && c2 == '>') { return 1; }
+    if (c1 == '=' && c2 == '>') { return 1; }
+    return 0;
+}
+
+// ============================================================
+// Pipeline Workers
+// ============================================================
+
+func lex_ident(pipe ptr, c int) int {
+    if (is_alnum(c) == 1) {
+        pipeline_cache_append(pipe, c);
+        return 0;
+    }
+    return 1;
+}
+
+func lex_ident_emit(pipe ptr, types string, values string, lines string, cols string,
+                    count int, tline int, tcol int) int {
+    val := pipeline_cache_str(pipe);
+    if (is_keyword(val) == 1) {
+        return add_token(types, values, lines, cols, count, TokenType::TT_KEYWORD, val, tline, tcol);
+    }
+    return add_token(types, values, lines, cols, count, TokenType::TT_IDENT, val, tline, tcol);
+}
+
+func lex_number(pipe ptr, c int, is_hex int) int {
+    if (is_digit(c) == 1 || c == '_') {
+        pipeline_cache_append(pipe, c);
+        return 0;
+    }
+    if (is_hex == 1) {
+        if ((c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+            pipeline_cache_append(pipe, c);
+            return 0;
+        }
+    }
+    if (c == '.' || c == 'x' || c == 'X') {
+        pipeline_cache_append(pipe, c);
+        return 0;
+    }
+    return 1;
+}
+
+func lex_number_emit(pipe ptr, types string, values string, lines string, cols string,
+                     count int, tline int, tcol int) int {
+    val := pipeline_cache_str(pipe);
+    return add_token(types, values, lines, cols, count, TokenType::TT_NUMBER, val, tline, tcol);
+}
+
+// ============================================================
+// Main tokenizer
+// ============================================================
+
+func tokenize(source string,
+              types string, values string, lines string, cols string) int {
+    src_len := str_len(source);
+    count := 0;
+    pos := 0;
+    line := 1;
+    col := 1;
+    pipe := pipeline_create(8);
+    tok_line := 1;
+    tok_col := 1;
+    in_hex := 0;
+
+    while (pos < src_len) {
+        c := str_char_at(source, pos);
+        wid := pipeline_get_worker(pipe);
+
+        // ----- Active worker processing -----
+        if (wid == WorkerID::WID_IDENT) {
+            result := lex_ident(pipe, c);
+            if (result == 1) {
+                count = lex_ident_emit(pipe, types, values, lines, cols, count, tok_line, tok_col);
+                pipeline_set_worker(pipe, WorkerID::WID_SWITCHER);
+                continue;
+            }
+            pos = pos + 1;
+            col = col + 1;
+            continue;
+        }
+        if (wid == WorkerID::WID_NUMBER) {
+            result := lex_number(pipe, c, in_hex);
+            if (result == 1) {
+                count = lex_number_emit(pipe, types, values, lines, cols, count, tok_line, tok_col);
+                pipeline_set_worker(pipe, WorkerID::WID_SWITCHER);
+                in_hex = 0;
+                continue;
+            }
+            if (c == 'x' || c == 'X') { in_hex = 1; }
+            pos = pos + 1;
+            col = col + 1;
+            continue;
+        }
+        if (wid == WorkerID::WID_STRING) {
+            if (c == 34) {
+                val := pipeline_cache_str(pipe);
+                count = add_token(types, values, lines, cols, count, TokenType::TT_STRING, val, tok_line, tok_col);
+                pipeline_set_worker(pipe, WorkerID::WID_SWITCHER);
+                pos = pos + 1;
+                col = col + 1;
+                continue;
+            }
+            if (c == 92 && pos + 1 < src_len) {
+                pos = pos + 1;
+                col = col + 1;
+                esc := resolve_escape(str_char_at(source, pos));
+                pipeline_cache_append(pipe, esc);
+                pos = pos + 1;
+                col = col + 1;
+                continue;
+            }
+            pipeline_cache_append(pipe, c);
+            if (c == '\n') { line = line + 1; col = 1; } else { col = col + 1; }
+            pos = pos + 1;
+            continue;
+        }
+        if (wid == WorkerID::WID_BACKTICK) {
+            if (c == '`') {
+                val := pipeline_cache_str(pipe);
+                count = add_token(types, values, lines, cols, count, TokenType::TT_STRING, val, tok_line, tok_col);
+                pipeline_set_worker(pipe, WorkerID::WID_SWITCHER);
+                pos = pos + 1;
+                col = col + 1;
+                continue;
+            }
+            pipeline_cache_append(pipe, c);
+            if (c == '\n') { line = line + 1; col = 1; } else { col = col + 1; }
+            pos = pos + 1;
+            continue;
+        }
+        if (wid == WorkerID::WID_CHAR) {
+            char_val := 0;
+            if (c == 92 && pos + 1 < src_len) {
+                pos = pos + 1;
+                col = col + 1;
+                char_val = resolve_escape(str_char_at(source, pos));
+            } else {
+                char_val = c;
+            }
+            pos = pos + 1;
+            col = col + 1;
+            if (pos < src_len && str_char_at(source, pos) == 39) {
+                pos = pos + 1;
+                col = col + 1;
+            }
+            count = add_token(types, values, lines, cols, count, TokenType::TT_NUMBER, int_to_str(char_val), tok_line, tok_col);
+            pipeline_set_worker(pipe, WorkerID::WID_SWITCHER);
+            continue;
+        }
+
+        // ----- Switcher: dispatch -----
+
+        if (is_space(c) == 1) {
+            if (c == '\n') { line = line + 1; col = 1; } else { col = col + 1; }
+            pos = pos + 1;
+            continue;
+        }
+
+        // Line comment
+        if (c == '/' && pos + 1 < src_len && str_char_at(source, pos + 1) == '/') {
+            pos = pos + 2;
+            col = col + 2;
+            while (pos < src_len && str_char_at(source, pos) != '\n') {
+                pos = pos + 1;
+            }
+            continue;
+        }
+
+        // Block comment
+        if (c == '/' && pos + 1 < src_len && str_char_at(source, pos + 1) == '*') {
+            pos = pos + 2;
+            col = col + 2;
+            while (pos + 1 < src_len) {
+                cc := str_char_at(source, pos);
+                if (cc == '*' && str_char_at(source, pos + 1) == '/') {
+                    pos = pos + 2;
+                    col = col + 2;
+                    break;
+                }
+                if (cc == '\n') { line = line + 1; col = 1; } else { col = col + 1; }
+                pos = pos + 1;
+            }
+            continue;
+        }
+
+        // Identifier/keyword
+        if (is_alpha(c) == 1) {
+            tok_line = line;
+            tok_col = col;
+            pipeline_set_worker(pipe, WorkerID::WID_IDENT);
+            pipeline_cache_append(pipe, c);
+            pos = pos + 1;
+            col = col + 1;
+            continue;
+        }
+
+        // Number
+        if (is_digit(c) == 1) {
+            tok_line = line;
+            tok_col = col;
+            pipeline_set_worker(pipe, WorkerID::WID_NUMBER);
+            pipeline_cache_append(pipe, c);
+            in_hex = 0;
+            pos = pos + 1;
+            col = col + 1;
+            continue;
+        }
+
+        // Double-quoted string
+        if (c == 34) {
+            tok_line = line;
+            tok_col = col;
+            pipeline_set_worker(pipe, WorkerID::WID_STRING);
+            pos = pos + 1;
+            col = col + 1;
+            continue;
+        }
+
+        // Backtick string
+        if (c == '`') {
+            tok_line = line;
+            tok_col = col;
+            pipeline_set_worker(pipe, WorkerID::WID_BACKTICK);
+            pos = pos + 1;
+            col = col + 1;
+            continue;
+        }
+
+        // Char literal
+        if (c == 39) {
+            tok_line = line;
+            tok_col = col;
+            pipeline_set_worker(pipe, WorkerID::WID_CHAR);
+            pos = pos + 1;
+            col = col + 1;
+            continue;
+        }
+
+        // Symbol/operator
+        tok_line = line;
+        tok_col = col;
+        if (pos + 1 < src_len) {
+            c2 := str_char_at(source, pos + 1);
+            if (try_two_char_op(c, c2) == 1) {
+                val := str_concat(char_to_str(c), char_to_str(c2));
+                count = add_token(types, values, lines, cols, count, TokenType::TT_SYMBOL, val, tok_line, tok_col);
+                pos = pos + 2;
+                col = col + 2;
+                continue;
+            }
+        }
+        val := char_to_str(c);
+        count = add_token(types, values, lines, cols, count, TokenType::TT_SYMBOL, val, tok_line, tok_col);
+        pos = pos + 1;
+        col = col + 1;
+    }
+
+    // Flush any active worker
+    wid := pipeline_get_worker(pipe);
+    if (wid == WorkerID::WID_IDENT) {
+        count = lex_ident_emit(pipe, types, values, lines, cols, count, tok_line, tok_col);
+    }
+    if (wid == WorkerID::WID_NUMBER) {
+        count = lex_number_emit(pipe, types, values, lines, cols, count, tok_line, tok_col);
+    }
+
+    pipeline_destroy(pipe);
+
+    // Add EOF token
+    count = add_token(types, values, lines, cols, count, TokenType::TT_EOF, "", line, col);
+    return count;
+}
+
+// ----- Token type name (for debug) -----
+
+func tok_type_name(t int) string {
+    if (t == TokenType::TT_EOF) { return "EOF"; }
+    if (t == TokenType::TT_KEYWORD) { return "KEYWORD"; }
+    if (t == TokenType::TT_IDENT) { return "IDENT"; }
+    if (t == TokenType::TT_NUMBER) { return "NUMBER"; }
+    if (t == TokenType::TT_STRING) { return "STRING"; }
+    if (t == TokenType::TT_SYMBOL) { return "SYMBOL"; }
+    return "UNKNOWN";
+}
