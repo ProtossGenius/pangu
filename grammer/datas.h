@@ -72,6 +72,13 @@ class GTypeDefContainer {
     void write_string(std::ostream &ss);
     size_t size() const { return _type_defs.size(); }
     const std::map<std::string, PTypeDef> &items() const { return _type_defs; }
+    void mergeFrom(GTypeDefContainer &other) {
+        for (auto &kv : other._type_defs) {
+            if (_type_defs.find(kv.first) == _type_defs.end()) {
+                _type_defs[kv.first] = std::move(kv.second);
+            }
+        }
+    }
 
   private:
     std::map<std::string, PTypeDef> _type_defs;
@@ -172,6 +179,7 @@ class GPackage : public IGrammer {
         functions.mergeFrom(other.functions);
         structs.mergeFrom(other.structs);
         impls.mergeFrom(other.impls);
+        type_defs.mergeFrom(other.type_defs);
         for (auto &kv : other._imports)
             _imports[kv.first] = std::move(kv.second);
         for (auto &kv : other._constants)
