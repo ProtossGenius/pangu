@@ -94,9 +94,9 @@ const std::set<std::string> BUILTIN_FUNCTIONS = {
     "reflect_annotation_count", "reflect_annotation_key",
     "reflect_annotation_value", "reflect_annotation_field_index",
     // HashMap (string→string)
-    "make_map", "map_set", "map_get", "map_has", "map_size", "map_delete",
+    "make_map", "map_set", "map_get", "map_has", "map_size", "map_delete", "map_keys",
     // IntMap (string→int)
-    "make_int_map", "int_map_set", "int_map_get", "int_map_has", "int_map_size",
+    "make_int_map", "int_map_set", "int_map_get", "int_map_has", "int_map_size", "int_map_keys",
     // Dynamic array (int)
     "make_dyn_array", "dyn_array_push", "dyn_array_get",
     "dyn_array_set", "dyn_array_size", "dyn_array_pop",
@@ -178,11 +178,13 @@ size_t builtinParamCount(const std::string &name) {
     if (name == "map_set") return 3;
     if (name == "map_get" || name == "map_has" || name == "map_delete") return 2;
     if (name == "map_size") return 1;
+    if (name == "map_keys") return 1;
     // IntMap
     if (name == "make_int_map") return 0;
     if (name == "int_map_set") return 3;
     if (name == "int_map_get" || name == "int_map_has") return 2;
     if (name == "int_map_size") return 1;
+    if (name == "int_map_keys") return 1;
     // Dynamic array
     if (name == "make_dyn_array") return 0;
     if (name == "dyn_array_push") return 2;
@@ -332,10 +334,12 @@ std::vector<std::string> builtinParamTypes(const std::string &name) {
     if (name == "map_set") return {"ptr", "string", "string"};
     if (name == "map_get" || name == "map_has" || name == "map_delete") return {"ptr", "string"};
     if (name == "map_size") return {"ptr"};
+    if (name == "map_keys") return {"ptr"};
     // IntMap
     if (name == "int_map_set") return {"ptr", "string", "int"};
     if (name == "int_map_get" || name == "int_map_has") return {"ptr", "string"};
     if (name == "int_map_size") return {"ptr"};
+    if (name == "int_map_keys") return {"ptr"};
     // Dynamic array
     if (name == "dyn_array_push") return {"ptr", "int"};
     if (name == "dyn_array_get") return {"ptr", "int"};
