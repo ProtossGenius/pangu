@@ -103,6 +103,7 @@ class ModuleBuilder {
         generateVTables();
         collectPipelineMetadata();
         emitTypeMetadata();
+        generateFuncAnnotationMetadata();
         declareRuntimeHelpers();
         declareFunctions();
         patchVTables();
@@ -512,6 +513,44 @@ class ModuleBuilder {
             llvm::FunctionType::get(void_ty, {ptr_ty}, false));
         _module->getOrInsertFunction("sb_len",
             llvm::FunctionType::get(i32_ty, {ptr_ty}, false));
+
+        // ── TCP Socket Functions ──
+        _module->getOrInsertFunction("pg_tcp_socket",
+            llvm::FunctionType::get(i32_ty, {}, false));
+        _module->getOrInsertFunction("pg_tcp_close",
+            llvm::FunctionType::get(i32_ty, {i32_ty}, false));
+        _module->getOrInsertFunction("pg_tcp_set_reuseaddr",
+            llvm::FunctionType::get(i32_ty, {i32_ty}, false));
+        _module->getOrInsertFunction("pg_tcp_bind",
+            llvm::FunctionType::get(i32_ty, {i32_ty, i32_ty}, false));
+        _module->getOrInsertFunction("pg_tcp_listen",
+            llvm::FunctionType::get(i32_ty, {i32_ty, i32_ty}, false));
+        _module->getOrInsertFunction("pg_tcp_accept",
+            llvm::FunctionType::get(i32_ty, {i32_ty}, false));
+        _module->getOrInsertFunction("pg_tcp_connect",
+            llvm::FunctionType::get(i32_ty, {i32_ty, ptr_ty, i32_ty}, false));
+        _module->getOrInsertFunction("pg_tcp_send",
+            llvm::FunctionType::get(i32_ty, {i32_ty, ptr_ty, i32_ty}, false));
+        _module->getOrInsertFunction("pg_tcp_recv",
+            llvm::FunctionType::get(ptr_ty, {i32_ty, i32_ty}, false));
+        _module->getOrInsertFunction("pg_tcp_recv_bytes",
+            llvm::FunctionType::get(i32_ty, {i32_ty, ptr_ty, i32_ty}, false));
+        _module->getOrInsertFunction("pg_tcp_peer_addr",
+            llvm::FunctionType::get(ptr_ty, {i32_ty}, false));
+
+        // ── Function Annotation Reflection ──
+        _module->getOrInsertFunction("__pangu_register_func_annotations",
+            llvm::FunctionType::get(void_ty, {i32_ty, ptr_ty}, false));
+        _module->getOrInsertFunction("func_anno_func_count",
+            llvm::FunctionType::get(i32_ty, {}, false));
+        _module->getOrInsertFunction("func_anno_func_name",
+            llvm::FunctionType::get(ptr_ty, {i32_ty}, false));
+        _module->getOrInsertFunction("func_anno_count",
+            llvm::FunctionType::get(i32_ty, {ptr_ty}, false));
+        _module->getOrInsertFunction("func_anno_key",
+            llvm::FunctionType::get(ptr_ty, {ptr_ty, i32_ty}, false));
+        _module->getOrInsertFunction("func_anno_value",
+            llvm::FunctionType::get(ptr_ty, {ptr_ty, i32_ty}, false));
     }
 
     void declareStructTypes() {
@@ -975,6 +1014,59 @@ class ModuleBuilder {
         }
     }
 
+    void generateFuncAnnotationMetadata() {
+        struct FuncAnnoEntry {
+            std::string func_name;
+            std::string key;
+            std::string value;
+        };
+        std::vector<FuncAnnoEntry> entries;
+
+        for (const auto &unit : _program.packages) {
+            // After packImplToPackage, impl methods are merged into functions
+            for (const auto &it : unit.package->functions.items()) {
+                const auto *func = it.second.get();
+                if (!func) continue;
+                for (const auto &anno : func->annotations()) {
+                    entries.push_back({func->name(), anno.first, anno.second});
+                }
+            }
+        }
+
+        if (entries.empty()) return;
+
+        auto *ptr_ty = _builder.getPtrTy();
+        auto *i32_ty = _builder.getInt32Ty();
+
+        // Build PanguFuncAnnotation struct: { char* func_name, char* key, char* value }
+        auto *fa_ty = llvm::StructType::create(
+            *_context, {ptr_ty, ptr_ty, ptr_ty}, "PanguFuncAnnotation");
+
+        std::vector<llvm::Constant *> fa_consts;
+        for (size_t i = 0; i < entries.size(); i++) {
+            auto &e = entries[i];
+            std::string pfx = "__pangu_fa_" + std::to_string(i) + "_";
+            auto *fn_str = createGlobalString(e.func_name, pfx + "fn");
+            auto *k_str  = createGlobalString(e.key, pfx + "k");
+            auto *v_str  = createGlobalString(e.value, pfx + "v");
+            fa_consts.push_back(llvm::ConstantStruct::get(fa_ty, {fn_str, k_str, v_str}));
+        }
+
+        auto *arr_ty = llvm::ArrayType::get(fa_ty, fa_consts.size());
+        auto *arr = llvm::ConstantArray::get(arr_ty, fa_consts);
+        auto *gv = new llvm::GlobalVariable(
+            *_module, arr_ty, true, llvm::GlobalVariable::PrivateLinkage,
+            arr, "__pangu_func_anno_registry");
+
+        // Register in __pangu_init
+        auto *reg_fn = _module->getFunction("__pangu_register_func_annotations");
+        auto *count = llvm::ConstantInt::get(i32_ty, (int)entries.size());
+        auto *arr_ptr = llvm::ConstantExpr::getBitCast(gv, ptr_ty);
+        // We'll emit the call in the init function
+        _func_anno_count = (int)entries.size();
+        _func_anno_registry = gv;
+    }
+
     llvm::Type *resolveTypeName(const std::string &name) {
         // Check type parameter substitution map first (for generics)
         auto tp_it = _type_param_map.find(name);
@@ -1224,6 +1316,15 @@ class ModuleBuilder {
             if (register_fn && registry_gv && count_gv) {
                 auto *count_val = _builder.CreateLoad(_builder.getInt32Ty(), count_gv);
                 _builder.CreateCall(register_fn, {count_val, registry_gv});
+            }
+
+            // Register function annotation metadata
+            if (_func_anno_count > 0 && _func_anno_registry) {
+                auto *fa_reg_fn = _module->getFunction("__pangu_register_func_annotations");
+                if (fa_reg_fn) {
+                    auto *fa_count = llvm::ConstantInt::get(_builder.getInt32Ty(), _func_anno_count);
+                    _builder.CreateCall(fa_reg_fn, {fa_count, _func_anno_registry});
+                }
             }
         } else {
             bindParameters(function);
@@ -5419,6 +5520,89 @@ class ModuleBuilder {
             auto *fn = _module->getFunction("sb_len");
             return _builder.CreateCall(fn, {args[0]}, "sb_length");
         }
+
+        // ── TCP Socket Builtins ──
+        if (callee == "tcp_socket") {
+            auto *fn = _module->getFunction("pg_tcp_socket");
+            return _builder.CreateCall(fn, {}, "tcp_fd");
+        }
+        if (callee == "tcp_close") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("pg_tcp_close");
+            return _builder.CreateCall(fn, {args[0]}, "tcp_close_ret");
+        }
+        if (callee == "tcp_set_reuseaddr") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("pg_tcp_set_reuseaddr");
+            return _builder.CreateCall(fn, {args[0]}, "tcp_reuse_ret");
+        }
+        if (callee == "tcp_bind") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("pg_tcp_bind");
+            return _builder.CreateCall(fn, {args[0], args[1]}, "tcp_bind_ret");
+        }
+        if (callee == "tcp_listen") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("pg_tcp_listen");
+            return _builder.CreateCall(fn, {args[0], args[1]}, "tcp_listen_ret");
+        }
+        if (callee == "tcp_accept") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("pg_tcp_accept");
+            return _builder.CreateCall(fn, {args[0]}, "tcp_client_fd");
+        }
+        if (callee == "tcp_connect") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("pg_tcp_connect");
+            return _builder.CreateCall(fn, {args[0], args[1], args[2]}, "tcp_conn_ret");
+        }
+        if (callee == "tcp_send") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("pg_tcp_send");
+            return _builder.CreateCall(fn, {args[0], args[1], args[2]}, "tcp_send_ret");
+        }
+        if (callee == "tcp_recv") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("pg_tcp_recv");
+            return _builder.CreateCall(fn, {args[0], args[1]}, "tcp_recv_data");
+        }
+        if (callee == "tcp_recv_bytes") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("pg_tcp_recv_bytes");
+            return _builder.CreateCall(fn, {args[0], args[1], args[2]}, "tcp_recv_n");
+        }
+        if (callee == "tcp_peer_addr") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("pg_tcp_peer_addr");
+            return _builder.CreateCall(fn, {args[0]}, "tcp_peer");
+        }
+
+        // ── Function Annotation Reflection ──
+        if (callee == "func_anno_func_count") {
+            auto *fn = _module->getFunction("func_anno_func_count");
+            return _builder.CreateCall(fn, {}, "fa_fcount");
+        }
+        if (callee == "func_anno_func_name") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("func_anno_func_name");
+            return _builder.CreateCall(fn, {args[0]}, "fa_fname");
+        }
+        if (callee == "func_anno_count") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("func_anno_count");
+            return _builder.CreateCall(fn, {args[0]}, "fa_count");
+        }
+        if (callee == "func_anno_key") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("func_anno_key");
+            return _builder.CreateCall(fn, {args[0], args[1]}, "fa_key");
+        }
+        if (callee == "func_anno_value") {
+            auto args = emitCallArgs(args_code);
+            auto *fn = _module->getFunction("func_anno_value");
+            return _builder.CreateCall(fn, {args[0], args[1]}, "fa_value");
+        }
+
         if (callee_function == nullptr) {
             // Try generic function instantiation
             std::string gen_key = functionKey(_current_module_id, callee);
@@ -6628,6 +6812,9 @@ class ModuleBuilder {
     llvm::DIFile                              *_di_file = nullptr;
     llvm::DIScope                             *_current_di_scope = nullptr;
     std::map<std::string, llvm::DIFile *>      _di_files;
+    // Function annotation metadata
+    int _func_anno_count = 0;
+    llvm::GlobalVariable *_func_anno_registry = nullptr;
 };
 
 std::string printModule(llvm::Module &module) {

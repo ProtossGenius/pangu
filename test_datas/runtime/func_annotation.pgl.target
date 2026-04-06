@@ -1,0 +1,8 @@
+3
+handle_data
+  get=/data
+handle_default
+  noargs=
+handle_hello
+  route=GET
+  route=/hello

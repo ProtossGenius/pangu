@@ -116,6 +116,13 @@ const std::set<std::string> BUILTIN_FUNCTIONS = {
     "range",
     // Map literal constructors
     "map_of", "int_map_of",
+    // TCP socket functions
+    "tcp_socket", "tcp_close", "tcp_set_reuseaddr",
+    "tcp_bind", "tcp_listen", "tcp_accept",
+    "tcp_connect", "tcp_send", "tcp_recv", "tcp_recv_bytes", "tcp_peer_addr",
+    // Function annotation reflection
+    "func_anno_func_count", "func_anno_func_name",
+    "func_anno_count", "func_anno_key", "func_anno_value",
 };
 
 bool isBuiltin(const std::string &name) {
@@ -213,6 +220,24 @@ size_t builtinParamCount(const std::string &name) {
     if (name == "sprintf") return SIZE_MAX; // variadic
     if (name == "map_of") return SIZE_MAX;  // variadic: key, val pairs
     if (name == "int_map_of") return SIZE_MAX; // variadic: key, val pairs
+    // TCP socket functions
+    if (name == "tcp_socket") return 0;
+    if (name == "tcp_close") return 1;
+    if (name == "tcp_set_reuseaddr") return 1;
+    if (name == "tcp_bind") return 2;
+    if (name == "tcp_listen") return 2;
+    if (name == "tcp_accept") return 1;
+    if (name == "tcp_connect") return 3;
+    if (name == "tcp_send") return 3;
+    if (name == "tcp_recv") return 2;
+    if (name == "tcp_recv_bytes") return 3;
+    if (name == "tcp_peer_addr") return 1;
+    // Function annotation reflection
+    if (name == "func_anno_func_count") return 0;
+    if (name == "func_anno_func_name") return 1;
+    if (name == "func_anno_count") return 1;
+    if (name == "func_anno_key") return 2;
+    if (name == "func_anno_value") return 2;
     return 0;
 }
 
@@ -266,6 +291,14 @@ std::string builtinReturnType(const std::string &name) {
     if (name == "len") return "int";
     if (name == "str") return "string";
     if (name == "chr") return "string";
+    // TCP sockets
+    if (name == "tcp_socket" || name == "tcp_close" || name == "tcp_set_reuseaddr" ||
+        name == "tcp_bind" || name == "tcp_listen" || name == "tcp_accept" ||
+        name == "tcp_connect" || name == "tcp_send" || name == "tcp_recv_bytes") return "int";
+    if (name == "tcp_recv" || name == "tcp_peer_addr") return "string";
+    // Function annotation reflection
+    if (name == "func_anno_func_count" || name == "func_anno_count") return "int";
+    if (name == "func_anno_func_name" || name == "func_anno_key" || name == "func_anno_value") return "string";
     // Void-like (side effects only)
     return "";
 }
@@ -355,6 +388,18 @@ std::vector<std::string> builtinParamTypes(const std::string &name) {
     if (name == "sb_append_int") return {"ptr", "int"};
     if (name == "sb_append_char") return {"ptr", "int"};
     if (name == "sb_build" || name == "sb_reset" || name == "sb_len") return {"ptr"};
+    // TCP sockets
+    if (name == "tcp_close" || name == "tcp_set_reuseaddr" || name == "tcp_accept") return {"int"};
+    if (name == "tcp_bind" || name == "tcp_listen") return {"int", "int"};
+    if (name == "tcp_connect") return {"int", "string", "int"};
+    if (name == "tcp_send") return {"int", "string", "int"};
+    if (name == "tcp_recv") return {"int", "int"};
+    if (name == "tcp_recv_bytes") return {"int", "string", "int"};
+    if (name == "tcp_peer_addr") return {"int"};
+    // Function annotation reflection
+    if (name == "func_anno_func_name") return {"int"};
+    if (name == "func_anno_count") return {"string"};
+    if (name == "func_anno_key" || name == "func_anno_value") return {"string", "int"};
     return {};
 }
 

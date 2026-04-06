@@ -1,0 +1,36 @@
+package main;
+
+@route("GET", "/hello")
+func handle_hello() {
+    println("hello handler");
+}
+
+@get("/data")
+func handle_data() {
+    println("data handler");
+}
+
+@noargs
+func handle_default() {
+    println("default handler");
+}
+
+func main() {
+    fc := func_anno_func_count();
+    println(fc);
+    i := 0;
+    while (i < fc) {
+        fname := func_anno_func_name(i);
+        println(fname);
+        ac := func_anno_count(fname);
+        j := 0;
+        while (j < ac) {
+            print("  ");
+            print(func_anno_key(fname, j));
+            print("=");
+            println(func_anno_value(fname, j));
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+}

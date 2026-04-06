@@ -4,6 +4,12 @@
 #include <signal.h>
 #include <dirent.h>
 #include <unistd.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <errno.h>
 
 // Forward declarations for cross-references
 void *make_dyn_str_array(void);
@@ -930,4 +936,150 @@ char *read_line(void) {
     }
     buf[len] = '\0';
     return buf;
+}
+
+/* ============================================================
+ * TCP Socket Functions
+ * ============================================================ */
+
+int pg_tcp_socket(void) {
+    return socket(AF_INET, SOCK_STREAM, 0);
+}
+
+int pg_tcp_close(int fd) {
+    return close(fd);
+}
+
+int pg_tcp_set_reuseaddr(int fd) {
+    int opt = 1;
+    return setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+}
+
+int pg_tcp_bind(int fd, int port) {
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port = htons((uint16_t)port);
+    return bind(fd, (struct sockaddr *)&addr, sizeof(addr));
+}
+
+int pg_tcp_listen(int fd, int backlog) {
+    return listen(fd, backlog);
+}
+
+int pg_tcp_accept(int fd) {
+    struct sockaddr_in client;
+    socklen_t len = sizeof(client);
+    return accept(fd, (struct sockaddr *)&client, &len);
+}
+
+int pg_tcp_connect(int fd, const char *host, int port) {
+    struct addrinfo hints, *res;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    char port_str[16];
+    snprintf(port_str, sizeof(port_str), "%d", port);
+    if (getaddrinfo(host, port_str, &hints, &res) != 0) return -1;
+    int ret = connect(fd, res->ai_addr, res->ai_addrlen);
+    freeaddrinfo(res);
+    return ret;
+}
+
+int pg_tcp_send(int fd, const char *data, int len) {
+    return (int)send(fd, data, (size_t)len, 0);
+}
+
+const char *pg_tcp_recv(int fd, int max_len) {
+    char *buf = (char *)malloc(max_len + 1);
+    int n = (int)recv(fd, buf, (size_t)max_len, 0);
+    if (n <= 0) { buf[0] = '\0'; return buf; }
+    buf[n] = '\0';
+    return buf;
+}
+
+int pg_tcp_recv_bytes(int fd, const char *buf, int max_len) {
+    return (int)recv(fd, (void *)buf, (size_t)max_len, 0);
+}
+
+const char *pg_tcp_peer_addr(int fd) {
+    struct sockaddr_in addr;
+    socklen_t len = sizeof(addr);
+    if (getpeername(fd, (struct sockaddr *)&addr, &len) != 0) return "";
+    char *buf = (char *)malloc(64);
+    snprintf(buf, 64, "%s:%d", inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
+    return buf;
+}
+
+/* ============================================================
+ * Function Annotation Registry  (populated by codegen)
+ * ============================================================ */
+
+typedef struct {
+    const char *func_name;
+    const char *key;
+    const char *value;
+} PanguFuncAnnotation;
+
+static PanguFuncAnnotation *g_func_annos = NULL;
+static int g_func_anno_count = 0;
+
+/* List of all annotated function names (deduplicated) */
+static const char **g_func_names = NULL;
+static int g_func_name_count = 0;
+
+void __pangu_register_func_annotations(int count, void *arr) {
+    g_func_annos = (PanguFuncAnnotation *)arr;
+    g_func_anno_count = count;
+    /* Build deduplicated function name list */
+    int cap = 64;
+    g_func_names = (const char **)malloc(cap * sizeof(char *));
+    g_func_name_count = 0;
+    for (int i = 0; i < count; i++) {
+        int found = 0;
+        for (int j = 0; j < g_func_name_count; j++) {
+            if (strcmp(g_func_names[j], g_func_annos[i].func_name) == 0) { found = 1; break; }
+        }
+        if (!found) {
+            if (g_func_name_count >= cap) { cap *= 2; g_func_names = (const char **)realloc(g_func_names, cap * sizeof(char *)); }
+            g_func_names[g_func_name_count++] = g_func_annos[i].func_name;
+        }
+    }
+}
+
+int func_anno_func_count(void) { return g_func_name_count; }
+
+const char *func_anno_func_name(int idx) {
+    if (idx < 0 || idx >= g_func_name_count) return "";
+    return g_func_names[idx];
+}
+
+int func_anno_count(const char *func_name) {
+    int c = 0;
+    for (int i = 0; i < g_func_anno_count; i++)
+        if (strcmp(g_func_annos[i].func_name, func_name) == 0) c++;
+    return c;
+}
+
+const char *func_anno_key(const char *func_name, int idx) {
+    int c = 0;
+    for (int i = 0; i < g_func_anno_count; i++) {
+        if (strcmp(g_func_annos[i].func_name, func_name) == 0) {
+            if (c == idx) return g_func_annos[i].key;
+            c++;
+        }
+    }
+    return "";
+}
+
+const char *func_anno_value(const char *func_name, int idx) {
+    int c = 0;
+    for (int i = 0; i < g_func_anno_count; i++) {
+        if (strcmp(g_func_annos[i].func_name, func_name) == 0) {
+            if (c == idx) return g_func_annos[i].value;
+            c++;
+        }
+    }
+    return "";
 }

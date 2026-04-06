@@ -131,6 +131,7 @@ class GImpl : public IGrammer {
     int  getBraceDepth() const { return _brace_depth; }
     void addMethod(PFunction &&func) { _methods.push_back(std::move(func)); }
     std::vector<PFunction> &methods() { return _methods; }
+    const std::vector<PFunction> &methods() const { return _methods; }
     const std::string &base() const { return _base; }
     const std::vector<std::string> &modifiers() const { return _modifiers; }
     std::string to_string() override;
@@ -391,6 +392,14 @@ class GFuncDef : public IGrammer {
     void addTypeParam(const std::string &name) { _type_params.push_back(name); }
     const std::vector<std::string> &typeParams() const { return _type_params; }
     bool isGeneric() const { return !_type_params.empty(); }
+
+    void addAnnotation(const std::string &key, const std::string &value = "") {
+        _annotations.push_back({key, value});
+    }
+    const std::vector<std::pair<std::string, std::string>> &annotations() const {
+        return _annotations;
+    }
+
     virtual std::string to_string() override;
     GVarDefContainer    params;
     GVarDefContainer    result;
@@ -401,6 +410,7 @@ class GFuncDef : public IGrammer {
     int         _brace_depth      = 0;
     lexer::SourceLocation _location;
     std::vector<std::string> _type_params;
+    std::vector<std::pair<std::string, std::string>> _annotations;
 };
 using pgcodes::GCode;
 using pgcodes::PCode;

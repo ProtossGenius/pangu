@@ -1,40 +1,48 @@
-# Phase 11: Pipeline Syntax → Bootstrap
+# Phase 12: Standard Library, Networking & Examples
 
 ## Goal
-Implement pipeline runtime syntax, evaluate bootstrap feasibility, fill gaps, complete self-hosting.
+Implement stdlib networking (TCP sockets, HTTP), move JSON to stdlib, create
+pgl_example/ with a curl client and an annotation-routed web server.
 
 ## Approach
-1. Implement pipeline prerequisites (enum codegen, new operators)
-2. Implement pipeline runtime lowering (state machine → LLVM IR)
-3. Test with examples/bootstrap_lexer_pipeline.pgl
-4. Evaluate: can pipeline syntax drive the bootstrap?
-5. Fill remaining gaps, complete bootstrap compiler
+1. Add C runtime functions for TCP sockets (socket/bind/listen/accept/connect/send/recv/close)
+2. Add function-level annotations (currently only struct fields have them)
+3. Add runtime function-annotation reflection API
+4. Build stdlib/net/ — low-level socket wrappers in PGL
+5. Build stdlib/http/ — HTTP request parsing and response building
+6. Move JSON from vendor to stdlib/json/
+7. Create pgl_example/curl.pgl — single-file HTTP GET client
+8. Create pgl_example/web_server.pgl — annotation-routed web server
 
 ## Tasks
 
-### A: Pipeline Prerequisites
-- [ ] A1: Enum codegen — `type X enum { A, B, C }` → integer constants 0,1,2; `X::A` resolves to 0
-- [ ] A2: `=>` operator in lexer (arrow for case patterns)
-- [ ] A3: break/continue in loops
+### T1: C runtime — TCP socket functions
+Add to pangu_builtins.c: tcp_socket, tcp_bind, tcp_listen, tcp_accept,
+tcp_connect, tcp_send, tcp_recv, tcp_close, tcp_set_reuseaddr
 
-### B: Pipeline Runtime Core
-- [ ] B1: Parse impl worker/switcher methods into real function AST (not raw token capture)
-- [ ] B2: Pipeline type → generate state machine struct + run function
-- [ ] B3: Worker codegen — worker methods as state handler functions
-- [ ] B4: Switcher codegen — dispatch function
-- [ ] B5: Pipeline control signals — CONTINUE/FINISH/TRANSFER_FINISH/APPEND as builtins
-- [ ] B6: Stream operator `>>` (push to output)
+### T2: Register socket builtins
+Register in sema (BUILTIN_FUNCTIONS, param counts, types) and
+llvm_backend (getOrInsertFunction declarations)
 
-### C: Pattern Matching
-- [ ] C1: `case(expr) { val => body }` syntax in parser
-- [ ] C2: Case expression codegen (LLVM switch with return values)
+### T3: Function-level annotations
+- Add annotation storage to GFuncDef in grammer/datas.h
+- Parse @annotation("value") before func keyword in parser
+- Generate function annotation metadata in LLVM backend
+- Add runtime reflection: func_annotation_count, func_annotation_key,
+  func_annotation_value, func_annotation_func_name, func_count
 
-### D: Integration & Test
-- [ ] D1: Make examples/bootstrap_lexer_pipeline.pgl compile and run (pipeline version)
-- [ ] D2: Evaluate pipeline bootstrap feasibility
+### T4: stdlib/net/socket.pgl
+PGL wrappers for TCP operations: connect, serve, request/response helpers
 
-### E: Bootstrap Completion
-- [ ] E1: Fill any remaining syntax gaps identified in D2
-- [ ] E2: Write bootstrap/emitter.pgl (AST → C code)
-- [ ] E3: Write bootstrap/main.pgl (orchestrator)
-- [ ] E4: Bootstrap verification — compile a simple PGL program end-to-end
+### T5: stdlib/http/http.pgl
+HTTP parsing: parse_request, build_response, status codes, headers
+
+### T6: stdlib/json/json.pgl
+Move JSON from vendor to stdlib, clean up and extend
+
+### T7: pgl_example/curl.pgl
+Single-file HTTP GET client using stdlib/net + stdlib/http
+
+### T8: pgl_example/web_server.pgl
+Annotation-routed web server: @route("GET", "/path") on handler functions,
+auto-discovery via reflection at startup

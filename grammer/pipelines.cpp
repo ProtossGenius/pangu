@@ -568,6 +568,10 @@ void PipeImport::accept(IPipelineFactory *factory, PData &&data) {
     }
 }
 
+// --- Pending function annotations (buffered at package level) ---
+static std::vector<std::pair<std::string, std::string>> s_pending_func_annotations;
+static std::string s_pending_anno_name;
+
 void PipePackage::createProduct(IPipelineFactory *factory) {
     if (factory->productStackSize() != 0) {
         factory->onFail("package can't in another container:" +
@@ -576,7 +580,8 @@ void PipePackage::createProduct(IPipelineFactory *factory) {
     auto ptr = new GPackage();
     factory->pushProduct(PProduct(ptr));
 }
-enum class PkgStep { START = 0, READ_PACKAGE, FINISH, READ_BODY };
+enum class PkgStep { START = 0, READ_PACKAGE, FINISH, READ_BODY,
+                     READ_ANNO_NAME, READ_ANNO_LPAREN, READ_ANNO_VALUE, READ_ANNO_RPAREN };
 void PipePackage::accept(IPipelineFactory *factory, PData &&data) {
     GET_LEX(data);
     GET_TOP(factory, GPackage);
@@ -612,10 +617,59 @@ void PipePackage::accept(IPipelineFactory *factory, PData &&data) {
         }
         break;
     }
+    case int(PkgStep::READ_ANNO_NAME): {
+        if (lexer::ELexPipeline::Identifier == type) {
+            s_pending_anno_name = str;
+            topProduct->setStep(int(PkgStep::READ_ANNO_LPAREN));
+            return;
+        }
+        factory->onFail("expected annotation name after @, got " + lex->to_string());
+        return;
+    }
+    case int(PkgStep::READ_ANNO_LPAREN): {
+        if (makeSymbol("(") == *lex) {
+            topProduct->setStep(int(PkgStep::READ_ANNO_VALUE));
+            return;
+        }
+        // No parens: annotation without value
+        s_pending_func_annotations.push_back({s_pending_anno_name, ""});
+        topProduct->setStep(int(PkgStep::READ_BODY));
+        factory->undealData(std::move(data));
+        return;
+    }
+    case int(PkgStep::READ_ANNO_VALUE): {
+        if (lexer::ELexPipeline::String == type ||
+            lexer::ELexPipeline::Identifier == type ||
+            lexer::ELexPipeline::Number == type) {
+            s_pending_func_annotations.push_back({s_pending_anno_name, str});
+            topProduct->setStep(int(PkgStep::READ_ANNO_RPAREN));
+            return;
+        }
+        factory->onFail("expected annotation value, got " + lex->to_string());
+        return;
+    }
+    case int(PkgStep::READ_ANNO_RPAREN): {
+        if (makeSymbol(")") == *lex) {
+            topProduct->setStep(int(PkgStep::READ_BODY));
+            return;
+        }
+        if (makeSymbol(",") == *lex) {
+            // Multi-value annotation: append next value with comma separator
+            topProduct->setStep(int(PkgStep::READ_ANNO_VALUE));
+            return;
+        }
+        factory->onFail("expected ')' after annotation value, got " + lex->to_string());
+        return;
+    }
     default:
         factory->onFail(
             "PipePackage: product = " + topProduct->to_string() +
             " unexcept step code: " + std::to_string(topProduct->getStep()));
+    }
+    // Handle @ at top level: buffer annotations for the next func
+    if (makeSymbol("@") == *lex) {
+        topProduct->setStep(int(PkgStep::READ_ANNO_NAME));
+        return;
     }
     factory->undealData(std::move(data));
     if (lexer::makeIdentifier("import") == *lex) {
@@ -1017,7 +1071,13 @@ enum class FuncStep {
 };
 static std::string s_pending_multi_return_ident;
 void PipeFunc::createProduct(IPipelineFactory *factory) {
-    factory->pushProduct(PProduct(new GFunction()), packFuncToPackage);
+    auto *func = new GFunction();
+    // Apply any buffered annotations from @annotation before func
+    for (auto &anno : s_pending_func_annotations) {
+        func->addAnnotation(anno.first, anno.second);
+    }
+    s_pending_func_annotations.clear();
+    factory->pushProduct(PProduct(func), packFuncToPackage);
 }
 void PipeFunc::accept(IPipelineFactory *factory, PData &&data) {
     GET_LEX(data);
