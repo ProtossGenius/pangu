@@ -1,0 +1,352 @@
+package json;
+
+// JSON value types
+type JsonType enum {
+    JSON_NULL
+    JSON_BOOL
+    JSON_NUMBER
+    JSON_STRING
+    JSON_ARRAY
+    JSON_OBJECT
+}
+
+// Parse a JSON number starting at position pos in string s.
+func parse_number(s string, pos int, end int) int {
+    result := 0;
+    neg := 0;
+    i := pos;
+    ch := str_char_at(s, i);
+    if (ch == 45) {
+        neg = 1;
+        i = i + 1;
+    }
+    while (i < end) {
+        ch = str_char_at(s, i);
+        if (ch < 48 || ch > 57) {
+            break;
+        }
+        result = result * 10 + (ch - 48);
+        i = i + 1;
+    }
+    if (neg == 1) {
+        result = 0 - result;
+    }
+    return result;
+}
+
+// Skip whitespace in string s starting at position pos.
+func skip_ws(s string, pos int) int {
+    len := str_len(s);
+    i := pos;
+    while (i < len) {
+        ch := str_char_at(s, i);
+        if (ch != 32 && ch != 9 && ch != 10 && ch != 13) {
+            return i;
+        }
+        i = i + 1;
+    }
+    return i;
+}
+
+// Parse a JSON string starting at pos (the opening quote).
+func parse_string(s string, pos int) string {
+    len := str_len(s);
+    i := pos + 1;
+    result := "";
+    while (i < len) {
+        ch := str_char_at(s, i);
+        if (ch == 34) {
+            return result;
+        }
+        if (ch == 92) {
+            i = i + 1;
+            if (i < len) {
+                esc := str_char_at(s, i);
+                if (esc == 110) {
+                    result = str_concat(result, "\n");
+                } else if (esc == 116) {
+                    result = str_concat(result, "\t");
+                } else if (esc == 34) {
+                    result = str_concat(result, "\"");
+                } else if (esc == 92) {
+                    result = str_concat(result, "\\");
+                } else if (esc == 47) {
+                    result = str_concat(result, "/");
+                } else {
+                    result = str_concat(result, char_to_str(esc));
+                }
+            }
+        } else {
+            result = str_concat(result, char_to_str(ch));
+        }
+        i = i + 1;
+    }
+    return result;
+}
+
+// Find the end position of a JSON string starting at pos.
+func find_string_end(s string, pos int) int {
+    len := str_len(s);
+    i := pos + 1;
+    while (i < len) {
+        ch := str_char_at(s, i);
+        if (ch == 34) {
+            return i + 1;
+        }
+        if (ch == 92) {
+            i = i + 1;
+        }
+        i = i + 1;
+    }
+    return i;
+}
+
+// Find the end of a JSON number starting at pos.
+func find_number_end(s string, pos int) int {
+    len := str_len(s);
+    i := pos;
+    ch := str_char_at(s, i);
+    if (ch == 45) {
+        i = i + 1;
+    }
+    while (i < len) {
+        ch = str_char_at(s, i);
+        if (ch < 48 || ch > 57) {
+            if (ch != 46 && ch != 101 && ch != 69) {
+                return i;
+            }
+        }
+        i = i + 1;
+    }
+    return i;
+}
+
+// Detect the JSON type at position pos.
+func detect_type(s string, pos int) int {
+    ch := str_char_at(s, pos);
+    if (ch == 34) { return 3; }
+    if (ch == 116 || ch == 102) { return 1; }
+    if (ch == 110) { return 0; }
+    if (ch == 91) { return 4; }
+    if (ch == 123) { return 5; }
+    return 2;
+}
+
+// Parse a JSON boolean. Returns 1 for true, 0 for false.
+func parse_bool(s string, pos int) int {
+    ch := str_char_at(s, pos);
+    if (ch == 116) { return 1; }
+    return 0;
+}
+
+// Forward declarations for recursive types
+func find_value_end(s string, pos int) int {
+    ch := str_char_at(s, pos);
+    if (ch == 34) { return find_string_end(s, pos); }
+    if (ch == 116) { return pos + 4; }
+    if (ch == 102) { return pos + 5; }
+    if (ch == 110) { return pos + 4; }
+    if (ch == 91) { return find_array_end(s, pos); }
+    if (ch == 123) { return find_object_end(s, pos); }
+    return find_number_end(s, pos);
+}
+
+func find_array_end(s string, pos int) int {
+    len := str_len(s);
+    i := pos + 1;
+    i = skip_ws(s, i);
+    if (i < len) {
+        ch := str_char_at(s, i);
+        if (ch == 93) { return i + 1; }
+    }
+    while (i < len) {
+        i = skip_ws(s, i);
+        i = find_value_end(s, i);
+        i = skip_ws(s, i);
+        if (i < len) {
+            ch := str_char_at(s, i);
+            if (ch == 93) { return i + 1; }
+            if (ch == 44) { i = i + 1; }
+        }
+    }
+    return i;
+}
+
+func find_object_end(s string, pos int) int {
+    len := str_len(s);
+    i := pos + 1;
+    i = skip_ws(s, i);
+    if (i < len) {
+        ch := str_char_at(s, i);
+        if (ch == 125) { return i + 1; }
+    }
+    while (i < len) {
+        i = skip_ws(s, i);
+        i = find_string_end(s, i);
+        i = skip_ws(s, i);
+        if (i < len) {
+            ch := str_char_at(s, i);
+            if (ch == 58) { i = i + 1; }
+        }
+        i = skip_ws(s, i);
+        i = find_value_end(s, i);
+        i = skip_ws(s, i);
+        if (i < len) {
+            ch := str_char_at(s, i);
+            if (ch == 125) { return i + 1; }
+            if (ch == 44) { i = i + 1; }
+        }
+    }
+    return i;
+}
+
+// Get a string value from a JSON object by key.
+func get_string(obj string, key string) string {
+    len := str_len(obj);
+    pos := skip_ws(obj, 0);
+    if (pos >= len) { return ""; }
+    ch := str_char_at(obj, pos);
+    if (ch != 123) { return ""; }
+    pos = pos + 1;
+    while (pos < len) {
+        pos = skip_ws(obj, pos);
+        if (pos >= len) { return ""; }
+        ch = str_char_at(obj, pos);
+        if (ch == 125) { return ""; }
+        k := parse_string(obj, pos);
+        pos = find_string_end(obj, pos);
+        pos = skip_ws(obj, pos);
+        if (pos >= len) { return ""; }
+        ch = str_char_at(obj, pos);
+        if (ch == 58) { pos = pos + 1; }
+        pos = skip_ws(obj, pos);
+        if (str_eq(k, key) == 1) {
+            ch = str_char_at(obj, pos);
+            if (ch == 34) { return parse_string(obj, pos); }
+            return "";
+        }
+        pos = find_value_end(obj, pos);
+        pos = skip_ws(obj, pos);
+        if (pos < len) {
+            ch = str_char_at(obj, pos);
+            if (ch == 44) { pos = pos + 1; }
+        }
+    }
+    return "";
+}
+
+// Get an integer value from a JSON object by key.
+func get_number(obj string, key string) int {
+    len := str_len(obj);
+    pos := skip_ws(obj, 0);
+    if (pos >= len) { return 0; }
+    ch := str_char_at(obj, pos);
+    if (ch != 123) { return 0; }
+    pos = pos + 1;
+    while (pos < len) {
+        pos = skip_ws(obj, pos);
+        if (pos >= len) { return 0; }
+        ch = str_char_at(obj, pos);
+        if (ch == 125) { return 0; }
+        k := parse_string(obj, pos);
+        pos = find_string_end(obj, pos);
+        pos = skip_ws(obj, pos);
+        if (pos >= len) { return 0; }
+        ch = str_char_at(obj, pos);
+        if (ch == 58) { pos = pos + 1; }
+        pos = skip_ws(obj, pos);
+        if (str_eq(k, key) == 1) {
+            end := find_number_end(obj, pos);
+            return parse_number(obj, pos, end);
+        }
+        pos = find_value_end(obj, pos);
+        pos = skip_ws(obj, pos);
+        if (pos < len) {
+            ch = str_char_at(obj, pos);
+            if (ch == 44) { pos = pos + 1; }
+        }
+    }
+    return 0;
+}
+
+// Get a boolean value from a JSON object by key. Returns 1 for true, 0 for false.
+func get_bool(obj string, key string) int {
+    len := str_len(obj);
+    pos := skip_ws(obj, 0);
+    if (pos >= len) { return 0; }
+    ch := str_char_at(obj, pos);
+    if (ch != 123) { return 0; }
+    pos = pos + 1;
+    while (pos < len) {
+        pos = skip_ws(obj, pos);
+        if (pos >= len) { return 0; }
+        ch = str_char_at(obj, pos);
+        if (ch == 125) { return 0; }
+        k := parse_string(obj, pos);
+        pos = find_string_end(obj, pos);
+        pos = skip_ws(obj, pos);
+        if (pos >= len) { return 0; }
+        ch = str_char_at(obj, pos);
+        if (ch == 58) { pos = pos + 1; }
+        pos = skip_ws(obj, pos);
+        if (str_eq(k, key) == 1) {
+            return parse_bool(obj, pos);
+        }
+        pos = find_value_end(obj, pos);
+        pos = skip_ws(obj, pos);
+        if (pos < len) {
+            ch = str_char_at(obj, pos);
+            if (ch == 44) { pos = pos + 1; }
+        }
+    }
+    return 0;
+}
+
+// Build a simple JSON object from key-value string pairs
+// Usage: json.object("key1", "val1", "key2", "val2", ...)
+// For now, build manually with helpers:
+func quote(s string) string {
+    result := "\"";
+    result = str_concat(result, s);
+    result = str_concat(result, "\"");
+    return result;
+}
+
+func kv_string(key string, value string) string {
+    result := quote(key);
+    result = str_concat(result, ":");
+    result = str_concat(result, quote(value));
+    return result;
+}
+
+func kv_number(key string, value int) string {
+    result := quote(key);
+    result = str_concat(result, ":");
+    result = str_concat(result, int_to_str(value));
+    return result;
+}
+
+func kv_bool(key string, value int) string {
+    result := quote(key);
+    result = str_concat(result, ":");
+    if (value != 0) {
+        result = str_concat(result, "true");
+    } else {
+        result = str_concat(result, "false");
+    }
+    return result;
+}
+
+func wrap_object(fields string) string {
+    result := "{";
+    result = str_concat(result, fields);
+    result = str_concat(result, "}");
+    return result;
+}
+
+func wrap_array(items string) string {
+    result := "[";
+    result = str_concat(result, items);
+    result = str_concat(result, "]");
+    return result;
+}

@@ -1,0 +1,162 @@
+package main;
+
+// pgl_web - A simple annotation-routed web server
+// Usage: pangu run pgl_example/web_server.pgl
+// Listens on port 8080
+
+import "stdlib/http/http" as http;
+import "stdlib/json/json" as json;
+
+// Route handlers - annotated with @get or @post
+
+@get("/")
+func handle_root() string {
+    return http.html_response(200, "<h1>Welcome to PGL Web Server</h1><p>Routes: /hello, /api/status, /api/echo</p>");
+}
+
+@get("/hello")
+func handle_hello() string {
+    return http.text_response(200, "Hello, World!");
+}
+
+@get("/api/status")
+func handle_status() string {
+    body := json.wrap_object(json.kv_string("status", "running"));
+    return http.json_response(200, body);
+}
+
+@post("/api/echo")
+func handle_echo(request_body string) string {
+    return http.json_response(200, request_body);
+}
+
+// Dispatch request to handler by name
+func dispatch(fname string, body string) string {
+    if (str_eq(fname, "handle_root") == 1) {
+        return handle_root();
+    }
+    if (str_eq(fname, "handle_hello") == 1) {
+        return handle_hello();
+    }
+    if (str_eq(fname, "handle_status") == 1) {
+        return handle_status();
+    }
+    if (str_eq(fname, "handle_echo") == 1) {
+        return handle_echo(body);
+    }
+    return http.json_response(500, json.wrap_object(json.kv_string("error", "handler error")));
+}
+
+func main() {
+    // Build route table from annotations
+    rt_methods := make_str_array(64);
+    rt_paths   := make_str_array(64);
+    rt_funcs   := make_str_array(64);
+    rt_count   := 0;
+
+    fc := func_anno_func_count();
+    i := 0;
+    while (i < fc) {
+        fname := func_anno_func_name(i);
+        ac := func_anno_count(fname);
+        j := 0;
+        while (j < ac) {
+            key := func_anno_key(fname, j);
+            val := func_anno_value(fname, j);
+            if (str_eq(key, "get") == 1 || str_eq(key, "post") == 1) {
+                if (rt_count < 64) {
+                    if (str_eq(key, "get") == 1) {
+                        str_array_set(rt_methods, rt_count, "GET");
+                    } else {
+                        str_array_set(rt_methods, rt_count, "POST");
+                    }
+                    str_array_set(rt_paths, rt_count, val);
+                    str_array_set(rt_funcs, rt_count, fname);
+                    rt_count = rt_count + 1;
+                }
+            }
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+
+    port := 8080;
+    println("PGL Web Server starting...");
+
+    i = 0;
+    while (i < rt_count) {
+        print("  ");
+        print(str_array_get(rt_methods, i));
+        print(" ");
+        println(str_array_get(rt_paths, i));
+        i = i + 1;
+    }
+
+    print("Listening on port ");
+    println(port);
+
+    server_fd := tcp_socket();
+    if (server_fd < 0) {
+        println("Error: failed to create socket");
+        return;
+    }
+
+    tcp_set_reuseaddr(server_fd);
+    rc := tcp_bind(server_fd, port);
+    if (rc < 0) {
+        println("Error: failed to bind");
+        tcp_close(server_fd);
+        return;
+    }
+
+    rc = tcp_listen(server_fd, 16);
+    if (rc < 0) {
+        println("Error: failed to listen");
+        tcp_close(server_fd);
+        return;
+    }
+
+    while (1 == 1) {
+        client_fd := tcp_accept(server_fd);
+        if (client_fd < 0) {
+            continue;
+        }
+
+        peer := tcp_peer_addr(client_fd);
+        request := tcp_recv(client_fd, 8192);
+
+        if (str_len(request) > 0) {
+            method := http.parse_method(request);
+            path := http.parse_path(request);
+            body := http.get_body(request);
+
+            print(method);
+            print(" ");
+            print(path);
+            print(" <- ");
+            println(peer);
+
+            // Find matching route
+            handler := "";
+            k := 0;
+            while (k < rt_count) {
+                if (str_eq(str_array_get(rt_methods, k), method) == 1 && str_eq(str_array_get(rt_paths, k), path) == 1) {
+                    handler = str_array_get(rt_funcs, k);
+                    break;
+                }
+                k = k + 1;
+            }
+
+            response := "";
+            if (str_len(handler) > 0) {
+                response = dispatch(handler, body);
+            } else {
+                response = http.json_response(404, json.wrap_object(json.kv_string("error", "not found")));
+            }
+            tcp_send(client_fd, response, str_len(response));
+        }
+
+        tcp_close(client_fd);
+    }
+}
+

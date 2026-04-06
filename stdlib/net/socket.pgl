@@ -1,0 +1,53 @@
+package net;
+
+// TCP socket wrapper functions
+
+// Create a TCP socket. Returns file descriptor or -1 on error.
+func socket() int {
+    return tcp_socket();
+}
+
+// Close a TCP socket.
+func close(fd int) int {
+    return tcp_close(fd);
+}
+
+// Set SO_REUSEADDR on a socket.
+func set_reuseaddr(fd int) int {
+    return tcp_set_reuseaddr(fd);
+}
+
+// Bind a socket to a port (INADDR_ANY).
+func bind(fd int, port int) int {
+    return tcp_bind(fd, port);
+}
+
+// Listen on a socket with given backlog.
+func listen(fd int, backlog int) int {
+    return tcp_listen(fd, backlog);
+}
+
+// Accept a connection. Returns new client fd or -1.
+func accept(fd int) int {
+    return tcp_accept(fd);
+}
+
+// Connect to host:port. Returns 0 on success, -1 on error.
+func connect(fd int, host string, port int) int {
+    return tcp_connect(fd, host, port);
+}
+
+// Send data on a socket. Returns bytes sent or -1.
+func send(fd int, data string) int {
+    return tcp_send(fd, data, str_len(data));
+}
+
+// Receive data from a socket. Returns the received string.
+func recv(fd int, max_len int) string {
+    return tcp_recv(fd, max_len);
+}
+
+// Get peer address as "ip:port" string.
+func peer_addr(fd int) string {
+    return tcp_peer_addr(fd);
+}

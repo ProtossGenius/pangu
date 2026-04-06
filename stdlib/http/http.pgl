@@ -1,0 +1,248 @@
+package http;
+
+// Simple HTTP library for PGL
+// Provides HTTP request parsing, response building, and a basic HTTP client
+
+// Build an HTTP GET request string
+func build_get_request(host string, path string) string {
+    req := str_concat("GET ", path);
+    req = str_concat(req, " HTTP/1.1\r\nHost: ");
+    req = str_concat(req, host);
+    req = str_concat(req, "\r\nConnection: close\r\n\r\n");
+    return req;
+}
+
+// Extract the HTTP status code from a response string
+func get_status_code(response string) int {
+    // HTTP/1.1 200 OK  ->  status starts at index 9
+    len := str_len(response);
+    if (len < 12) {
+        return 0;
+    }
+    // Find space after HTTP/1.x
+    i := 0;
+    while (i < len) {
+        ch := str_char_at(response, i);
+        if (ch == 32) {
+            break;
+        }
+        i = i + 1;
+    }
+    i = i + 1;
+    // Parse 3-digit status code
+    code := 0;
+    count := 0;
+    while (i < len && count < 3) {
+        ch := str_char_at(response, i);
+        if (ch < 48 || ch > 57) {
+            break;
+        }
+        code = code * 10 + (ch - 48);
+        i = i + 1;
+        count = count + 1;
+    }
+    return code;
+}
+
+// Extract the body from an HTTP response (after \r\n\r\n)
+func get_body(response string) string {
+    len := str_len(response);
+    i := 0;
+    while (i < len - 3) {
+        c1 := str_char_at(response, i);
+        c2 := str_char_at(response, i + 1);
+        c3 := str_char_at(response, i + 2);
+        c4 := str_char_at(response, i + 3);
+        if (c1 == 13 && c2 == 10 && c3 == 13 && c4 == 10) {
+            return str_substr(response, i + 4, len);
+        }
+        i = i + 1;
+    }
+    return "";
+}
+
+// Extract a specific header value from an HTTP response
+func get_header(response string, header_name string) string {
+    len := str_len(response);
+    hlen := str_len(header_name);
+    i := 0;
+    // Skip status line
+    while (i < len) {
+        ch := str_char_at(response, i);
+        if (ch == 10) {
+            i = i + 1;
+            break;
+        }
+        i = i + 1;
+    }
+    // Search headers
+    while (i < len - 3) {
+        // Check if this line starts with header_name
+        found := 1;
+        j := 0;
+        while (j < hlen && (i + j) < len) {
+            c1 := str_char_at(response, i + j);
+            c2 := str_char_at(header_name, j);
+            // Case-insensitive compare
+            if (c1 >= 65 && c1 <= 90) {
+                c1 = c1 + 32;
+            }
+            if (c2 >= 65 && c2 <= 90) {
+                c2 = c2 + 32;
+            }
+            if (c1 != c2) {
+                found = 0;
+                break;
+            }
+            j = j + 1;
+        }
+        if (found == 1 && (i + hlen) < len) {
+            ch := str_char_at(response, i + hlen);
+            if (ch == 58) {
+                // Found header, extract value
+                vstart := i + hlen + 1;
+                // Skip leading space
+                if (vstart < len) {
+                    ch2 := str_char_at(response, vstart);
+                    if (ch2 == 32) {
+                        vstart = vstart + 1;
+                    }
+                }
+                // Find end of line
+                vend := vstart;
+                while (vend < len) {
+                    ch3 := str_char_at(response, vend);
+                    if (ch3 == 13 || ch3 == 10) {
+                        break;
+                    }
+                    vend = vend + 1;
+                }
+                return str_substr(response, vstart, vend);
+            }
+        }
+        // Skip to next line
+        while (i < len) {
+            ch = str_char_at(response, i);
+            if (ch == 10) {
+                i = i + 1;
+                break;
+            }
+            i = i + 1;
+        }
+        // Check for end of headers
+        if (i < len) {
+            ch = str_char_at(response, i);
+            if (ch == 13 || ch == 10) {
+                break;
+            }
+        }
+    }
+    return "";
+}
+
+// Perform an HTTP GET request. Returns the full response string.
+func get(host string, port int, path string) string {
+    fd := tcp_socket();
+    if (fd < 0) {
+        return "";
+    }
+    rc := tcp_connect(fd, host, port);
+    if (rc < 0) {
+        tcp_close(fd);
+        return "";
+    }
+    req := build_get_request(host, path);
+    tcp_send(fd, req, str_len(req));
+
+    response := "";
+    done := 0;
+    while (done == 0) {
+        chunk := tcp_recv(fd, 4096);
+        if (str_len(chunk) == 0) {
+            done = 1;
+        } else {
+            response = str_concat(response, chunk);
+        }
+    }
+    tcp_close(fd);
+    return response;
+}
+
+// Parse the request line from an HTTP request: "GET /path HTTP/1.1"
+// Returns the method (e.g., "GET")
+func parse_method(request string) string {
+    len := str_len(request);
+    i := 0;
+    while (i < len) {
+        ch := str_char_at(request, i);
+        if (ch == 32) {
+            return str_substr(request, 0, i);
+        }
+        i = i + 1;
+    }
+    return request;
+}
+
+// Parse the request path from an HTTP request
+func parse_path(request string) string {
+    len := str_len(request);
+    start := 0;
+    i := 0;
+    // Skip method
+    while (i < len) {
+        ch := str_char_at(request, i);
+        if (ch == 32) {
+            start = i + 1;
+            break;
+        }
+        i = i + 1;
+    }
+    // Find end of path
+    i = start;
+    while (i < len) {
+        ch := str_char_at(request, i);
+        if (ch == 32 || ch == 63) {
+            return str_substr(request, start, i);
+        }
+        i = i + 1;
+    }
+    return str_substr(request, start, len);
+}
+
+// Build a simple HTTP response
+func build_response(status int, content_type string, body string) string {
+    status_text := "OK";
+    if (status == 404) {
+        status_text = "Not Found";
+    } else if (status == 500) {
+        status_text = "Internal Server Error";
+    } else if (status == 400) {
+        status_text = "Bad Request";
+    }
+
+    resp := str_concat("HTTP/1.1 ", int_to_str(status));
+    resp = str_concat(resp, " ");
+    resp = str_concat(resp, status_text);
+    resp = str_concat(resp, "\r\nContent-Type: ");
+    resp = str_concat(resp, content_type);
+    resp = str_concat(resp, "\r\nContent-Length: ");
+    resp = str_concat(resp, int_to_str(str_len(body)));
+    resp = str_concat(resp, "\r\nConnection: close\r\n\r\n");
+    resp = str_concat(resp, body);
+    return resp;
+}
+
+// Build a JSON response
+func json_response(status int, body string) string {
+    return build_response(status, "application/json", body);
+}
+
+// Build a text response
+func text_response(status int, body string) string {
+    return build_response(status, "text/plain", body);
+}
+
+// Build an HTML response
+func html_response(status int, body string) string {
+    return build_response(status, "text/html", body);
+}

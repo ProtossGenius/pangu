@@ -1,0 +1,121 @@
+package main;
+
+// pgl_curl - A simple HTTP GET client
+// Usage: pangu run pgl_example/curl.pgl <url>
+// Example: pangu run pgl_example/curl.pgl http://example.com/
+
+import "stdlib/http/http" as http;
+
+// Parse host from URL (assumes http://host/path or http://host:port/path)
+func parse_host(url string) string {
+    len := str_len(url);
+    // Skip "http://"
+    start := 7;
+    i := start;
+    while (i < len) {
+        ch := str_char_at(url, i);
+        if (ch == 58 || ch == 47) {
+            return str_substr(url, start, i);
+        }
+        i = i + 1;
+    }
+    return str_substr(url, start, len);
+}
+
+// Parse port from URL (default 80)
+func parse_port(url string) int {
+    len := str_len(url);
+    start := 7;
+    i := start;
+    // Find end of host
+    while (i < len) {
+        ch := str_char_at(url, i);
+        if (ch == 58) {
+            // Port follows
+            i = i + 1;
+            port := 0;
+            while (i < len) {
+                ch = str_char_at(url, i);
+                if (ch < 48 || ch > 57) {
+                    return port;
+                }
+                port = port * 10 + (ch - 48);
+                i = i + 1;
+            }
+            return port;
+        }
+        if (ch == 47) {
+            return 80;
+        }
+        i = i + 1;
+    }
+    return 80;
+}
+
+// Parse path from URL (default /)
+func parse_path(url string) string {
+    len := str_len(url);
+    start := 7;
+    i := start;
+    // Skip host
+    while (i < len) {
+        ch := str_char_at(url, i);
+        if (ch == 47) {
+            return str_substr(url, i, len);
+        }
+        if (ch == 58) {
+            // Skip port
+            i = i + 1;
+            while (i < len) {
+                ch = str_char_at(url, i);
+                if (ch == 47) {
+                    return str_substr(url, i, len);
+                }
+                i = i + 1;
+            }
+            return "/";
+        }
+        i = i + 1;
+    }
+    return "/";
+}
+
+func main() {
+    if (args_count() < 2) {
+        println("Usage: curl <url>");
+        println("Example: curl http://example.com/");
+        return;
+    }
+
+    url := args(1);
+    // Check for http:// prefix
+    if (str_len(url) < 8) {
+        println("Error: URL must start with http://");
+        return;
+    }
+
+    host := parse_host(url);
+    port := parse_port(url);
+    path := parse_path(url);
+
+    print("Connecting to ");
+    print(host);
+    print(":");
+    print(int_to_str(port));
+    print(path);
+    println("...");
+
+    response := http.get(host, port, path);
+
+    if (str_len(response) == 0) {
+        println("Error: failed to connect");
+        return;
+    }
+
+    status := http.get_status_code(response);
+    print("HTTP Status: ");
+    println(status);
+
+    body := http.get_body(response);
+    println(body);
+}
