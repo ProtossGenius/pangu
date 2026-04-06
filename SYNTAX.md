@@ -756,6 +756,21 @@ The bootstrap reads PGL source, tokenizes it, parses to AST, and emits C code
 that is compiled with gcc. It supports multi-file compilation, the `-o` flag,
 and `--help`.
 
+### Modernized Bootstrap (bootstrap2/)
+
+A second-generation bootstrap in `bootstrap2/` uses modern PGL features:
+
+- **Enums** with `Enum::Variant` syntax instead of magic numbers
+- **`const` declarations** for named constants
+- Multi-file compilation with shared type definitions
+
+```bash
+pangu compile bootstrap2/ -o build/bootstrap2
+build/bootstrap2 compile bootstrap2/ -o build/bootstrap2_gen2
+build/bootstrap2_gen2 compile bootstrap2/ -o build/bootstrap2_gen3
+# gen2 output == gen3 output  (fixed point verified)
+```
+
 ## Stream Operators
 
 PGL provides stream operators for data-flow style programming:

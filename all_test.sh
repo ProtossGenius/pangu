@@ -85,6 +85,25 @@ test_vendor () {
     done
 }
 
+test_bootstrap2 () {
+    echo "\033[32m ########## TEST BOOTSTRAP2 #########\033[0m";
+    echo "\033[32m compiling bootstrap2 (gen1) ......\033[0m";
+    ./build/pangu compile bootstrap2/ -o /tmp/pangu_bs2_gen1 > /dev/null 2>&1;
+    if [ $? -ne 0 ]; then echo "\033[31m bootstrap2 gen1 compile fail \033[0m"; exit; fi
+    echo "\033[32m bootstrap2 gen1 self-compiling (gen2) ......\033[0m";
+    /tmp/pangu_bs2_gen1 compile bootstrap2/ -o /tmp/pangu_bs2_gen2 > /dev/null 2>&1;
+    if [ $? -ne 0 ]; then echo "\033[31m bootstrap2 gen2 compile fail \033[0m"; exit; fi
+    echo "\033[32m verifying fixed point (gen2 == gen3) ......\033[0m";
+    /tmp/pangu_bs2_gen2 compile bootstrap2/ -o /tmp/pangu_bs2_gen3 > /dev/null 2>&1;
+    if [ $? -ne 0 ]; then echo "\033[31m bootstrap2 gen3 compile fail \033[0m"; exit; fi
+    /tmp/pangu_bs2_gen1 emit-c bootstrap2/ > /tmp/pangu_bs2_c1.c
+    /tmp/pangu_bs2_gen2 emit-c bootstrap2/ > /tmp/pangu_bs2_c2.c
+    diff /tmp/pangu_bs2_c1.c /tmp/pangu_bs2_c2.c > /dev/null 2>&1;
+    if [ $? -ne 0 ]; then echo "\033[31m bootstrap2 fixed point FAILED (gen1 != gen2 output) \033[0m"; exit; fi
+    echo "\033[32m bootstrap2 fixed point verified ✓\033[0m";
+    rm -f /tmp/pangu_bs2_gen1 /tmp/pangu_bs2_gen2 /tmp/pangu_bs2_gen3 /tmp/pangu_bs2_c1.c /tmp/pangu_bs2_c2.c
+}
+
 test lexer 
 test grammer 
 test runtime
@@ -93,3 +112,4 @@ test_compile_fail
 test_multifile
 test_vendor
 test_bootstrap
+test_bootstrap2

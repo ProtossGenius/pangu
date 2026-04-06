@@ -752,6 +752,21 @@ build/bootstrap2 compile bootstrap/ -o build/bootstrap3
 自举编译器读取 PGL 源码、词法分析、语法分析生成 AST，
 然后生成 C 代码并用 gcc 编译。支持多文件编译、`-o` 标志和 `--help`。
 
+### 现代化自举编译器（bootstrap2/）
+
+`bootstrap2/` 目录包含使用现代 PGL 特性重写的第二代自举编译器：
+
+- **枚举类型**：使用 `Enum::Variant` 语法代替魔术数字
+- **`const` 声明**：使用命名常量
+- 多文件编译，共享类型定义
+
+```bash
+pangu compile bootstrap2/ -o build/bootstrap2
+build/bootstrap2 compile bootstrap2/ -o build/bootstrap2_gen2
+build/bootstrap2_gen2 compile bootstrap2/ -o build/bootstrap2_gen3
+# gen2 输出 == gen3 输出  （固定点已验证）
+```
+
 ## 流运算符
 
 PGL 提供流运算符用于数据流风格编程：
