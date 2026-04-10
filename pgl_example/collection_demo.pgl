@@ -1,0 +1,107 @@
+// Collections Demo - Dynamic arrays, hashmaps, iteration patterns
+package main;
+
+func print_int_dyn(arr DynArray, n int) {
+    result := "[";
+    for i in n {
+        if (i > 0) { result = result + ", "; }
+        result = result + int_to_str(dyn_array_get(arr, i));
+    };
+    println(result + "]");
+}
+
+func main() {
+    println("=== Dynamic Array ===");
+    da := make_dyn_array();
+    // Push elements
+    i := 1;
+    while (i <= 10) {
+        dyn_array_push(da, i * i);
+        i = i + 1;
+    }
+    println("Squares 1-10:");
+    print("  "); print_int_dyn(da, dyn_array_size(da));
+    println("  Size: ${int_to_str(dyn_array_size(da))}");
+
+    // Pop last 3
+    println("\nPopping 3 elements:");
+    j := 0;
+    while (j < 3) {
+        v := dyn_array_pop(da);
+        println("  popped: ${int_to_str(v)}");
+        j = j + 1;
+    }
+    println("  Size after pop: ${int_to_str(dyn_array_size(da))}");
+
+    println("\n=== String Dynamic Array ===");
+    sa := make_dyn_str_array();
+    dyn_str_array_push(sa, "alpha");
+    dyn_str_array_push(sa, "beta");
+    dyn_str_array_push(sa, "gamma");
+    dyn_str_array_push(sa, "delta");
+    dyn_str_array_push(sa, "epsilon");
+
+    println("Greek letters:");
+    for k in dyn_str_array_size(sa) {
+        idx := int_to_str(k);
+        val := dyn_str_array_get(sa, k);
+        println("  [${idx}] ${val}");
+    };
+
+    println("\n=== HashMap (string -> string) ===");
+    m := make_map();
+    map_set(m, "name", "Pangu");
+    map_set(m, "type", "compiler");
+    map_set(m, "lang", "PGL");
+    map_set(m, "target", "LLVM IR");
+
+    keys := make_str_array(4);
+    str_array_set(keys, 0, "name");
+    str_array_set(keys, 1, "type");
+    str_array_set(keys, 2, "lang");
+    str_array_set(keys, 3, "target");
+
+    println("Project info:");
+    for k in 4 {
+        key := str_array_get(keys, k);
+        val := map_get(m, key);
+        println("  ${key}: ${val}");
+    };
+    println("  entries: ${int_to_str(map_size(m))}");
+
+    // Update
+    map_set(m, "type", "self-hosting compiler");
+    println("\nAfter update:");
+    updated_type := map_get(m, "type");
+    println("  type: ${updated_type}");
+
+    // Delete
+    map_delete(m, "target");
+    has := map_has(m, "target") ? "yes" : "no";
+    println("  has 'target' after delete: ${has}");
+
+    println("\n=== Int Map (string -> int) ===");
+    scores := make_int_map();
+    int_map_set(scores, "alice", 95);
+    int_map_set(scores, "bob", 87);
+    int_map_set(scores, "charlie", 72);
+    int_map_set(scores, "diana", 98);
+
+    names := make_str_array(4);
+    str_array_set(names, 0, "alice");
+    str_array_set(names, 1, "bob");
+    str_array_set(names, 2, "charlie");
+    str_array_set(names, 3, "diana");
+
+    println("Scores:");
+    total := 0;
+    for k in 4 {
+        n := str_array_get(names, k);
+        s := int_map_get(scores, n);
+        grade := s >= 90 ? "A" : (s >= 80 ? "B" : "C");
+        println("  ${n}: ${int_to_str(s)} (${grade})");
+        total = total + s;
+    };
+    avg := total / 4;
+    println("  Average: ${int_to_str(avg)}");
+}

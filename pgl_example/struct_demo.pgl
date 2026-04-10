@@ -1,0 +1,97 @@
+// Struct & Impl Demo - Demonstrates structs, methods, and struct operations
+package main;
+
+type Vec2 struct {
+    x int;
+    y int;
+}
+
+impl Vec2 Vec2Methods {
+    func add(a Vec2, b Vec2) Vec2 {
+        return Vec2{x: a.x + b.x, y: a.y + b.y};
+    }
+
+    func scale(v Vec2, factor int) Vec2 {
+        return Vec2{x: v.x * factor, y: v.y * factor};
+    }
+
+    func magnitude_sq(v Vec2) int {
+        return v.x * v.x + v.y * v.y;
+    }
+
+    func to_string(v Vec2) string {
+        sx := int_to_str(v.x);
+        sy := int_to_str(v.y);
+        return "(${sx}, ${sy})";
+    }
+
+    func equals(a Vec2, b Vec2) int {
+        if (a.x == b.x && a.y == b.y) { return 1; }
+        return 0;
+    }
+}
+
+type Rect struct {
+    origin Vec2;
+    width int;
+    height int;
+}
+
+impl Rect RectMethods {
+    func area(r Rect) int {
+        return r.width * r.height;
+    }
+
+    func perimeter(r Rect) int {
+        return 2 * (r.width + r.height);
+    }
+
+    func contains(r Rect, p Vec2) int {
+        if (p.x >= r.origin.x && p.x < r.origin.x + r.width) {
+            if (p.y >= r.origin.y && p.y < r.origin.y + r.height) {
+                return 1;
+            }
+        }
+        return 0;
+    }
+
+    func to_string(r Rect) string {
+        origin := Vec2.to_string(r.origin);
+        w := int_to_str(r.width);
+        h := int_to_str(r.height);
+        return "Rect{${origin}, ${w}x${h}}";
+    }
+}
+
+func main() {
+    println("=== Vec2 Demo ===");
+    a := Vec2{x: 3, y: 4};
+    b := Vec2{x: 1, y: 2};
+
+    println("a = ${Vec2.to_string(a)}");
+    println("b = ${Vec2.to_string(b)}");
+
+    sum := Vec2.add(a, b);
+    println("a + b = ${Vec2.to_string(sum)}");
+
+    scaled := Vec2.scale(a, 3);
+    println("a * 3 = ${Vec2.to_string(scaled)}");
+
+    mag := Vec2.magnitude_sq(a);
+    println("  |a|^2 = ${int_to_str(mag)}");
+
+    println("\n=== Rect Demo ===");
+    r := Rect{origin: Vec2{x: 10, y: 20}, width: 100, height: 50};
+    println(Rect.to_string(r));
+    area := int_to_str(Rect.area(r));
+    peri := int_to_str(Rect.perimeter(r));
+    println("  area = ${area}");
+    println("  perimeter = ${peri}");
+
+    p1 := Vec2{x: 50, y: 30};
+    p2 := Vec2{x: 200, y: 200};
+    c1 := Rect.contains(r, p1) ? "inside" : "outside";
+    c2 := Rect.contains(r, p2) ? "inside" : "outside";
+    println("  ${Vec2.to_string(p1)} is ${c1}");
+    println("  ${Vec2.to_string(p2)} is ${c2}");
+}

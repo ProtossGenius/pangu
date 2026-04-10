@@ -1,0 +1,131 @@
+// Functional Patterns Demo - Function refs, ternary, dispatch, closures
+package main;
+
+func double(x int) int { return x * 2; }
+func square(x int) int { return x * x; }
+func negate(x int) int { return 0 - x; }
+
+func apply(fn func, x int) int {
+    return fn(x);
+}
+
+func map_array(arr DynArray, n int, fn func) {
+    for i in n {
+        v := fn(dyn_array_get(arr, i));
+        dyn_array_set(arr, i, v);
+    };
+}
+
+func print_array(arr DynArray, n int) {
+    result := "[";
+    for i in n {
+        if (i > 0) { result = result + ", "; }
+        result = result + int_to_str(dyn_array_get(arr, i));
+    };
+    println(result + "]");
+}
+
+func is_even(n int) int {
+    return n % 2 == 0 ? 1 : 0;
+}
+
+func is_positive(n int) int {
+    return n > 0 ? 1 : 0;
+}
+
+func filter_count(arr DynArray, n int, pred func) int {
+    count := 0;
+    for i in n {
+        if (pred(dyn_array_get(arr, i)) == 1) {
+            count = count + 1;
+        }
+    };
+    return count;
+}
+
+func sum_array(arr DynArray, n int) int {
+    total := 0;
+    for i in n {
+        total = total + dyn_array_get(arr, i);
+    };
+    return total;
+}
+
+func max_array(arr DynArray, n int) int {
+    best := dyn_array_get(arr, 0);
+    i := 1;
+    while (i < n) {
+        v := dyn_array_get(arr, i);
+        best = v > best ? v : best;
+        i = i + 1;
+    }
+    return best;
+}
+
+func min_array(arr DynArray, n int) int {
+    best := dyn_array_get(arr, 0);
+    i := 1;
+    while (i < n) {
+        v := dyn_array_get(arr, i);
+        best = v < best ? v : best;
+        i = i + 1;
+    }
+    return best;
+}
+
+func main() {
+    println("=== Function References ===");
+    fn := double;
+    println("double(5) = ${int_to_str(apply(fn, 5))}");
+    fn = square;
+    println("square(5) = ${int_to_str(apply(fn, 5))}");
+    fn = negate;
+    println("negate(5) = ${int_to_str(apply(fn, 5))}");
+
+    println("\n=== Map over Array ===");
+    arr := make_dyn_array();
+    dyn_array_push(arr, 1);
+    dyn_array_push(arr, 2);
+    dyn_array_push(arr, 3);
+    dyn_array_push(arr, 4);
+    dyn_array_push(arr, 5);
+
+    print("Original:  "); print_array(arr, 5);
+    map_array(arr, 5, double);
+    print("Doubled:   "); print_array(arr, 5);
+    map_array(arr, 5, square);
+    print("Squared:   "); print_array(arr, 5);
+
+    println("\n=== Ternary Expressions ===");
+    for i in 6 {
+        label := i % 2 == 0 ? "even" : "odd";
+        println("  ${int_to_str(i)} is ${label}");
+    };
+
+    println("\n=== Filter / Reduce ===");
+    nums := make_dyn_array();
+    dyn_array_push(nums, -3);
+    dyn_array_push(nums, 7);
+    dyn_array_push(nums, 0);
+    dyn_array_push(nums, 12);
+    dyn_array_push(nums, -5);
+    dyn_array_push(nums, 8);
+    dyn_array_push(nums, 4);
+    dyn_array_push(nums, -1);
+
+    print("Array: "); print_array(nums, 8);
+    ec := filter_count(nums, 8, is_even);
+    pc := filter_count(nums, 8, is_positive);
+    println("  Even count: ${int_to_str(ec)}");
+    println("  Positive count: ${int_to_str(pc)}");
+    println("  Sum: ${int_to_str(sum_array(nums, 8))}");
+    println("  Max: ${int_to_str(max_array(nums, 8))}");
+    println("  Min: ${int_to_str(min_array(nums, 8))}");
+
+    println("\n=== Nested Ternary ===");
+    for i in 5 {
+        score := i * 25;
+        grade := score >= 90 ? "A" : (score >= 70 ? "B" : (score >= 50 ? "C" : "F"));
+        println("  Score ${int_to_str(score)}: ${grade}");
+    };
+}

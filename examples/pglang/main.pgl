@@ -1,3 +1,5 @@
+// NOTE: This file is a syntax design proposal for future pipeline-based compiler features.
+// It is NOT compilable with the current PGL compiler.
 package main;
 import "llvm" as llvm; // llvm .
 

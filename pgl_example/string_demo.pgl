@@ -1,0 +1,114 @@
+// String Operations Demo - String manipulation, interpolation, searching
+package main;
+
+func repeat_str(s string, n int) string {
+    result := "";
+    for i in n {
+        result = result + s;
+    };
+    return result;
+}
+
+func reverse_str(s string) string {
+    result := "";
+    i := str_len(s) - 1;
+    while (i >= 0) {
+        result = result + char_to_str(str_char_at(s, i));
+        i = i - 1;
+    }
+    return result;
+}
+
+func count_char(s string, target int) int {
+    count := 0;
+    for i in str_len(s) {
+        if (str_char_at(s, i) == target) {
+            count = count + 1;
+        }
+    };
+    return count;
+}
+
+func is_palindrome(s string) int {
+    n := str_len(s);
+    i := 0;
+    while (i < n / 2) {
+        if (str_char_at(s, i) != str_char_at(s, n - 1 - i)) {
+            return 0;
+        }
+        i = i + 1;
+    }
+    return 1;
+}
+
+func pad_right(s string, width int, ch int) string {
+    result := s;
+    while (str_len(result) < width) {
+        result = result + char_to_str(ch);
+    }
+    return result;
+}
+
+func main() {
+    println("=== String Interpolation ===");
+    name := "Pangu";
+    version := "1.0";
+    println("${name} Language v${version}");
+
+    println("\n=== String Repeat ===");
+    star_line := repeat_str("*", 30);
+    println(star_line);
+    println(repeat_str("=-", 15));
+    println(star_line);
+
+    println("\n=== String Reverse ===");
+    words := make_str_array(5);
+    str_array_set(words, 0, "hello");
+    str_array_set(words, 1, "world");
+    str_array_set(words, 2, "racecar");
+    str_array_set(words, 3, "madam");
+    str_array_set(words, 4, "pangu");
+
+    for i in 5 {
+        w := str_array_get(words, i);
+        rev := reverse_str(w);
+        pal := is_palindrome(w) ? " (palindrome!)" : "";
+        padded := pad_right(w, 10, ' ');
+        println("  ${padded} -> ${rev}${pal}");
+    };
+
+    println("\n=== Character Counting ===");
+    text := "hello world, how are you doing today?";
+    println("Text: \"${text}\"");
+    o_count := int_to_str(count_char(text, 'o'));
+    l_count := int_to_str(count_char(text, 'l'));
+    space_count := int_to_str(count_char(text, ' '));
+    println("  'o' appears ${o_count} times");
+    println("  'l' appears ${l_count} times");
+    println("  spaces: ${space_count}");
+
+    println("\n=== String Comparison ===");
+    a := "apple";
+    b := "apple";
+    c := "banana";
+    eq1 := a == b ? "true" : "false";
+    println("\"${a}\" == \"${b}\": ${eq1}");
+    eq2 := a == c ? "true" : "false";
+    println("\"${a}\" == \"${c}\": ${eq2}");
+
+    println("\n=== String Search ===");
+    haystack := "the quick brown fox jumps over the lazy dog";
+    println("Text: \"${haystack}\"");
+    idx := str_index_of(haystack, "fox");
+    idx_str := int_to_str(idx);
+    println("  'fox' found at index ${idx_str}");
+    idx2 := str_index_of(haystack, "cat");
+    idx2_str := int_to_str(idx2);
+    println("  'cat' found at index ${idx2_str} (not found)");
+
+    println("\n=== String Slicing ===");
+    s := "Hello, World!";
+    println("Original: ${s}");
+    println("  [0:5] = ${str_substr(s, 0, 5)}");
+    println("  [7:12] = ${str_substr(s, 7, 12)}");
+}

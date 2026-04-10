@@ -1,0 +1,73 @@
+// Enum Demo - Demonstrates PGL enum types with switch dispatch
+package main;
+
+type Direction enum {
+    NORTH,
+    SOUTH,
+    EAST,
+    WEST,
+}
+
+type Season enum {
+    SPRING,
+    SUMMER,
+    AUTUMN,
+    WINTER,
+}
+
+func direction_name(d int) string {
+    switch (d) {
+        case Direction::NORTH: { return "North"; }
+        case Direction::SOUTH: { return "South"; }
+        case Direction::EAST:  { return "East"; }
+        case Direction::WEST:  { return "West"; }
+    }
+    return "Unknown";
+}
+
+func opposite(d int) int {
+    switch (d) {
+        case Direction::NORTH: { return Direction::SOUTH; }
+        case Direction::SOUTH: { return Direction::NORTH; }
+        case Direction::EAST:  { return Direction::WEST; }
+        case Direction::WEST:  { return Direction::EAST; }
+    }
+    return d;
+}
+
+func season_emoji(s int) string {
+    switch (s) {
+        case Season::SPRING: { return "🌱 Spring"; }
+        case Season::SUMMER: { return "☀️ Summer"; }
+        case Season::AUTUMN: { return "🍂 Autumn"; }
+        case Season::WINTER: { return "❄️ Winter"; }
+    }
+    return "?";
+}
+
+func main() {
+    println("=== Direction Demo ===");
+    d := Direction::NORTH;
+    println("Direction: ${direction_name(d)}");
+    
+    opp := opposite(d);
+    println("Opposite:  ${direction_name(opp)}");
+
+    dirs := make_array(4);
+    array_set(dirs, 0, Direction::NORTH);
+    array_set(dirs, 1, Direction::EAST);
+    array_set(dirs, 2, Direction::SOUTH);
+    array_set(dirs, 3, Direction::WEST);
+
+    println("\nAll directions:");
+    for i in 4 {
+        name := direction_name(array_get(dirs, i));
+        opp_name := direction_name(opposite(array_get(dirs, i)));
+        println("  ${name} <-> ${opp_name}");
+    };
+
+    println("\n=== Season Demo ===");
+    for i in 4 {
+        println(season_emoji(i));
+    };
+}

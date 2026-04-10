@@ -1,0 +1,127 @@
+// Algorithm Demo - Sorting, recursion, and classic algorithms
+package main;
+
+func fibonacci(n int) int {
+    if (n <= 1) { return n; }
+    return fibonacci(n - 1) + fibonacci(n - 2);
+}
+
+func factorial(n int) int {
+    if (n <= 1) { return 1; }
+    return n * factorial(n - 1);
+}
+
+func gcd(a int, b int) int {
+    while (b != 0) {
+        t := b;
+        b = a % b;
+        a = t;
+    }
+    return a;
+}
+
+func power(base int, exp int) int {
+    if (exp == 0) { return 1; }
+    if (exp % 2 == 0) {
+        half := power(base, exp / 2);
+        return half * half;
+    }
+    return base * power(base, exp - 1);
+}
+
+func bubble_sort(arr DynArray, n int) {
+    i := 0;
+    while (i < n - 1) {
+        j := 0;
+        while (j < n - 1 - i) {
+            if (dyn_array_get(arr, j) > dyn_array_get(arr, j + 1)) {
+                tmp := dyn_array_get(arr, j);
+                dyn_array_set(arr, j, dyn_array_get(arr, j + 1));
+                dyn_array_set(arr, j + 1, tmp);
+            }
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+}
+
+func print_array(arr DynArray, n int) {
+    result := "[";
+    for i in n {
+        if (i > 0) { result = result + ", "; }
+        result = result + int_to_str(dyn_array_get(arr, i));
+    };
+    result = result + "]";
+    println(result);
+}
+
+func is_prime(n int) int {
+    if (n < 2) { return 0; }
+    if (n < 4) { return 1; }
+    if (n % 2 == 0) { return 0; }
+    i := 3;
+    while (i * i <= n) {
+        if (n % i == 0) { return 0; }
+        i = i + 2;
+    }
+    return 1;
+}
+
+func main() {
+    println("=== Fibonacci ===");
+    for i in 12 {
+        result := int_to_str(fibonacci(i));
+        idx := int_to_str(i);
+        print("fib(${idx}) = ${result}  ");
+    };
+    println("");
+
+    println("\n=== Factorial ===");
+    i := 0;
+    while (i <= 10) {
+        result := int_to_str(factorial(i));
+        idx := int_to_str(i);
+        println("${idx}! = ${result}");
+        i = i + 1;
+    }
+
+    println("\n=== GCD ===");
+    a1 := 48; b1 := 18;
+    a2 := 100; b2 := 75;
+    a3 := 17; b3 := 13;
+    println("gcd(${int_to_str(a1)}, ${int_to_str(b1)}) = ${int_to_str(gcd(a1, b1))}");
+    println("gcd(${int_to_str(a2)}, ${int_to_str(b2)}) = ${int_to_str(gcd(a2, b2))}");
+    println("gcd(${int_to_str(a3)}, ${int_to_str(b3)}) = ${int_to_str(gcd(a3, b3))}");
+
+    println("\n=== Fast Power ===");
+    println("2^10 = ${int_to_str(power(2, 10))}");
+    println("3^5  = ${int_to_str(power(3, 5))}");
+    println("7^3  = ${int_to_str(power(7, 3))}");
+
+    println("\n=== Bubble Sort ===");
+    arr := make_dyn_array();
+    dyn_array_push(arr, 64);
+    dyn_array_push(arr, 34);
+    dyn_array_push(arr, 25);
+    dyn_array_push(arr, 12);
+    dyn_array_push(arr, 22);
+    dyn_array_push(arr, 11);
+    dyn_array_push(arr, 90);
+    dyn_array_push(arr, 1);
+
+    print("Before: "); print_array(arr, 8);
+    bubble_sort(arr, 8);
+    print("After:  "); print_array(arr, 8);
+
+    println("\n=== Primes under 50 ===");
+    result := "";
+    n := 2;
+    while (n < 50) {
+        if (is_prime(n) == 1) {
+            if (str_len(result) > 0) { result = result + ", "; }
+            result = result + int_to_str(n);
+        }
+        n = n + 1;
+    }
+    println(result);
+}
