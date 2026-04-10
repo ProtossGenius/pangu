@@ -128,9 +128,9 @@ func lex_ident_emit(pipe ptr, types string, values string, lines string, cols st
                     count int, tline int, tcol int) int {
     val := pipeline_cache_str(pipe);
     if (is_keyword(val) == 1) {
-        return add_token(types, values, lines, cols, count, 1, val, tline, tcol);
+        return add_token(types, values, lines, cols, count, TokenType::TT_KEYWORD, val, tline, tcol);
     }
-    return add_token(types, values, lines, cols, count, 2, val, tline, tcol);
+    return add_token(types, values, lines, cols, count, TokenType::TT_IDENT, val, tline, tcol);
 }
 
 // ----- Worker 2: Number -----
@@ -156,7 +156,7 @@ func lex_number(pipe ptr, c int, is_hex int) int {
 func lex_number_emit(pipe ptr, types string, values string, lines string, cols string,
                      count int, tline int, tcol int) int {
     val := pipeline_cache_str(pipe);
-    return add_token(types, values, lines, cols, count, 3, val, tline, tcol);
+    return add_token(types, values, lines, cols, count, TokenType::TT_NUMBER, val, tline, tcol);
 }
 
 // ============================================================
@@ -211,7 +211,7 @@ func tokenize(source string,
             // String worker: process until closing "
             if (c == 34) {
                 val := pipeline_cache_str(pipe);
-                count = add_token(types, values, lines, cols, count, 4, val, tok_line, tok_col);
+                count = add_token(types, values, lines, cols, count, TokenType::TT_STRING, val, tok_line, tok_col);
                 pipeline_set_worker(pipe, 0);
                 pos = pos + 1;
                 col = col + 1;
@@ -235,7 +235,7 @@ func tokenize(source string,
             // Backtick string worker: process until closing `
             if (c == '`') {
                 val := pipeline_cache_str(pipe);
-                count = add_token(types, values, lines, cols, count, 4, val, tok_line, tok_col);
+                count = add_token(types, values, lines, cols, count, TokenType::TT_STRING, val, tok_line, tok_col);
                 pipeline_set_worker(pipe, 0);
                 pos = pos + 1;
                 col = col + 1;
@@ -263,7 +263,7 @@ func tokenize(source string,
                 pos = pos + 1;
                 col = col + 1;
             }
-            count = add_token(types, values, lines, cols, count, 3, int_to_str(char_val), tok_line, tok_col);
+            count = add_token(types, values, lines, cols, count, TokenType::TT_NUMBER, int_to_str(char_val), tok_line, tok_col);
             pipeline_set_worker(pipe, 0);
             continue;
         }
@@ -363,15 +363,15 @@ func tokenize(source string,
         if (pos + 1 < src_len) {
             c2 := str_char_at(source, pos + 1);
             if (try_two_char_op(c, c2) == 1) {
-                val := str_concat(char_to_str(c), char_to_str(c2));
-                count = add_token(types, values, lines, cols, count, 5, val, tok_line, tok_col);
+                val := char_to_str(c) + char_to_str(c2);
+                count = add_token(types, values, lines, cols, count, TokenType::TT_SYMBOL, val, tok_line, tok_col);
                 pos = pos + 2;
                 col = col + 2;
                 continue;
             }
         }
         val := char_to_str(c);
-        count = add_token(types, values, lines, cols, count, 5, val, tok_line, tok_col);
+        count = add_token(types, values, lines, cols, count, TokenType::TT_SYMBOL, val, tok_line, tok_col);
         pos = pos + 1;
         col = col + 1;
     }
@@ -388,7 +388,7 @@ func tokenize(source string,
     pipeline_destroy(pipe);
 
     // Add EOF token
-    count = add_token(types, values, lines, cols, count, 0, "", line, col);
+    count = add_token(types, values, lines, cols, count, TokenType::TT_EOF, "", line, col);
     return count;
 }
 

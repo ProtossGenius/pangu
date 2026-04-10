@@ -40,7 +40,7 @@ func nextra(ctx string, id int) int   { return array_get(str_array_get(ctx, 5), 
 // --- List traversal helpers (LISTNODE = kind 39) ---
 func lval(ctx string, w int) int {
     if (w < 0) { return -1; }
-    if (nkind(ctx, w) == 39) { return nleft(ctx, w); }
+    if (nkind(ctx, w) == NodeKind::NK_LIST) { return nleft(ctx, w); }
     return w;
 }
 func lnext(ctx string, w int) int {
@@ -59,7 +59,7 @@ func scope_find(ctx string, name string) int {
     vc := array_get(str_array_get(ctx, 8), 0);
     i := vc - 1;
     while (i >= 0) {
-        if (str_eq(str_array_get(str_array_get(ctx, 6), i), name) == 1) {
+        if (str_array_get(str_array_get(ctx, 6), i) == name) {
             return array_get(str_array_get(ctx, 7), i);
         }
         i = i - 1;
@@ -84,7 +84,7 @@ func fn_find(ctx string, name string) int {
     fc := array_get(str_array_get(ctx, 11), 0);
     i := 0;
     while (i < fc) {
-        if (str_eq(str_array_get(str_array_get(ctx, 9), i), name) == 1) {
+        if (str_array_get(str_array_get(ctx, 9), i) == name) {
             return array_get(str_array_get(ctx, 10), i);
         }
         i = i + 1;
@@ -114,16 +114,15 @@ func indent_str(n int) string {
 }
 
 // --- Type system ---
-// 0=int, 1=string (also used for pointers/arrays), 2=void
 func type_to_c(t int) string {
-    if (t == 1) { return "char*"; }
-    if (t == 2) { return "void"; }
+    if (t == CType::CT_STRING) { return "char*"; }
+    if (t == CType::CT_VOID) { return "void"; }
     return "int";
 }
 func pgl_type_to_code(t string) int {
-    if (str_eq(t, "string") == 1) { return 1; }
-    if (str_eq(t, "ptr") == 1) { return 1; }
-    return 0;
+    if (t == "string") { return CType::CT_STRING; }
+    if (t == "ptr") { return CType::CT_STRING; }
+    return CType::CT_INT;
 }
 
 // --- C identifier helpers ---
@@ -162,132 +161,134 @@ func c_func_name(name string) string {
 
 // --- Type inference ---
 func infer_type(ctx string, id int) int {
-    if (id < 0) { return 0; }
+    if (id < 0) { return CType::CT_INT; }
     k := nkind(ctx, id);
     sv := nsval(ctx, id);
-    if (k == 20) { return 0; }
-    if (k == 21) { return 1; }
-    if (k == 19) {
+    if (k == NodeKind::NK_NUMBER) { return CType::CT_INT; }
+    if (k == NodeKind::NK_STRING) { return CType::CT_STRING; }
+    if (k == NodeKind::NK_IDENT) {
         t := scope_find(ctx, sv);
         if (t >= 0) { return t; }
-        return 0;
+        return CType::CT_INT;
     }
-    if (k == 16) {
-        if (str_eq(sv, "+") == 1) {
+    if (k == NodeKind::NK_BINOP) {
+        if (sv == "+") {
             lt := infer_type(ctx, nleft(ctx, id));
-            if (lt == 1) { return 1; }
+            if (lt == CType::CT_STRING) { return CType::CT_STRING; }
         }
-        return 0;
+        return CType::CT_INT;
     }
-    if (k == 17) { return infer_type(ctx, nleft(ctx, id)); }
-    if (k == 18) {
-        if (str_eq(sv, "str_concat") == 1) { return 1; }
-        if (str_eq(sv, "char_to_str") == 1) { return 1; }
-        if (str_eq(sv, "int_to_str") == 1) { return 1; }
-        if (str_eq(sv, "str_substr") == 1) { return 1; }
-        if (str_eq(sv, "read_file") == 1) { return 1; }
-        if (str_eq(sv, "args") == 1) { return 1; }
-        if (str_eq(sv, "str_array_get") == 1) { return 1; }
-        if (str_eq(sv, "str_replace") == 1) { return 1; }
-        if (str_eq(sv, "make_array") == 1) { return 1; }
-        if (str_eq(sv, "make_str_array") == 1) { return 1; }
-        if (str_eq(sv, "pipeline_create") == 1) { return 1; }
-        if (str_eq(sv, "pipeline_cache_str") == 1) { return 1; }
-        if (str_eq(sv, "pipeline_output_get") == 1) { return 1; }
-        if (str_eq(sv, "make_map") == 1) { return 1; }
-        if (str_eq(sv, "map_get") == 1) { return 1; }
-        if (str_eq(sv, "make_int_map") == 1) { return 1; }
-        if (str_eq(sv, "make_dyn_array") == 1) { return 1; }
-        if (str_eq(sv, "make_dyn_str_array") == 1) { return 1; }
-        if (str_eq(sv, "dyn_str_array_get") == 1) { return 1; }
-        if (str_eq(sv, "make_str_builder") == 1) { return 1; }
-        if (str_eq(sv, "sb_build") == 1) { return 1; }
+    if (k == NodeKind::NK_UNARYOP) { return infer_type(ctx, nleft(ctx, id)); }
+    if (k == NodeKind::NK_CALL) {
+        if (sv == "str_concat") { return CType::CT_STRING; }
+        if (sv == "char_to_str") { return CType::CT_STRING; }
+        if (sv == "int_to_str") { return CType::CT_STRING; }
+        if (sv == "str_substr") { return CType::CT_STRING; }
+        if (sv == "read_file") { return CType::CT_STRING; }
+        if (sv == "args") { return CType::CT_STRING; }
+        if (sv == "str_array_get") { return CType::CT_STRING; }
+        if (sv == "str_replace") { return CType::CT_STRING; }
+        if (sv == "make_array") { return CType::CT_STRING; }
+        if (sv == "make_str_array") { return CType::CT_STRING; }
+        if (sv == "pipeline_create") { return CType::CT_STRING; }
+        if (sv == "pipeline_cache_str") { return CType::CT_STRING; }
+        if (sv == "pipeline_output_get") { return CType::CT_STRING; }
+        if (sv == "make_map") { return CType::CT_STRING; }
+        if (sv == "map_get") { return CType::CT_STRING; }
+        if (sv == "make_int_map") { return CType::CT_STRING; }
+        if (sv == "make_dyn_array") { return CType::CT_STRING; }
+        if (sv == "make_dyn_str_array") { return CType::CT_STRING; }
+        if (sv == "dyn_str_array_get") { return CType::CT_STRING; }
+        if (sv == "make_str_builder") { return CType::CT_STRING; }
+        if (sv == "sb_build") { return CType::CT_STRING; }
         return fn_find(ctx, sv);
     }
-    return 0;
+    // TERNARY: infer from then-branch
+    if (k == NodeKind::NK_TERNARY) { return infer_type(ctx, nright(ctx, id)); }
+    return CType::CT_INT;
 }
 
 // --- Builtin C name mapping ---
 func builtin_c_name(name string, arg_type int) string {
-    if (str_eq(name, "println") == 1) {
+    if (name == "println") {
         if (arg_type == 1) { return "pg_println_str"; }
         return "pg_println_int";
     }
-    if (str_eq(name, "print") == 1) {
+    if (name == "print") {
         if (arg_type == 1) { return "pg_print_str"; }
         return "pg_print_int";
     }
-    if (str_eq(name, "exit") == 1) { return "exit"; }
-    if (str_eq(name, "panic") == 1) { return "pg_panic"; }
-    if (str_eq(name, "system") == 1) { return "pg_system"; }
-    if (str_eq(name, "str_len") == 1) { return "pg_str_len"; }
-    if (str_eq(name, "str_char_at") == 1) { return "pg_str_char_at"; }
-    if (str_eq(name, "char_to_str") == 1) { return "pg_char_to_str"; }
-    if (str_eq(name, "str_concat") == 1) { return "pg_str_concat"; }
-    if (str_eq(name, "str_eq") == 1) { return "pg_str_eq"; }
-    if (str_eq(name, "str_substr") == 1) { return "pg_str_substr"; }
-    if (str_eq(name, "str_index_of") == 1) { return "pg_str_index_of"; }
-    if (str_eq(name, "str_starts_with") == 1) { return "pg_str_starts_with"; }
-    if (str_eq(name, "str_replace") == 1) { return "pg_str_replace"; }
-    if (str_eq(name, "str_to_int") == 1) { return "pg_str_to_int"; }
-    if (str_eq(name, "int_to_str") == 1) { return "pg_int_to_str"; }
-    if (str_eq(name, "read_file") == 1) { return "pg_read_file"; }
-    if (str_eq(name, "write_file") == 1) { return "pg_write_file"; }
-    if (str_eq(name, "make_array") == 1) { return "pg_make_array"; }
-    if (str_eq(name, "array_get") == 1) { return "pg_array_get"; }
-    if (str_eq(name, "array_set") == 1) { return "pg_array_set"; }
-    if (str_eq(name, "make_str_array") == 1) { return "pg_make_str_array"; }
-    if (str_eq(name, "str_array_get") == 1) { return "pg_str_array_get"; }
-    if (str_eq(name, "str_array_set") == 1) { return "pg_str_array_set"; }
-    if (str_eq(name, "args") == 1) { return "pg_args"; }
-    if (str_eq(name, "args_count") == 1) { return "pg_args_count"; }
-    if (str_eq(name, "find_pgl_files") == 1) { return "pg_find_pgl_files"; }
-    if (str_eq(name, "is_directory") == 1) { return "pg_is_directory"; }
-    if (str_eq(name, "str_ends_with") == 1) { return "pg_str_ends_with"; }
-    if (str_eq(name, "pipeline_create") == 1) { return "pg_pipeline_create"; }
-    if (str_eq(name, "pipeline_destroy") == 1) { return "pg_pipeline_destroy"; }
-    if (str_eq(name, "pipeline_cache_append") == 1) { return "pg_pipeline_cache_append"; }
-    if (str_eq(name, "pipeline_cache_str") == 1) { return "pg_pipeline_cache_str"; }
-    if (str_eq(name, "pipeline_cache_reset") == 1) { return "pg_pipeline_cache_reset"; }
-    if (str_eq(name, "pipeline_emit") == 1) { return "pg_pipeline_emit"; }
-    if (str_eq(name, "pipeline_output_count") == 1) { return "pg_pipeline_output_count"; }
-    if (str_eq(name, "pipeline_output_get") == 1) { return "pg_pipeline_output_get"; }
-    if (str_eq(name, "pipeline_set_worker") == 1) { return "pg_pipeline_set_worker"; }
-    if (str_eq(name, "pipeline_get_worker") == 1) { return "pg_pipeline_get_worker"; }
-    if (str_eq(name, "make_map") == 1) { return "pg_make_map"; }
-    if (str_eq(name, "map_set") == 1) { return "pg_map_set"; }
-    if (str_eq(name, "map_get") == 1) { return "pg_map_get"; }
-    if (str_eq(name, "map_has") == 1) { return "pg_map_has"; }
-    if (str_eq(name, "map_size") == 1) { return "pg_map_size"; }
-    if (str_eq(name, "map_delete") == 1) { return "pg_map_delete"; }
-    if (str_eq(name, "make_int_map") == 1) { return "pg_make_int_map"; }
-    if (str_eq(name, "int_map_set") == 1) { return "pg_int_map_set"; }
-    if (str_eq(name, "int_map_get") == 1) { return "pg_int_map_get"; }
-    if (str_eq(name, "int_map_has") == 1) { return "pg_int_map_has"; }
-    if (str_eq(name, "int_map_size") == 1) { return "pg_int_map_size"; }
-    if (str_eq(name, "make_dyn_array") == 1) { return "pg_make_dyn_array"; }
-    if (str_eq(name, "dyn_array_push") == 1) { return "pg_dyn_array_push"; }
-    if (str_eq(name, "dyn_array_get") == 1) { return "pg_dyn_array_get"; }
-    if (str_eq(name, "dyn_array_set") == 1) { return "pg_dyn_array_set"; }
-    if (str_eq(name, "dyn_array_size") == 1) { return "pg_dyn_array_size"; }
-    if (str_eq(name, "dyn_array_pop") == 1) { return "pg_dyn_array_pop"; }
-    if (str_eq(name, "make_dyn_str_array") == 1) { return "pg_make_dyn_str_array"; }
-    if (str_eq(name, "dyn_str_array_push") == 1) { return "pg_dyn_str_array_push"; }
-    if (str_eq(name, "dyn_str_array_get") == 1) { return "pg_dyn_str_array_get"; }
-    if (str_eq(name, "dyn_str_array_set") == 1) { return "pg_dyn_str_array_set"; }
-    if (str_eq(name, "dyn_str_array_size") == 1) { return "pg_dyn_str_array_size"; }
-    if (str_eq(name, "make_str_builder") == 1) { return "pg_make_str_builder"; }
-    if (str_eq(name, "sb_append") == 1) { return "pg_sb_append"; }
-    if (str_eq(name, "sb_append_int") == 1) { return "pg_sb_append_int"; }
-    if (str_eq(name, "sb_append_char") == 1) { return "pg_sb_append_char"; }
-    if (str_eq(name, "sb_build") == 1) { return "pg_sb_build"; }
-    if (str_eq(name, "sb_reset") == 1) { return "pg_sb_reset"; }
-    if (str_eq(name, "sb_len") == 1) { return "pg_sb_len"; }
+    if (name == "exit") { return "exit"; }
+    if (name == "panic") { return "pg_panic"; }
+    if (name == "system") { return "pg_system"; }
+    if (name == "str_len") { return "pg_str_len"; }
+    if (name == "str_char_at") { return "pg_str_char_at"; }
+    if (name == "char_to_str") { return "pg_char_to_str"; }
+    if (name == "str_concat") { return "pg_str_concat"; }
+    if (name == "str_eq") { return "pg_str_eq"; }
+    if (name == "str_substr") { return "pg_str_substr"; }
+    if (name == "str_index_of") { return "pg_str_index_of"; }
+    if (name == "str_starts_with") { return "pg_str_starts_with"; }
+    if (name == "str_replace") { return "pg_str_replace"; }
+    if (name == "str_to_int") { return "pg_str_to_int"; }
+    if (name == "int_to_str") { return "pg_int_to_str"; }
+    if (name == "read_file") { return "pg_read_file"; }
+    if (name == "write_file") { return "pg_write_file"; }
+    if (name == "make_array") { return "pg_make_array"; }
+    if (name == "array_get") { return "pg_array_get"; }
+    if (name == "array_set") { return "pg_array_set"; }
+    if (name == "make_str_array") { return "pg_make_str_array"; }
+    if (name == "str_array_get") { return "pg_str_array_get"; }
+    if (name == "str_array_set") { return "pg_str_array_set"; }
+    if (name == "args") { return "pg_args"; }
+    if (name == "args_count") { return "pg_args_count"; }
+    if (name == "find_pgl_files") { return "pg_find_pgl_files"; }
+    if (name == "is_directory") { return "pg_is_directory"; }
+    if (name == "str_ends_with") { return "pg_str_ends_with"; }
+    if (name == "pipeline_create") { return "pg_pipeline_create"; }
+    if (name == "pipeline_destroy") { return "pg_pipeline_destroy"; }
+    if (name == "pipeline_cache_append") { return "pg_pipeline_cache_append"; }
+    if (name == "pipeline_cache_str") { return "pg_pipeline_cache_str"; }
+    if (name == "pipeline_cache_reset") { return "pg_pipeline_cache_reset"; }
+    if (name == "pipeline_emit") { return "pg_pipeline_emit"; }
+    if (name == "pipeline_output_count") { return "pg_pipeline_output_count"; }
+    if (name == "pipeline_output_get") { return "pg_pipeline_output_get"; }
+    if (name == "pipeline_set_worker") { return "pg_pipeline_set_worker"; }
+    if (name == "pipeline_get_worker") { return "pg_pipeline_get_worker"; }
+    if (name == "make_map") { return "pg_make_map"; }
+    if (name == "map_set") { return "pg_map_set"; }
+    if (name == "map_get") { return "pg_map_get"; }
+    if (name == "map_has") { return "pg_map_has"; }
+    if (name == "map_size") { return "pg_map_size"; }
+    if (name == "map_delete") { return "pg_map_delete"; }
+    if (name == "make_int_map") { return "pg_make_int_map"; }
+    if (name == "int_map_set") { return "pg_int_map_set"; }
+    if (name == "int_map_get") { return "pg_int_map_get"; }
+    if (name == "int_map_has") { return "pg_int_map_has"; }
+    if (name == "int_map_size") { return "pg_int_map_size"; }
+    if (name == "make_dyn_array") { return "pg_make_dyn_array"; }
+    if (name == "dyn_array_push") { return "pg_dyn_array_push"; }
+    if (name == "dyn_array_get") { return "pg_dyn_array_get"; }
+    if (name == "dyn_array_set") { return "pg_dyn_array_set"; }
+    if (name == "dyn_array_size") { return "pg_dyn_array_size"; }
+    if (name == "dyn_array_pop") { return "pg_dyn_array_pop"; }
+    if (name == "make_dyn_str_array") { return "pg_make_dyn_str_array"; }
+    if (name == "dyn_str_array_push") { return "pg_dyn_str_array_push"; }
+    if (name == "dyn_str_array_get") { return "pg_dyn_str_array_get"; }
+    if (name == "dyn_str_array_set") { return "pg_dyn_str_array_set"; }
+    if (name == "dyn_str_array_size") { return "pg_dyn_str_array_size"; }
+    if (name == "make_str_builder") { return "pg_make_str_builder"; }
+    if (name == "sb_append") { return "pg_sb_append"; }
+    if (name == "sb_append_int") { return "pg_sb_append_int"; }
+    if (name == "sb_append_char") { return "pg_sb_append_char"; }
+    if (name == "sb_build") { return "pg_sb_build"; }
+    if (name == "sb_reset") { return "pg_sb_reset"; }
+    if (name == "sb_len") { return "pg_sb_len"; }
     return name;
 }
 
 func is_builtin(name string) int {
-    if (str_eq(builtin_c_name(name, 0), name) == 0) { return 1; }
+    if (builtin_c_name(name, 0) != name) { return 1; }
     return 0;
 }
 
@@ -369,10 +370,10 @@ func emit_expr(ctx string, id int) string {
     sv := nsval(ctx, id);
 
     // NUMBER
-    if (k == 20) { return sv; }
+    if (k == NodeKind::NK_NUMBER) { return sv; }
 
     // STRING
-    if (k == 21) {
+    if (k == NodeKind::NK_STRING) {
         // Check for string interpolation: need ${var} with non-empty var and closing }
         idx := str_index_of(sv, "${");
         if (idx >= 0) {
@@ -390,15 +391,15 @@ func emit_expr(ctx string, id int) string {
     }
 
     // IDENT
-    if (k == 19) { return sv; }
+    if (k == NodeKind::NK_IDENT) { return sv; }
 
     // BINOP
-    if (k == 16) {
+    if (k == NodeKind::NK_BINOP) {
         l := emit_expr(ctx, nleft(ctx, id));
         r := emit_expr(ctx, nright(ctx, id));
         lt := infer_type(ctx, nleft(ctx, id));
         sb := make_str_builder();
-        if (str_eq(sv, "+") == 1 && lt == 1) {
+        if (sv == "+" && lt == CType::CT_STRING) {
             sb_append(sb, "pg_str_concat(");
             sb_append(sb, l);
             sb_append(sb, ", ");
@@ -406,7 +407,7 @@ func emit_expr(ctx string, id int) string {
             sb_append(sb, ")");
             return sb_build(sb);
         }
-        if (lt == 1 && str_eq(sv, "==") == 1) {
+        if (lt == CType::CT_STRING && sv == "==") {
             sb_append(sb, "(strcmp(");
             sb_append(sb, l);
             sb_append(sb, ", ");
@@ -414,7 +415,7 @@ func emit_expr(ctx string, id int) string {
             sb_append(sb, ") == 0)");
             return sb_build(sb);
         }
-        if (lt == 1 && str_eq(sv, "!=") == 1) {
+        if (lt == CType::CT_STRING && sv == "!=") {
             sb_append(sb, "(strcmp(");
             sb_append(sb, l);
             sb_append(sb, ", ");
@@ -433,7 +434,7 @@ func emit_expr(ctx string, id int) string {
     }
 
     // UNARYOP
-    if (k == 17) {
+    if (k == NodeKind::NK_UNARYOP) {
         sb := make_str_builder();
         sb_append(sb, "(");
         sb_append(sb, sv);
@@ -443,7 +444,7 @@ func emit_expr(ctx string, id int) string {
     }
 
     // PREINC
-    if (k == 37) {
+    if (k == NodeKind::NK_PREFIX_INCDEC) {
         sb := make_str_builder();
         sb_append(sb, "(");
         sb_append(sb, sv);
@@ -453,7 +454,7 @@ func emit_expr(ctx string, id int) string {
     }
 
     // POSTINC
-    if (k == 38) {
+    if (k == NodeKind::NK_POSTFIX_INCDEC) {
         sb := make_str_builder();
         sb_append(sb, "(");
         sb_append(sb, emit_expr(ctx, nleft(ctx, id)));
@@ -463,7 +464,7 @@ func emit_expr(ctx string, id int) string {
     }
 
     // CALL
-    if (k == 18) {
+    if (k == NodeKind::NK_CALL) {
         args_sb := make_str_builder();
         w := nleft(ctx, id);
         first := 1;
@@ -478,7 +479,7 @@ func emit_expr(ctx string, id int) string {
         sb := make_str_builder();
         if (is_builtin(sv) == 1) {
             arg_type := 0;
-            if (str_eq(sv, "println") == 1 || str_eq(sv, "print") == 1) {
+            if (sv == "println" || sv == "print") {
                 first_a := lval(ctx, nleft(ctx, id));
                 if (first_a != -1) { arg_type = infer_type(ctx, first_a); }
             }
@@ -496,11 +497,24 @@ func emit_expr(ctx string, id int) string {
     }
 
     // FIELD access (x.y → x_y for enums/qualified, x.y for structs)
-    if (k == 22) {
+    if (k == NodeKind::NK_FIELDACCESS) {
         sb := make_str_builder();
         sb_append(sb, emit_expr(ctx, nleft(ctx, id)));
         sb_append(sb, "_");
         sb_append(sb, sv);
+        return sb_build(sb);
+    }
+
+    // TERNARY
+    if (k == NodeKind::NK_TERNARY) {
+        sb := make_str_builder();
+        sb_append(sb, "(");
+        sb_append(sb, emit_expr(ctx, nleft(ctx, id)));
+        sb_append(sb, " ? ");
+        sb_append(sb, emit_expr(ctx, nright(ctx, id)));
+        sb_append(sb, " : ");
+        sb_append(sb, emit_expr(ctx, nextra(ctx, id)));
+        sb_append(sb, ")");
         return sb_build(sb);
     }
 
@@ -515,7 +529,7 @@ func emit_if(ctx string, id int, ind int) string {
     sb := make_str_builder();
     cur := id;
     first := 1;
-    while (cur != -1 && nkind(ctx, cur) == 10) {
+    while (cur != -1 && nkind(ctx, cur) == NodeKind::NK_IF) {
         cond := emit_expr(ctx, nleft(ctx, cur));
         then_body := emit_block(ctx, nright(ctx, cur), ind);
         if (first == 1) {
@@ -553,7 +567,7 @@ func emit_stmt(ctx string, id int, ind int) string {
     pad := indent_str(ind);
 
     // VARDECL
-    if (k == 7) {
+    if (k == NodeKind::NK_VARDECL) {
         name := nsval(ctx, id);
         val := nleft(ctx, id);
         tp := infer_type(ctx, val);
@@ -570,7 +584,7 @@ func emit_stmt(ctx string, id int, ind int) string {
     }
 
     // ASSIGN
-    if (k == 8) {
+    if (k == NodeKind::NK_ASSIGN) {
         sb := make_str_builder();
         sb_append(sb, pad);
         sb_append(sb, emit_expr(ctx, nleft(ctx, id)));
@@ -581,7 +595,7 @@ func emit_stmt(ctx string, id int, ind int) string {
     }
 
     // COMPOUND_ASSIGN
-    if (k == 36) {
+    if (k == NodeKind::NK_COMPOUND_ASSIGN) {
         sb := make_str_builder();
         sb_append(sb, pad);
         sb_append(sb, emit_expr(ctx, nleft(ctx, id)));
@@ -594,9 +608,12 @@ func emit_stmt(ctx string, id int, ind int) string {
     }
 
     // RETURN
-    if (k == 9) {
+    if (k == NodeKind::NK_RETURN) {
         val := nleft(ctx, id);
-        if (val == -1) { return str_concat(pad, "return;\n"); }
+        if (val == -1) {
+            r := pad + "return;\n";
+            return r;
+        }
         sb := make_str_builder();
         sb_append(sb, pad);
         sb_append(sb, "return ");
@@ -606,13 +623,19 @@ func emit_stmt(ctx string, id int, ind int) string {
     }
 
     // BREAK
-    if (k == 13) { return str_concat(pad, "break;\n"); }
+    if (k == NodeKind::NK_BREAK) {
+        r := pad + "break;\n";
+        return r;
+    }
 
     // CONTINUE
-    if (k == 14) { return str_concat(pad, "continue;\n"); }
+    if (k == NodeKind::NK_CONTINUE) {
+        r := pad + "continue;\n";
+        return r;
+    }
 
     // EXPRSTMT
-    if (k == 15) {
+    if (k == NodeKind::NK_EXPRSTMT) {
         sb := make_str_builder();
         sb_append(sb, pad);
         sb_append(sb, emit_expr(ctx, nleft(ctx, id)));
@@ -621,10 +644,10 @@ func emit_stmt(ctx string, id int, ind int) string {
     }
 
     // IF
-    if (k == 10) { return emit_if(ctx, id, ind); }
+    if (k == NodeKind::NK_IF) { return emit_if(ctx, id, ind); }
 
     // WHILE
-    if (k == 11) {
+    if (k == NodeKind::NK_WHILE) {
         cond := emit_expr(ctx, nleft(ctx, id));
         body := emit_block(ctx, nright(ctx, id), ind);
         sb := make_str_builder();
@@ -639,7 +662,7 @@ func emit_stmt(ctx string, id int, ind int) string {
     }
 
     // INFINITE LOOP: for { body }
-    if (k == 23) {
+    if (k == NodeKind::NK_INDEX) {
         body := emit_block(ctx, nright(ctx, id), ind);
         sb := make_str_builder();
         sb_append(sb, pad);
@@ -651,7 +674,7 @@ func emit_stmt(ctx string, id int, ind int) string {
     }
 
     // FOR
-    if (k == 12) {
+    if (k == NodeKind::NK_FOR) {
         init_id := nextra(ctx, id);
         cond_id := nleft(ctx, id);
         step_id := nival(ctx, id);
@@ -660,7 +683,7 @@ func emit_stmt(ctx string, id int, ind int) string {
         init_s := "";
         if (init_id != -1) {
             ik := nkind(ctx, init_id);
-            if (ik == 7) {
+            if (ik == NodeKind::NK_VARDECL) {
                 nm := nsval(ctx, init_id);
                 vl := nleft(ctx, init_id);
                 tp := infer_type(ctx, vl);
@@ -672,7 +695,7 @@ func emit_stmt(ctx string, id int, ind int) string {
                 sb_append(isb, " = ");
                 sb_append(isb, emit_expr(ctx, vl));
                 init_s = sb_build(isb);
-            } else if (ik == 8) {
+            } else if (ik == NodeKind::NK_ASSIGN) {
                 isb := make_str_builder();
                 sb_append(isb, emit_expr(ctx, nleft(ctx, init_id)));
                 sb_append(isb, " = ");
@@ -685,15 +708,15 @@ func emit_stmt(ctx string, id int, ind int) string {
         step_s := "";
         if (step_id >= 0) {
             sk := nkind(ctx, step_id);
-            if (sk == 37 || sk == 38) {
+            if (sk == NodeKind::NK_PREFIX_INCDEC || sk == NodeKind::NK_POSTFIX_INCDEC) {
                 step_s = emit_expr(ctx, step_id);
-            } else if (sk == 8) {
+            } else if (sk == NodeKind::NK_ASSIGN) {
                 ssb := make_str_builder();
                 sb_append(ssb, emit_expr(ctx, nleft(ctx, step_id)));
                 sb_append(ssb, " = ");
                 sb_append(ssb, emit_expr(ctx, nright(ctx, step_id)));
                 step_s = sb_build(ssb);
-            } else if (sk == 36) {
+            } else if (sk == NodeKind::NK_COMPOUND_ASSIGN) {
                 ssb := make_str_builder();
                 sb_append(ssb, emit_expr(ctx, nleft(ctx, step_id)));
                 sb_append(ssb, " ");
@@ -720,7 +743,7 @@ func emit_stmt(ctx string, id int, ind int) string {
     }
 
     // SWITCH
-    if (k == 28) {
+    if (k == NodeKind::NK_SWITCH) {
         cond := emit_expr(ctx, nleft(ctx, id));
         sb := make_str_builder();
         sb_append(sb, pad);
@@ -732,7 +755,7 @@ func emit_stmt(ctx string, id int, ind int) string {
             c := lval(ctx, w);
             if (c != -1) {
                 ck := nkind(ctx, c);
-                if (ck == 29) {
+                if (ck == NodeKind::NK_CASE) {
                     sb_append(sb, indent_str(ind + 1));
                     sb_append(sb, "case ");
                     sb_append(sb, emit_expr(ctx, nleft(ctx, c)));
@@ -740,7 +763,7 @@ func emit_stmt(ctx string, id int, ind int) string {
                     sb_append(sb, emit_block(ctx, nright(ctx, c), ind + 1));
                     sb_append(sb, indent_str(ind + 2));
                     sb_append(sb, "break;\n");
-                } else if (ck == 30) {
+                } else if (ck == NodeKind::NK_DEFAULT) {
                     sb_append(sb, indent_str(ind + 1));
                     sb_append(sb, "default:\n");
                     sb_append(sb, emit_block(ctx, nleft(ctx, c), ind + 1));
@@ -782,17 +805,17 @@ func emit_func_fwd(ctx string, id int, prefix string) string {
     sv := nsval(ctx, id);
     fname := split_left(sv);
     rtype_s := split_right(sv);
-    rtype := 2;
+    rtype := CType::CT_VOID;
     if (str_len(rtype_s) > 0) { rtype = pgl_type_to_code(rtype_s); }
 
-    if (str_eq(fname, "main") == 1 && str_len(prefix) == 0) { return ""; }
+    if (fname == "main" && str_len(prefix) == 0) { return ""; }
 
     psb := make_str_builder();
     w := nleft(ctx, id);
     first := 1;
     while (w != -1) {
         p := lval(ctx, w);
-        if (p != -1 && nkind(ctx, p) == 5) {
+        if (p != -1 && nkind(ctx, p) == NodeKind::NK_PARAM) {
             if (first == 0) { sb_append(psb, ", "); }
             sb_append(psb, type_to_c(pgl_type_to_code(split_right(nsval(ctx, p)))));
             first = 0;
@@ -800,11 +823,11 @@ func emit_func_fwd(ctx string, id int, prefix string) string {
         w = lnext(ctx, w);
     }
 
-    fn_push(ctx, str_concat(prefix, fname), rtype);
+    fn_push(ctx, prefix + fname, rtype);
     sb := make_str_builder();
     sb_append(sb, type_to_c(rtype));
     sb_append(sb, " ");
-    sb_append(sb, c_func_name(str_concat(prefix, fname)));
+    sb_append(sb, c_func_name(prefix + fname));
     sb_append(sb, "(");
     sb_append(sb, sb_build(psb));
     sb_append(sb, ");\n");
@@ -815,7 +838,7 @@ func emit_func_body(ctx string, id int, prefix string) string {
     sv := nsval(ctx, id);
     fname := split_left(sv);
     rtype_s := split_right(sv);
-    rtype := 2;
+    rtype := CType::CT_VOID;
     if (str_len(rtype_s) > 0) { rtype = pgl_type_to_code(rtype_s); }
 
     saved := scope_save(ctx);
@@ -826,7 +849,7 @@ func emit_func_body(ctx string, id int, prefix string) string {
     first := 1;
     while (w != -1) {
         p := lval(ctx, w);
-        if (p != -1 && nkind(ctx, p) == 5) {
+        if (p != -1 && nkind(ctx, p) == NodeKind::NK_PARAM) {
             if (first == 0) { sb_append(psb, ", "); }
             psv := nsval(ctx, p);
             pname := split_left(psv);
@@ -846,13 +869,13 @@ func emit_func_body(ctx string, id int, prefix string) string {
     scope_restore(ctx, saved);
 
     sb := make_str_builder();
-    if (str_eq(fname, "main") == 1 && str_len(prefix) == 0) {
+    if (fname == "main" && str_len(prefix) == 0) {
         sb_append(sb, "int main(int argc, char** argv) {\n    _pg_argc = argc;\n    _pg_argv = argv;\n    pg_install_signal_handlers();\n");
         sb_append(sb, body);
         sb_append(sb, "    return 0;\n}\n\n");
         return sb_build(sb);
     }
-    c_fname := c_func_name(str_concat(prefix, fname));
+    c_fname := c_func_name(prefix + fname);
     sb_append(sb, type_to_c(rtype));
     sb_append(sb, " ");
     sb_append(sb, c_fname);
@@ -886,19 +909,19 @@ func emit_c(root int, kinds string, svals string, ivals string,
         child := lval(ctx, w);
         if (child != -1) {
             ck := nkind(ctx, child);
-            if (ck == 4) {
+            if (ck == NodeKind::NK_FUNC) {
                 sb_append(fwd, emit_func_fwd(ctx, child, ""));
-            } else if (ck == 31) {
-                prefix := str_concat(split_left(nsval(ctx, child)), ".");
+            } else if (ck == NodeKind::NK_IMPL) {
+                prefix := split_left(nsval(ctx, child)) + ".";
                 mw := nleft(ctx, child);
                 while (mw != -1) {
                     m := lval(ctx, mw);
-                    if (m != -1 && nkind(ctx, m) == 4) {
+                    if (m != -1 && nkind(ctx, m) == NodeKind::NK_FUNC) {
                         sb_append(fwd, emit_func_fwd(ctx, m, prefix));
                     }
                     mw = lnext(ctx, mw);
                 }
-            } else if (ck == 32) {
+            } else if (ck == NodeKind::NK_ENUM_DEF) {
                 ename := nsval(ctx, child);
                 ew := nleft(ctx, child);
                 idx := 0;
@@ -917,6 +940,14 @@ func emit_c(root int, kinds string, svals string, ivals string,
                     ew = lnext(ctx, ew);
                 }
                 sb_append(fwd, "\n");
+            } else if (ck == NodeKind::NK_CONST_DECL) {
+                // CONST_DECL: emit as #define
+                sb_append(fwd, "#define ");
+                sb_append(fwd, nsval(ctx, child));
+                sb_append(fwd, " ");
+                cval := nleft(ctx, child);
+                sb_append(fwd, emit_expr(ctx, cval));
+                sb_append(fwd, "\n");
             }
         }
         w = lnext(ctx, w);
@@ -930,14 +961,14 @@ func emit_c(root int, kinds string, svals string, ivals string,
         child := lval(ctx, w);
         if (child != -1) {
             ck := nkind(ctx, child);
-            if (ck == 4) {
+            if (ck == NodeKind::NK_FUNC) {
                 sb_append(sb, emit_func_body(ctx, child, ""));
-            } else if (ck == 31) {
-                prefix := str_concat(split_left(nsval(ctx, child)), ".");
+            } else if (ck == NodeKind::NK_IMPL) {
+                prefix := split_left(nsval(ctx, child)) + ".";
                 mw := nleft(ctx, child);
                 while (mw != -1) {
                     m := lval(ctx, mw);
-                    if (m != -1 && nkind(ctx, m) == 4) {
+                    if (m != -1 && nkind(ctx, m) == NodeKind::NK_FUNC) {
                         sb_append(sb, emit_func_body(ctx, m, prefix));
                     }
                     mw = lnext(ctx, mw);
