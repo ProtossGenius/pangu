@@ -110,5 +110,5 @@ func main() {
     s := "Hello, World!";
     println("Original: ${s}");
     println("  [0:5] = ${str_substr(s, 0, 5)}");
-    println("  [7:12] = ${str_substr(s, 7, 12)}");
+    println("  [7:12] = ${str_substr(s, 7, 5)}");
 }

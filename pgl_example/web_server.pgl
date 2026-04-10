@@ -32,16 +32,16 @@ func handle_echo(request_body string) string {
 
 // Dispatch request to handler by name
 func dispatch(fname string, body string) string {
-    if (str_eq(fname, "handle_root") == 1) {
+    if (fname == "handle_root") {
         return handle_root();
     }
-    if (str_eq(fname, "handle_hello") == 1) {
+    if (fname == "handle_hello") {
         return handle_hello();
     }
-    if (str_eq(fname, "handle_status") == 1) {
+    if (fname == "handle_status") {
         return handle_status();
     }
-    if (str_eq(fname, "handle_echo") == 1) {
+    if (fname == "handle_echo") {
         return handle_echo(body);
     }
     return http.json_response(500, json.wrap_object(json.kv_string("error", "handler error")));
@@ -63,9 +63,9 @@ func main() {
         while (j < ac) {
             key := func_anno_key(fname, j);
             val := func_anno_value(fname, j);
-            if (str_eq(key, "get") == 1 || str_eq(key, "post") == 1) {
+            if (key == "get" || key == "post") {
                 if (rt_count < 64) {
-                    if (str_eq(key, "get") == 1) {
+                    if (key == "get") {
                         str_array_set(rt_methods, rt_count, "GET");
                     } else {
                         str_array_set(rt_methods, rt_count, "POST");
@@ -140,7 +140,7 @@ func main() {
             handler := "";
             k := 0;
             while (k < rt_count) {
-                if (str_eq(str_array_get(rt_methods, k), method) == 1 && str_eq(str_array_get(rt_paths, k), path) == 1) {
+                if (str_array_get(rt_methods, k) == method && str_array_get(rt_paths, k) == path) {
                     handler = str_array_get(rt_funcs, k);
                     break;
                 }

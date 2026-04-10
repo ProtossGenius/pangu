@@ -170,6 +170,20 @@ func tokenize(source string,
     pos := 0;
     line := 1;
     col := 1;
+
+    // Skip shebang line (e.g. #!/usr/bin/env pangu)
+    if (src_len > 1 && str_char_at(source, 0) == '#' && str_char_at(source, 1) == '!') {
+        while (pos < src_len) {
+            if (str_char_at(source, pos) == '\n') {
+                pos = pos + 1;
+                line = 2;
+                col = 1;
+                break;
+            }
+            pos = pos + 1;
+        }
+    }
+
     pipe := pipeline_create(8);
 
     // Track worker start position for token location

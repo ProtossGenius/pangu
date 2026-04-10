@@ -54,7 +54,7 @@ func get_body(response string) string {
         c3 := str_char_at(response, i + 2);
         c4 := str_char_at(response, i + 3);
         if (c1 == 13 && c2 == 10 && c3 == 13 && c4 == 10) {
-            return str_substr(response, i + 4, len);
+            return str_substr(response, i + 4, len - (i + 4));
         }
         i = i + 1;
     }
@@ -117,7 +117,7 @@ func get_header(response string, header_name string) string {
                     }
                     vend = vend + 1;
                 }
-                return str_substr(response, vstart, vend);
+                return str_substr(response, vstart, vend - vstart);
             }
         }
         // Skip to next line
@@ -202,11 +202,11 @@ func parse_path(request string) string {
     while (i < len) {
         ch := str_char_at(request, i);
         if (ch == 32 || ch == 63) {
-            return str_substr(request, start, i);
+            return str_substr(request, start, i - start);
         }
         i = i + 1;
     }
-    return str_substr(request, start, len);
+    return str_substr(request, start, len - start);
 }
 
 // Build a simple HTTP response

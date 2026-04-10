@@ -9,17 +9,16 @@ import "stdlib/http/http" as http;
 // Parse host from URL (assumes http://host/path or http://host:port/path)
 func parse_host(url string) string {
     len := str_len(url);
-    // Skip "http://"
     start := 7;
     i := start;
     while (i < len) {
         ch := str_char_at(url, i);
-        if (ch == 58 || ch == 47) {
-            return str_substr(url, start, i);
+        if (ch == ':' || ch == '/') {
+            return str_substr(url, start, i - start);
         }
         i = i + 1;
     }
-    return str_substr(url, start, len);
+    return str_substr(url, start, len - start);
 }
 
 // Parse port from URL (default 80)
@@ -30,21 +29,21 @@ func parse_port(url string) int {
     // Find end of host
     while (i < len) {
         ch := str_char_at(url, i);
-        if (ch == 58) {
+        if (ch == ':') {
             // Port follows
             i = i + 1;
             port := 0;
             while (i < len) {
                 ch = str_char_at(url, i);
-                if (ch < 48 || ch > 57) {
+                if (ch < '0' || ch > '9') {
                     return port;
                 }
-                port = port * 10 + (ch - 48);
+                port = port * 10 + (ch - '0');
                 i = i + 1;
             }
             return port;
         }
-        if (ch == 47) {
+        if (ch == '/') {
             return 80;
         }
         i = i + 1;
@@ -60,16 +59,16 @@ func parse_path(url string) string {
     // Skip host
     while (i < len) {
         ch := str_char_at(url, i);
-        if (ch == 47) {
-            return str_substr(url, i, len);
+        if (ch == '/') {
+            return str_substr(url, i, len - i);
         }
-        if (ch == 58) {
+        if (ch == ':') {
             // Skip port
             i = i + 1;
             while (i < len) {
                 ch = str_char_at(url, i);
-                if (ch == 47) {
-                    return str_substr(url, i, len);
+                if (ch == '/') {
+                    return str_substr(url, i, len - i);
                 }
                 i = i + 1;
             }
@@ -88,10 +87,10 @@ func main() {
     }
 
     url := args(1);
-    // Check for http:// prefix
-    if (str_len(url) < 8) {
-        println("Error: URL must start with http://");
-        return;
+
+    // Auto-prepend http:// if missing
+    if (str_len(url) < 7 || str_substr(url, 0, 7) != "http://") {
+        url = "http://" + url;
     }
 
     host := parse_host(url);

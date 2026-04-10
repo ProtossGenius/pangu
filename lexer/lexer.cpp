@@ -57,7 +57,20 @@ void analysis(const std::string &file, pglang::PPipelineFactory factory) {
 
     int line   = 1;
     int column = 1;
-    for (char ch : content) {
+    size_t start_offset = 0;
+    // Skip shebang line (e.g. #!/usr/bin/env pangu)
+    if (content.size() >= 2 && content[0] == '#' && content[1] == '!') {
+        for (size_t k = 0; k < content.size(); ++k) {
+            if (content[k] == '\n') {
+                start_offset = k + 1;
+                line = 2;
+                column = 1;
+                break;
+            }
+        }
+    }
+    for (size_t ci = start_offset; ci < content.size(); ++ci) {
+        char ch = content[ci];
         const std::string &line_text = lines[ size_t(line - 1) ];
         factory->accept(std::unique_ptr<IData>(
             new lexer::DInChar(ch, 0, SourceLocation{file, line, column, line_text})));

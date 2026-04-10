@@ -6,6 +6,7 @@ package main;
 //   bootstrap compile <file.pgl|dir/> [-o output]
 //   bootstrap emit-c  <file.pgl|dir/>
 //   bootstrap parse   <file.pgl|dir/>
+//   bootstrap run     <file.pgl|dir/> [args...]
 // ============================================================
 
 func merge_programs(kinds string, lefts string, rights string, root1 int, root2 int) {
@@ -46,6 +47,7 @@ func print_usage() {
     println("  compile <input> [-o output]  Compile to native executable via C");
     println("  emit-c  <input>              Emit C code to stdout");
     println("  parse   <input>              Parse and dump AST");
+    println("  run     <input> [args...]    Compile and run immediately");
     println("");
     println("OPTIONS:");
     println("  -o <path>     Set output binary path (default: a.out)");
@@ -161,6 +163,36 @@ func main() {
             exit(1);
         }
         println(output_path);
+    } else if (mode == "run") {
+        runtime_code := read_file("bootstrap/runtime.c");
+        c_code := emit_c(root, kinds, svals, ivals, lefts, rights, extras, runtime_code);
+        tmp_c := "/tmp/_pangu_run.c";
+        tmp_bin := "/tmp/_pangu_run";
+        write_file(tmp_c, c_code);
+        cmd := "gcc -O2 -rdynamic -o ${tmp_bin} ${tmp_c}";
+        ret := system(cmd);
+        system("rm -f ${tmp_c}");
+        if (ret != 0) {
+            system("rm -f ${tmp_bin}");
+            ret_str := int_to_str(ret);
+            println("gcc failed with exit code: ${ret_str}");
+            exit(1);
+        }
+        // Build run command with forwarded args
+        run_cmd := tmp_bin;
+        ai := 3;
+        while (ai < args_count()) {
+            arg := args(ai);
+            if (arg == "-o") {
+                ai = ai + 2;
+                continue;
+            }
+            run_cmd = run_cmd + " " + arg;
+            ai = ai + 1;
+        }
+        ret = system(run_cmd);
+        system("rm -f ${tmp_bin}");
+        exit(ret);
     } else {
         println("Unknown command: ${mode}");
         print_usage();
